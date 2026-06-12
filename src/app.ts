@@ -1,4 +1,4 @@
-import { Journal } from './journal';
+import { Journal, resetSessionScroll } from './journal';
 import { getMeta, saveMeta } from './db';
 import {
   createSettingsButton,
@@ -64,6 +64,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
 
   const today = todayKey();
   if (meta.lastVisitDate !== today) {
+    resetSessionScroll();
     await saveMeta({
       lastVisitDate: today,
       scrollAnchor: { date: today, offsetPx: 0 },

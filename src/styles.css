@@ -160,15 +160,17 @@ body {
 .day__input {
   display: block;
   width: 100%;
-  min-height: 4rem;
+  min-height: 1.6em;
   padding: 0;
   border: none;
   outline: none;
   resize: none;
+  overflow: hidden;
   background: transparent;
   color: var(--text);
   font: inherit;
   line-height: 1.6;
+  field-sizing: content;
 }
 
 .day__input::placeholder {
