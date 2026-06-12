@@ -14,6 +14,8 @@
   --accent: #2563eb;
   --header-bg: rgba(250, 250, 250, 0.92);
   --today: #2563eb;
+  --app-header-height: 3rem;
+  --day-header-height: 2.5rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -176,6 +178,12 @@ body {
 .day__input::placeholder {
   color: var(--muted);
   opacity: 0.6;
+}
+
+.day:last-child .day__input {
+  min-height: calc(
+    100dvh - var(--app-header-height) - var(--day-header-height)
+  );
 }
 
 .modal-overlay {

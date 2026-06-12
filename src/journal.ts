@@ -4,7 +4,6 @@ import { addDays, formatDateLabel, todayKey } from './types';
 
 const LAZY_LOAD_BATCH = 7;
 const SAVE_DEBOUNCE_MS = 300;
-const SCROLL_LOAD_THRESHOLD = 80;
 
 type SaveHandler = (dateKey: string, content: string) => void;
 
@@ -56,9 +55,14 @@ export class Journal {
     const today = todayKey();
 
     await this.appendDays([today]);
+    this.updateViewportVars();
     this.resizeAllTextareas();
     this.setupScrollPersistence();
     this.setupOlderDaysLoader();
+    window.addEventListener('resize', () => {
+      this.updateViewportVars();
+      this.resizeAllTextareas();
+    });
 
     await this.waitForLayout();
     this.resizeAllTextareas();
@@ -123,6 +127,7 @@ export class Journal {
     }
 
     this.resizeAllTextareas();
+    this.updateViewportVars();
 
     const scrollHeightAfter = this.scrollEl.scrollHeight;
     this.scrollEl.scrollTop = scrollTopBefore + (scrollHeightAfter - scrollHeightBefore);
@@ -160,7 +165,29 @@ export class Journal {
 
   private autoResize(textarea: HTMLTextAreaElement): void {
     textarea.style.height = '0';
-    textarea.style.height = `${textarea.scrollHeight}px`;
+    const min = parseFloat(getComputedStyle(textarea).minHeight) || 0;
+    textarea.style.height = `${Math.max(textarea.scrollHeight, min)}px`;
+  }
+
+  private updateViewportVars(): void {
+    const appHeader = document.querySelector<HTMLElement>('.app__header');
+    const dayHeader = this.scrollEl.querySelector<HTMLElement>(
+      '.day:last-child .day__header',
+    );
+
+    if (appHeader) {
+      document.documentElement.style.setProperty(
+        '--app-header-height',
+        `${appHeader.getBoundingClientRect().height}px`,
+      );
+    }
+
+    if (dayHeader) {
+      document.documentElement.style.setProperty(
+        '--day-header-height',
+        `${dayHeader.getBoundingClientRect().height}px`,
+      );
+    }
   }
 
   private resizeAllTextareas(): void {
@@ -185,25 +212,40 @@ export class Journal {
   }
 
   private setupOlderDaysLoader(): void {
-    const maybeLoadOlder = (): void => {
-      if (!this.initComplete || this.loadingOlder) return;
-      if (this.scrollEl.scrollTop < SCROLL_LOAD_THRESHOLD) {
-        void this.loadOlderDays();
-      }
-    };
-
-    this.scrollEl.addEventListener('scroll', maybeLoadOlder, { passive: true });
-
     this.scrollEl.addEventListener(
       'wheel',
       (e) => {
-        if (e.deltaY < 0 && this.scrollEl.scrollTop < SCROLL_LOAD_THRESHOLD) {
+        if (!this.initComplete || this.loadingOlder) return;
+        if (e.deltaY < 0 && this.scrollEl.scrollTop <= 0) {
+          void this.loadOlderDays();
+        }
+      },
+      { passive: true },
+    );
+
+    this.scrollEl.addEventListener(
+      'touchstart',
+      (e) => {
+        this.touchStartY = e.touches[0]?.clientY ?? 0;
+      },
+      { passive: true },
+    );
+
+    this.scrollEl.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!this.initComplete || this.loadingOlder) return;
+        const y = e.touches[0]?.clientY ?? 0;
+        const pullingDown = y - this.touchStartY > 10;
+        if (pullingDown && this.scrollEl.scrollTop <= 0) {
           void this.loadOlderDays();
         }
       },
       { passive: true },
     );
   }
+
+  private touchStartY = 0;
 
   private async loadOlderDays(): Promise<void> {
     if (this.loadingOlder) return;
