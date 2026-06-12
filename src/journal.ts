@@ -2,7 +2,8 @@ import { getDay, getDays, listDayKeysBefore, saveDay } from './db';
 import type { AppMeta, ScrollAnchor } from './types';
 import { addDays, formatDateLabel, todayKey } from './types';
 
-const INITIAL_DAYS = 3;
+const INITIAL_DAYS = 1;
+const PRELOAD_DAYS = 2;
 const LAZY_LOAD_BATCH = 7;
 const SAVE_DEBOUNCE_MS = 300;
 
@@ -29,6 +30,7 @@ export class Journal {
   private scrollSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private loadingOlder = false;
   private observer: IntersectionObserver | null = null;
+  private initComplete = false;
 
   constructor(options: JournalOptions) {
     this.container = options.container;
@@ -55,14 +57,24 @@ export class Journal {
 
   async init(): Promise<void> {
     const today = todayKey();
-    const dates: string[] = [];
-    for (let i = INITIAL_DAYS - 1; i >= 0; i--) {
-      dates.push(addDays(today, -i));
-    }
-    await this.appendDays(dates);
-    this.setupObserver();
+    const isNewDay = this.meta.lastVisitDate !== today;
+
+    await this.appendDays([today]);
     this.setupScrollPersistence();
-    await this.applyInitialScroll();
+
+    await this.applyInitialScroll(isNewDay);
+
+    if (PRELOAD_DAYS > 0) {
+      const preload: string[] = [];
+      for (let i = PRELOAD_DAYS; i >= 1; i--) {
+        preload.push(addDays(today, -i));
+      }
+      const anchorDate = isNewDay ? today : this.meta.scrollAnchor.date;
+      await this.prependDays(preload, anchorDate);
+    }
+
+    this.setupObserver();
+    this.initComplete = true;
   }
 
   private async appendDays(dateKeys: string[]): Promise<void> {
@@ -79,8 +91,17 @@ export class Journal {
     this.scrollEl.insertBefore(fragment, this.topSentinel.nextSibling);
   }
 
-  private async prependDays(dateKeys: string[]): Promise<void> {
+  private async prependDays(
+    dateKeys: string[],
+    anchorDate?: string,
+  ): Promise<void> {
     if (dateKeys.length === 0) return;
+
+    const anchorSection = anchorDate
+      ? this.scrollEl.querySelector<HTMLElement>(`[data-date="${anchorDate}"]`)
+      : null;
+    const scrollTopBefore = this.scrollEl.scrollTop;
+    const anchorTopBefore = anchorSection?.offsetTop ?? null;
 
     const entries = await getDays(dateKeys);
     const fragment = document.createDocumentFragment();
@@ -92,6 +113,8 @@ export class Journal {
       this.loadedDates.unshift(dateKey);
     }
 
+    if (!fragment.childNodes.length) return;
+
     const prevScrollHeight = this.scrollEl.scrollHeight;
     const firstSection = this.topSentinel.nextElementSibling;
     if (firstSection) {
@@ -100,8 +123,13 @@ export class Journal {
       this.scrollEl.appendChild(fragment);
     }
 
-    const newScrollHeight = this.scrollEl.scrollHeight;
-    this.scrollEl.scrollTop += newScrollHeight - prevScrollHeight;
+    if (anchorSection && anchorTopBefore !== null) {
+      this.scrollEl.scrollTop =
+        anchorSection.offsetTop - (anchorTopBefore - scrollTopBefore);
+    } else {
+      this.scrollEl.scrollTop += this.scrollEl.scrollHeight - prevScrollHeight;
+    }
+
     this.earliestLoaded = dateKeys[0];
   }
 
@@ -159,7 +187,7 @@ export class Journal {
     this.observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (entry.isIntersecting && !this.loadingOlder) {
+          if (entry.isIntersecting && !this.loadingOlder && this.initComplete) {
             void this.loadOlderDays();
           }
         }
@@ -226,11 +254,10 @@ export class Journal {
     return { date: todayKey(), offsetPx: 0 };
   }
 
-  private async applyInitialScroll(): Promise<void> {
+  private async applyInitialScroll(isNewDay: boolean): Promise<void> {
     const today = todayKey();
-    const isNewDay = this.meta.lastVisitDate !== today;
 
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await this.waitForLayout();
 
     if (isNewDay) {
       this.scrollToDate(today, 0);
@@ -248,6 +275,14 @@ export class Journal {
     todaySection?.focus({ preventScroll: true });
   }
 
+  private waitForLayout(): Promise<void> {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => resolve());
+      });
+    });
+  }
+
   private async ensureDateLoaded(dateKey: string): Promise<void> {
     if (this.loadedDates.includes(dateKey)) return;
 
@@ -262,9 +297,14 @@ export class Journal {
 
   scrollToDate(dateKey: string, offsetPx: number): void {
     const section = this.scrollEl.querySelector<HTMLElement>(`[data-date="${dateKey}"]`);
-    if (section) {
-      this.scrollEl.scrollTop = section.offsetTop + offsetPx;
-    }
+    if (!section) return;
+
+    const top =
+      section.getBoundingClientRect().top -
+      this.scrollEl.getBoundingClientRect().top +
+      this.scrollEl.scrollTop;
+
+    this.scrollEl.scrollTop = top + offsetPx;
   }
 
   refreshAfterSync(): void {
