@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
 
 const MAX_BLOB_SIZE = 512_000;
 
@@ -7,6 +7,21 @@ interface SyncBody {
   id: string;
   ciphertext: string;
   iv: string;
+}
+
+function getRedis(): Redis {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+
+  if (!url || !token) {
+    throw new Error(
+      'Missing Redis env vars (UPSTASH_REDIS_REST_URL/TOKEN or KV_REST_API_URL/TOKEN)',
+    );
+  }
+
+  return new Redis({ url, token });
 }
 
 function kvKey(id: string): string {
@@ -22,13 +37,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(204).end();
   }
 
+  let redis: Redis;
+  try {
+    redis = getRedis();
+  } catch {
+    return res.status(500).json({ error: 'Redis not configured' });
+  }
+
   if (req.method === 'GET') {
     const id = req.query.id;
     if (typeof id !== 'string' || !id) {
       return res.status(400).json({ error: 'Missing id' });
     }
 
-    const data = await kv.get<{ ciphertext: string; iv: string }>(kvKey(id));
+    const data = await redis.get<{ ciphertext: string; iv: string }>(kvKey(id));
     if (!data) {
       return res.status(404).json({ error: 'Not found' });
     }
@@ -46,7 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(413).json({ error: 'Payload too large' });
     }
 
-    await kv.set(kvKey(body.id), {
+    await redis.set(kvKey(body.id), {
       ciphertext: body.ciphertext,
       iv: body.iv,
     });

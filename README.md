@@ -8,7 +8,7 @@ PWA de notes journalières — local-first, sync chiffrée entre appareils.
 - Reprise du scroll là où vous en étiez (même journée)
 - Scroll vers le haut pour consulter les jours précédents
 - Stockage local IndexedDB (hors ligne)
-- Sync optionnelle chiffrée via phrase secrète (AES-GCM + Vercel KV)
+- Sync optionnelle chiffrée via phrase secrète (AES-GCM + Upstash Redis)
 
 ## Développement local
 
@@ -19,7 +19,7 @@ npm run dev
 
 L'app est disponible sur `http://localhost:5173`.
 
-> **Note :** la route `/api/sync` ne fonctionne qu'après déploiement sur Vercel avec un store KV lié. En local, la prise de notes fonctionne entièrement hors ligne.
+> **Note :** la route `/api/sync` ne fonctionne qu'après déploiement sur Vercel avec Upstash Redis lié. En local, la prise de notes fonctionne entièrement hors ligne.
 
 ## Déploiement sur Vercel
 
@@ -40,9 +40,9 @@ L'app est disponible sur `http://localhost:5173`.
 3. **Créer un store Redis (Upstash)**
    - Dashboard Vercel → votre projet → **Storage** / **Marketplace**
    - Ajouter une intégration **Upstash Redis** (successeur de Vercel KV)
-   - Les variables `KV_REST_API_URL` et `KV_REST_API_TOKEN` (ou `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`) sont injectées automatiquement
+   - Les variables `UPSTASH_REDIS_REST_URL` et `UPSTASH_REDIS_REST_TOKEN` sont injectées automatiquement
 
-4. **Redéployer** après liaison du KV
+4. **Redéployer** après liaison du store Redis
 
 5. **Installer la PWA** sur mobile/desktop via « Ajouter à l'écran d'accueil »
 
@@ -59,4 +59,4 @@ Les notes sont chiffrées côté client avant envoi. Le serveur ne voit que du c
 - Vite + TypeScript (vanilla)
 - IndexedDB (`idb`)
 - vite-plugin-pwa
-- Vercel Serverless + KV
+- Vercel Serverless + Upstash Redis
