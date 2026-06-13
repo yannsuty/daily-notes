@@ -477,6 +477,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  position: relative;
 }
 
 .mindmap__toolbar {
@@ -487,6 +488,111 @@ body {
   padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+}
+
+.mindmap__summary {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.mindmap__summary-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mindmap__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.mindmap__chip {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.mindmap__chip--recent {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.mindmap__chip--tag {
+  border-color: #8b5cf6;
+  color: #8b5cf6;
+}
+
+.mindmap__chip--concept {
+  border-color: #10b981;
+  color: #10b981;
+}
+
+.mindmap__chip--theme {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.mindmap__detail {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+  z-index: 5;
+}
+
+.mindmap__detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.mindmap__detail-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.mindmap__detail-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: var(--border);
+  color: var(--text);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mindmap__detail-meta {
+  margin: 0.375rem 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.mindmap__detail-related-title {
+  margin: 0 0 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .mindmap__legend {
@@ -560,9 +666,9 @@ body {
   opacity: 0.85;
 }
 
-.mindmap__node--day circle {
-  stroke: var(--surface);
-  stroke-width: 2;
+.mindmap__node--selected circle {
+  stroke: var(--text);
+  stroke-width: 3;
 }
 
 .mindmap__node--tag circle {

@@ -92,10 +92,6 @@ export async function initApp(root: HTMLElement): Promise<void> {
 
   mindMap = new MindMap({
     container: thoughtsPanel,
-    onNavigateToDay: (dateKey) => {
-      tabBar?.switchTo('journal');
-      void journal?.navigateToDay(dateKey, 0);
-    },
   });
 
   tabBar.registerPanel('journal', journalPanel);

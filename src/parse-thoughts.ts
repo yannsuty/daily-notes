@@ -1,16 +1,18 @@
-export type ThoughtNodeType = 'day' | 'tag' | 'concept' | 'theme';
+export type ThoughtNodeType = 'tag' | 'concept' | 'theme';
 
 export interface ThoughtNode {
   id: string;
   label: string;
   type: ThoughtNodeType;
-  dateKey?: string;
+  count: number;
+  lastSeen: string;
   recent: boolean;
 }
 
 export interface ThoughtLink {
   source: string;
   target: string;
+  weight: number;
 }
 
 export interface ThoughtGraph {
@@ -29,17 +31,33 @@ export function parseThoughtsFromDays(
   today: string,
 ): ThoughtGraph {
   const nodeMap = new Map<string, ThoughtNode>();
-  const linkSet = new Set<string>();
-  const links: ThoughtLink[] = [];
+  const linkWeights = new Map<string, number>();
 
-  const addNode = (id: string, label: string, type: ThoughtNodeType, dateKey?: string): ThoughtNode => {
-    const recent = dateKey ? isRecent(dateKey, today) : false;
+  const upsertNode = (
+    id: string,
+    label: string,
+    type: ThoughtNodeType,
+    dateKey: string,
+  ): ThoughtNode => {
     const existing = nodeMap.get(id);
     if (existing) {
-      if (recent) existing.recent = true;
+      existing.count += 1;
+      if (dateKey > existing.lastSeen) {
+        existing.lastSeen = dateKey;
+      }
+      if (isRecent(dateKey, today)) {
+        existing.recent = true;
+      }
       return existing;
     }
-    const node: ThoughtNode = { id, label, type, dateKey, recent };
+    const node: ThoughtNode = {
+      id,
+      label,
+      type,
+      count: 1,
+      lastSeen: dateKey,
+      recent: isRecent(dateKey, today),
+    };
     nodeMap.set(id, node);
     return node;
   };
@@ -47,9 +65,7 @@ export function parseThoughtsFromDays(
   const addLink = (source: string, target: string): void => {
     if (source === target) return;
     const key = [source, target].sort().join('|');
-    if (linkSet.has(key)) return;
-    linkSet.add(key);
-    links.push({ source, target });
+    linkWeights.set(key, (linkWeights.get(key) ?? 0) + 1);
   };
 
   const sortedDates = Object.keys(days).sort();
@@ -58,12 +74,7 @@ export function parseThoughtsFromDays(
     const content = days[dateKey]?.content ?? '';
     if (!content.trim()) continue;
 
-    const dayId = `day:${dateKey}`;
-    addNode(dayId, formatDayLabel(dateKey), 'day', dateKey);
-
-    const dayTags: string[] = [];
-    const dayConcepts: string[] = [];
-    const dayThemes: string[] = [];
+    const entryIdeas: string[] = [];
 
     let match: RegExpExecArray | null;
 
@@ -71,9 +82,8 @@ export function parseThoughtsFromDays(
     while ((match = TAG_RE.exec(content)) !== null) {
       const tag = match[1].toLowerCase();
       const tagId = `tag:${tag}`;
-      addNode(tagId, `#${tag}`, 'tag', dateKey);
-      dayTags.push(tagId);
-      addLink(dayId, tagId);
+      upsertNode(tagId, `#${tag}`, 'tag', dateKey);
+      entryIdeas.push(tagId);
     }
 
     CONCEPT_RE.lastIndex = 0;
@@ -81,38 +91,64 @@ export function parseThoughtsFromDays(
       const concept = match[1].trim();
       if (!concept) continue;
       const conceptId = `concept:${concept.toLowerCase()}`;
-      addNode(conceptId, concept, 'concept', dateKey);
-      dayConcepts.push(conceptId);
-      addLink(dayId, conceptId);
+      upsertNode(conceptId, concept, 'concept', dateKey);
+      entryIdeas.push(conceptId);
     }
 
     THEME_RE.lastIndex = 0;
     while ((match = THEME_RE.exec(content)) !== null) {
       const theme = match[1].trim();
       if (!theme) continue;
-      const themeId = `theme:${dateKey}:${theme.toLowerCase()}`;
-      addNode(themeId, theme, 'theme', dateKey);
-      dayThemes.push(themeId);
-      addLink(dayId, themeId);
+      const themeId = `theme:${theme.toLowerCase()}`;
+      upsertNode(themeId, theme, 'theme', dateKey);
+      entryIdeas.push(themeId);
     }
 
-    for (let i = 0; i < dayConcepts.length; i++) {
-      for (let j = i + 1; j < dayConcepts.length; j++) {
-        addLink(dayConcepts[i], dayConcepts[j]);
-      }
-    }
-
-    for (let i = 0; i < dayTags.length; i++) {
-      for (let j = i + 1; j < dayTags.length; j++) {
-        addLink(dayTags[i], dayTags[j]);
+    const unique = [...new Set(entryIdeas)];
+    for (let i = 0; i < unique.length; i++) {
+      for (let j = i + 1; j < unique.length; j++) {
+        addLink(unique[i], unique[j]);
       }
     }
   }
 
-  return {
-    nodes: Array.from(nodeMap.values()),
-    links,
-  };
+  const links: ThoughtLink[] = [];
+  for (const [key, weight] of linkWeights) {
+    const [source, target] = key.split('|');
+    links.push({ source, target, weight });
+  }
+
+  const nodes = Array.from(nodeMap.values()).sort((a, b) => {
+    if (a.recent !== b.recent) return a.recent ? -1 : 1;
+    return b.count - a.count;
+  });
+
+  return { nodes, links };
+}
+
+export function getTopIdeas(graph: ThoughtGraph, limit = 5): ThoughtNode[] {
+  return [...graph.nodes]
+    .sort((a, b) => {
+      if (a.recent !== b.recent) return a.recent ? -1 : 1;
+      return b.count - a.count;
+    })
+    .slice(0, limit);
+}
+
+export function getNeighbors(
+  graph: ThoughtGraph,
+  nodeId: string,
+): ThoughtNode[] {
+  const neighborIds = new Set<string>();
+  for (const link of graph.links) {
+    if (link.source === nodeId) neighborIds.add(link.target);
+    if (link.target === nodeId) neighborIds.add(link.source);
+  }
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  return [...neighborIds]
+    .map((id) => byId.get(id))
+    .filter((n): n is ThoughtNode => !!n)
+    .sort((a, b) => b.count - a.count);
 }
 
 function isRecent(dateKey: string, today: string): boolean {
@@ -125,8 +161,12 @@ function isRecent(dateKey: string, today: string): boolean {
   return diffDays >= 0 && diffDays <= RECENT_DAYS;
 }
 
-function formatDayLabel(dateKey: string): string {
+export function formatLastSeen(dateKey: string): string {
   const [y, m, d] = dateKey.split('-').map(Number);
   const date = new Date(y, m - 1, d);
-  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  return date.toLocaleDateString('fr-FR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
 }
