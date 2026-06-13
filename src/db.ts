@@ -59,7 +59,7 @@ export async function saveDay(dateKey: string, content: string): Promise<void> {
 export async function getMeta(): Promise<AppMeta> {
   const db = await getDb();
   const meta = await db.get('meta', 'app');
-  return meta ?? defaultMeta();
+  return { ...defaultMeta(), ...meta };
 }
 
 export async function saveMeta(partial: Partial<AppMeta>): Promise<AppMeta> {

@@ -3,6 +3,10 @@ import {
   getStoredPassphrase,
   storePassphrase,
 } from './crypto';
+import {
+  getStoredMerlinApiKey,
+  storeMerlinApiKey,
+} from './merlin-ai';
 import { getMeta, saveMeta } from './db';
 import { startSyncLoop, syncNow } from './sync';
 import type { AppMeta } from './types';
@@ -11,6 +15,7 @@ import { todayKey } from './types';
 export interface SettingsCallbacks {
   onPassphraseSet: () => void;
   onSyncStatus: (status: string) => void;
+  onMerlinChange: (enabled: boolean) => void;
 }
 
 export function createSettingsButton(callbacks: SettingsCallbacks): HTMLElement {
@@ -28,40 +33,102 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
   overlay.className = 'modal-overlay';
 
   const modal = document.createElement('div');
-  modal.className = 'modal';
+  modal.className = 'modal modal--wide';
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-labelledby', 'settings-title');
 
   void getMeta().then((meta) => {
     modal.innerHTML = `
-      <h2 id="settings-title" class="modal__title">Synchronisation</h2>
-      <p class="modal__desc">
-        Entrez la même phrase secrète sur tous vos appareils pour synchroniser vos notes.
-        Vos données sont chiffrées avant d'être envoyées au serveur.
-      </p>
-      <label class="modal__label" for="passphrase">Phrase secrète</label>
-      <input
-        id="passphrase"
-        class="modal__input"
-        type="password"
-        autocomplete="current-password"
-        placeholder="Votre phrase secrète"
-      />
-      <p class="modal__status" id="sync-status"></p>
-      <div class="modal__actions">
-        <button type="button" class="btn btn--ghost" id="clear-passphrase">Effacer</button>
-        <button type="button" class="btn btn--primary" id="save-passphrase">Enregistrer</button>
-      </div>
-      <button type="button" class="btn btn--sync" id="sync-now">Synchroniser maintenant</button>
+      <h2 id="settings-title" class="modal__title">Réglages</h2>
+
+      <section class="modal__section">
+        <h3 class="modal__section-title">Merlin</h3>
+        <label class="modal__toggle">
+          <input type="checkbox" id="merlin-enabled" ${meta.merlinEnabled ? 'checked' : ''} />
+          <span>Activer Merlin</span>
+        </label>
+        <p class="modal__desc">
+          Dictée vocale pour votre journal. Dites <strong>« Merlin journal »</strong> pour commencer.
+          Pour terminer : <strong>« Merlin termine »</strong>, <strong>« Merlin stop »</strong>,
+          le bouton Stop, ou 8 secondes de silence.
+        </p>
+        <label class="modal__label" for="merlin-api-key">Clé API OpenAI (optionnel)</label>
+        <input
+          id="merlin-api-key"
+          class="modal__input"
+          type="password"
+          autocomplete="off"
+          placeholder="sk-…"
+        />
+        <p class="modal__desc modal__desc--small">
+          Permet de structurer automatiquement vos dictées (#tags, [[concepts]], sections).
+        </p>
+        <button type="button" class="btn btn--ghost" id="save-merlin-key">Enregistrer clé API</button>
+        <p class="modal__status" id="merlin-status"></p>
+      </section>
+
+      <section class="modal__section">
+        <h3 class="modal__section-title">Synchronisation</h3>
+        <p class="modal__desc">
+          Entrez la même phrase secrète sur tous vos appareils pour synchroniser vos notes.
+          Vos données sont chiffrées avant d'être envoyées au serveur.
+        </p>
+        <label class="modal__label" for="passphrase">Phrase secrète</label>
+        <input
+          id="passphrase"
+          class="modal__input"
+          type="password"
+          autocomplete="current-password"
+          placeholder="Votre phrase secrète"
+        />
+        <p class="modal__status" id="sync-status"></p>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" id="clear-passphrase">Effacer</button>
+          <button type="button" class="btn btn--primary" id="save-passphrase">Enregistrer</button>
+        </div>
+        <button type="button" class="btn btn--sync" id="sync-now">Synchroniser maintenant</button>
+      </section>
     `;
 
     const statusEl = modal.querySelector<HTMLElement>('#sync-status')!;
     const input = modal.querySelector<HTMLInputElement>('#passphrase')!;
+    const merlinStatusEl = modal.querySelector<HTMLElement>('#merlin-status')!;
+    const merlinToggle = modal.querySelector<HTMLInputElement>('#merlin-enabled')!;
+    const apiKeyInput = modal.querySelector<HTMLInputElement>('#merlin-api-key')!;
 
     if (meta.passphraseSet && getStoredPassphrase()) {
       input.placeholder = '•••••••• (déjà configurée)';
       statusEl.textContent = formatSyncStatus(meta);
     }
+
+    if (meta.merlinApiKeySet && getStoredMerlinApiKey()) {
+      apiKeyInput.placeholder = '•••••••• (déjà configurée)';
+      merlinStatusEl.textContent = 'Clé API enregistrée sur cet appareil.';
+    }
+
+    merlinToggle.addEventListener('change', () => {
+      const enabled = merlinToggle.checked;
+      void saveMeta({ merlinEnabled: enabled }).then(() => {
+        callbacks.onMerlinChange(enabled);
+        merlinStatusEl.textContent = enabled
+          ? 'Merlin activé.'
+          : 'Merlin désactivé.';
+      });
+    });
+
+    modal.querySelector('#save-merlin-key')!.addEventListener('click', () => {
+      const value = apiKeyInput.value.trim();
+      if (!value) {
+        merlinStatusEl.textContent = 'Entrez une clé API.';
+        return;
+      }
+      storeMerlinApiKey(value);
+      void saveMeta({ merlinApiKeySet: true }).then(() => {
+        merlinStatusEl.textContent = 'Clé API enregistrée.';
+        apiKeyInput.value = '';
+        apiKeyInput.placeholder = '•••••••• (déjà configurée)';
+      });
+    });
 
     modal.querySelector('#save-passphrase')!.addEventListener('click', () => {
       const value = input.value.trim();

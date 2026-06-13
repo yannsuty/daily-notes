@@ -13,6 +13,8 @@ export interface AppMeta {
   lastVisitDate: string;
   passphraseSet: boolean;
   lastSyncAt: number;
+  merlinEnabled: boolean;
+  merlinApiKeySet: boolean;
 }
 
 export interface SyncPayload {
@@ -61,5 +63,7 @@ export function defaultMeta(): AppMeta {
     lastVisitDate: today,
     passphraseSet: false,
     lastSyncAt: 0,
+    merlinEnabled: false,
+    merlinApiKeySet: false,
   };
 }

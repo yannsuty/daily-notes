@@ -1,4 +1,6 @@
 import { Journal, resetSessionScroll } from './journal';
+import { MindMap } from './mindmap';
+import { Merlin } from './merlin';
 import { getMeta, saveMeta } from './db';
 import {
   createSettingsButton,
@@ -7,6 +9,7 @@ import {
 } from './settings';
 import { syncNow } from './sync';
 import { getStoredPassphrase } from './crypto';
+import { TabBar } from './tabs';
 import { todayKey } from './types';
 
 export async function initApp(root: HTMLElement): Promise<void> {
@@ -23,13 +26,28 @@ export async function initApp(root: HTMLElement): Promise<void> {
   syncIndicator.className = 'app__sync-status';
   syncIndicator.setAttribute('aria-live', 'polite');
 
-  const journalContainer = document.createElement('main');
-  journalContainer.className = 'app__main';
+  const tabsHost = document.createElement('div');
+  tabsHost.className = 'app__tabs-host';
+
+  const mainContainer = document.createElement('main');
+  mainContainer.className = 'app__main';
+
+  const journalPanel = document.createElement('div');
+  journalPanel.id = 'tab-journal';
+
+  const thoughtsPanel = document.createElement('div');
+  thoughtsPanel.id = 'tab-thoughts';
+
+  mainContainer.appendChild(journalPanel);
+  mainContainer.appendChild(thoughtsPanel);
 
   header.appendChild(title);
   header.appendChild(syncIndicator);
 
   let journal: Journal | null = null;
+  let mindMap: MindMap | null = null;
+  let merlin: Merlin | null = null;
+  let tabBar: TabBar | null = null;
 
   const settingsBtn = createSettingsButton({
     onPassphraseSet: () => {
@@ -44,23 +62,52 @@ export async function initApp(root: HTMLElement): Promise<void> {
       journal?.refreshAfterSync();
       updateSyncIndicator(syncIndicator);
     },
+    onMerlinChange: (enabled) => {
+      merlin?.setEnabled(enabled);
+    },
   });
   header.appendChild(settingsBtn);
 
   root.appendChild(header);
-  root.appendChild(journalContainer);
+  root.appendChild(tabsHost);
+  root.appendChild(mainContainer);
 
   const meta = await getMeta();
 
+  tabBar = new TabBar(tabsHost, {
+    onChange: (tab) => {
+      if (tab === 'thoughts') {
+        void mindMap?.refresh();
+      }
+    },
+  });
+
   journal = new Journal({
-    container: journalContainer,
+    container: journalPanel,
     meta,
     onScrollAnchorChange: (anchor) => {
       void saveMeta({ scrollAnchor: anchor });
     },
   });
 
+  mindMap = new MindMap({
+    container: thoughtsPanel,
+    onNavigateToDay: (dateKey) => {
+      tabBar?.switchTo('journal');
+      void journal?.navigateToDay(dateKey, 0);
+    },
+  });
+
+  tabBar.registerPanel('journal', journalPanel);
+  tabBar.registerPanel('thoughts', thoughtsPanel);
+
   await journal.init();
+  await mindMap.init();
+
+  merlin = new Merlin({ journal, tabBar });
+  if (meta.merlinEnabled) {
+    merlin.setEnabled(true);
+  }
 
   const today = todayKey();
   if (meta.lastVisitDate !== today) {

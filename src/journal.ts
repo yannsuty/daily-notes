@@ -346,6 +346,13 @@ export class Journal {
     }
   }
 
+  async navigateToDay(dateKey: string, offsetPx = 0): Promise<void> {
+    await this.ensureDateLoaded(dateKey);
+    this.resizeAllTextareas();
+    await this.waitForLayout();
+    this.scrollToDate(dateKey, offsetPx);
+  }
+
   scrollToDate(dateKey: string, offsetPx: number): void {
     const header = this.scrollEl.querySelector<HTMLElement>(
       `[data-date="${dateKey}"] .day__header`,
@@ -358,6 +365,64 @@ export class Journal {
       this.scrollEl.scrollTop;
 
     this.scrollEl.scrollTop = Math.max(0, top + offsetPx);
+  }
+
+  getTodayTextarea(): HTMLTextAreaElement | null {
+    const today = todayKey();
+    return this.scrollEl.querySelector<HTMLTextAreaElement>(
+      `[data-date="${today}"] .day__input`,
+    );
+  }
+
+  getTodayContent(): string {
+    return this.getTodayTextarea()?.value ?? '';
+  }
+
+  async appendToToday(text: string): Promise<void> {
+    const today = todayKey();
+    await this.ensureDateLoaded(today);
+    const textarea = this.getTodayTextarea();
+    if (!textarea || !text.trim()) return;
+
+    const separator = textarea.value.trim() ? ' ' : '';
+    textarea.value += separator + text.trim();
+    this.autoResize(textarea);
+    this.scheduleSave(today, textarea.value);
+  }
+
+  replaceTodayChunk(oldChunk: string, newChunk: string): void {
+    const today = todayKey();
+    const textarea = this.getTodayTextarea();
+    if (!textarea) return;
+
+    const content = textarea.value;
+    const normContent = content.toLowerCase();
+    const normChunk = oldChunk.toLowerCase().trim();
+    const idx = normContent.lastIndexOf(normChunk);
+
+    if (idx >= 0) {
+      textarea.value =
+        content.slice(0, idx) + newChunk.trim() + content.slice(idx + oldChunk.trim().length);
+    } else {
+      const sep = content.trim() ? '\n\n' : '';
+      textarea.value = content + sep + newChunk.trim();
+    }
+
+    this.autoResize(textarea);
+    this.scheduleSave(today, textarea.value);
+  }
+
+  async flushToday(): Promise<void> {
+    const today = todayKey();
+    const existing = this.saveTimers.get(today);
+    if (existing) {
+      clearTimeout(existing);
+      this.saveTimers.delete(today);
+    }
+    const textarea = this.getTodayTextarea();
+    if (!textarea) return;
+    await saveDay(today, textarea.value);
+    this.onSave?.(today, textarea.value);
   }
 
   refreshAfterSync(): void {
