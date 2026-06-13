@@ -435,6 +435,21 @@ body {
   color: #f59e0b;
 }
 
+.merlin__hint {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  text-align: right;
+  max-width: 14rem;
+  line-height: 1.35;
+  opacity: 0.85;
+}
+
+.merlin__indicator--listening {
+  background: var(--accent);
+  opacity: 0.8;
+}
+
 .merlin__mic-btn,
 .merlin__stop-btn {
   width: 48px;

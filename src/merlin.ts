@@ -3,6 +3,7 @@ import type { Journal } from './journal';
 import type { TabBar } from './tabs';
 
 const SILENCE_TIMEOUT_MS = 8000;
+const RESTART_DELAY_MS = 350;
 
 const WAKE_PHRASES = ['merlin journal'];
 const STOP_PHRASES = ['merlin termine', 'merlin stop', "merlin c'est tout", 'merlin c est tout'];
@@ -44,6 +45,7 @@ interface MerlinSpeechRecognition extends EventTarget {
   onresult: ((ev: SpeechRecognitionEvent) => void) | null;
   onerror: ((ev: SpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
+  onstart: (() => void) | null;
 }
 
 type SpeechRecognitionCtor = new () => MerlinSpeechRecognition;
@@ -59,7 +61,6 @@ function getSpeechRecognition(): SpeechRecognitionCtor | null {
 export interface MerlinOptions {
   journal: Journal;
   tabBar: TabBar;
-  onEnabledChange?: (enabled: boolean) => void;
 }
 
 type MerlinState = 'off' | 'idle' | 'dictating';
@@ -73,7 +74,14 @@ export class Merlin {
   private sessionText = '';
   private silenceTimer: ReturnType<typeof setInterval> | null = null;
   private silenceCountdown = 0;
-  private restarting = false;
+  private heardSpeechInSession = false;
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
+  private wakeLock: WakeLockSentinel | null = null;
+  private micStream: MediaStream | null = null;
+  private intentionalStop = false;
+  private boundVisibilityHandler = (): void => {
+    void this.onVisibilityChange();
+  };
 
   constructor(options: MerlinOptions) {
     this.journal = options.journal;
@@ -82,7 +90,7 @@ export class Merlin {
 
   setEnabled(enabled: boolean): void {
     if (enabled) {
-      this.start();
+      void this.start();
     } else {
       this.stop();
     }
@@ -92,57 +100,145 @@ export class Merlin {
     return getSpeechRecognition() !== null;
   }
 
-  private start(): void {
-    const Ctor = getSpeechRecognition();
-    if (!Ctor) return;
+  private async start(): Promise<void> {
+    this.state = 'idle';
+    this.showOverlay('idle');
 
-    if (this.recognition) {
-      this.state = 'idle';
-      this.showOverlay('idle');
+    const Ctor = getSpeechRecognition();
+    if (!Ctor) {
+      this.updateStatus('Reconnaissance vocale non supportée sur ce navigateur.');
       return;
     }
 
-    this.recognition = new Ctor();
-    this.recognition.continuous = true;
-    this.recognition.interimResults = true;
-    this.recognition.lang = 'fr-FR';
-
-    this.recognition.onresult = (event) => this.handleResult(event);
-    this.recognition.onerror = (event) => {
-      if (event.error !== 'no-speech' && event.error !== 'aborted') {
-        this.updateStatus(`Erreur : ${event.error}`);
-      }
-    };
-    this.recognition.onend = () => {
-      if (this.state !== 'off' && !this.restarting) {
-        this.restarting = true;
-        try {
-          this.recognition?.start();
-        } catch {
-          // already started
-        }
-        this.restarting = false;
-      }
-    };
-
-    this.state = 'idle';
-    this.showOverlay('idle');
-    try {
-      this.recognition.start();
-    } catch {
-      // mic permission pending
+    const micOk = await this.ensureMicrophone();
+    if (!micOk) {
+      this.updateStatus('Autorisez le micro pour utiliser Merlin.');
+      return;
     }
+
+    if (!this.recognition) {
+      this.recognition = new Ctor();
+      this.recognition.continuous = true;
+      this.recognition.interimResults = true;
+      this.recognition.lang = 'fr-FR';
+
+      this.recognition.onresult = (event) => this.handleResult(event);
+      this.recognition.onerror = (event) => this.handleError(event);
+      this.recognition.onend = () => this.scheduleRestart();
+      this.recognition.onstart = () => this.updateListeningState(true);
+    }
+
+    document.addEventListener('visibilitychange', this.boundVisibilityHandler);
+
+    this.startListening();
   }
 
   private stop(): void {
     this.state = 'off';
+    this.intentionalStop = true;
     this.clearSilenceTimer();
+    this.clearRestartTimer();
+    void this.releaseWakeLock();
+    document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+
     if (this.recognition) {
       this.recognition.onend = null;
-      this.recognition.abort();
+      this.recognition.onresult = null;
+      this.recognition.onerror = null;
+      this.recognition.onstart = null;
+      try {
+        this.recognition.abort();
+      } catch {
+        // ignore
+      }
       this.recognition = null;
     }
+
+    if (this.micStream) {
+      for (const track of this.micStream.getTracks()) track.stop();
+      this.micStream = null;
+    }
+
     this.hideOverlay();
+  }
+
+  private async ensureMicrophone(): Promise<boolean> {
+    if (!navigator.mediaDevices?.getUserMedia) return true;
+    try {
+      if (this.micStream) return true;
+      this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private startListening(): void {
+    if (this.state === 'off' || !this.recognition) return;
+    this.clearRestartTimer();
+    try {
+      this.recognition.start();
+    } catch {
+      this.scheduleRestart(RESTART_DELAY_MS);
+    }
+  }
+
+  private scheduleRestart(delayMs = RESTART_DELAY_MS): void {
+    if (this.state === 'off' || !this.recognition || this.intentionalStop) return;
+    this.clearRestartTimer();
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null;
+      if (this.state === 'off' || !this.recognition) return;
+      try {
+        this.recognition.stop();
+      } catch {
+        // already stopped
+      }
+      setTimeout(() => this.startListening(), 100);
+    }, delayMs);
+  }
+
+  private clearRestartTimer(): void {
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+  }
+
+  private async restartSession(): Promise<void> {
+    if (this.state === 'off' || !this.recognition) return;
+    this.clearRestartTimer();
+    this.intentionalStop = true;
+    try {
+      this.recognition.stop();
+    } catch {
+      // ignore
+    }
+    await new Promise((r) => setTimeout(r, RESTART_DELAY_MS));
+    this.intentionalStop = false;
+    this.startListening();
+  }
+
+  private handleError(event: SpeechRecognitionErrorEvent): void {
+    if (event.error === 'no-speech' || event.error === 'aborted') {
+      this.scheduleRestart();
+      return;
+    }
+    if (event.error === 'not-allowed') {
+      this.updateStatus('Micro refusé — autorisez l\'accès dans les réglages du navigateur.');
+      return;
+    }
+    this.updateStatus(`Erreur micro : ${event.error}`);
+    this.scheduleRestart(800);
+  }
+
+  private async onVisibilityChange(): Promise<void> {
+    if (document.visibilityState === 'visible' && this.state !== 'off') {
+      await this.restartSession();
+      if (this.state === 'idle') {
+        this.updateStatus('Écoute reprise — dites « Merlin journal »');
+      }
+    }
   }
 
   private handleResult(event: SpeechRecognitionEvent): void {
@@ -159,8 +255,11 @@ export class Merlin {
       }
     }
 
+    const spoken = (finalText + interim).trim();
+    if (!spoken) return;
+
     if (this.state === 'idle') {
-      if (finalText && matchesPhrase(finalText, WAKE_PHRASES)) {
+      if (matchesPhrase(spoken, WAKE_PHRASES)) {
         void this.startDictation();
       }
       return;
@@ -172,42 +271,50 @@ export class Merlin {
         return;
       }
 
-      const dictationText = stripCommands(finalText || interim);
-      if (dictationText) {
+      const liveInterim = stripCommands(interim);
+      const liveFinal = stripCommands(finalText);
+
+      if (liveInterim || liveFinal) {
+        this.heardSpeechInSession = true;
         this.resetSilenceTimer();
-        if (finalText) {
-          const clean = stripCommands(finalText);
-          if (clean) {
-            this.sessionText += (this.sessionText ? ' ' : '') + clean;
-            void this.journal.appendToToday(clean);
-          }
-        }
-        this.updateLiveText(this.sessionText, interim ? stripCommands(interim) : '');
       }
+
+      if (liveFinal) {
+        this.sessionText += (this.sessionText ? ' ' : '') + liveFinal;
+        void this.journal.appendToToday(liveFinal);
+      }
+
+      this.updateLiveText(this.sessionText, liveInterim);
     }
   }
 
   private async startDictation(): Promise<void> {
     this.state = 'dictating';
     this.sessionText = '';
+    this.heardSpeechInSession = false;
+    this.clearSilenceTimer();
     this.tabBar.switchTo('journal');
     this.showOverlay('dictating');
-    this.resetSilenceTimer();
-    this.updateStatus('Dictée en cours — dites « Merlin termine » pour arrêter');
+    await this.requestWakeLock();
+    await this.restartSession();
+    this.updateStatus('Dictée en cours — parlez, puis « Merlin termine » pour arrêter');
   }
 
   private async endDictation(): Promise<void> {
     if (this.state !== 'dictating') return;
     this.state = 'idle';
+    this.heardSpeechInSession = false;
     this.clearSilenceTimer();
     await this.journal.flushToday();
+    await this.releaseWakeLock();
+    await this.restartSession();
 
     const hasApiKey = !!getStoredMerlinApiKey();
     if (this.sessionText.trim() && hasApiKey) {
       this.showStructurePrompt();
     } else {
       this.showOverlay('idle');
-      this.updateStatus('Session terminée');
+      this.updateStatus('Session terminée — dites « Merlin journal » pour recommencer');
     }
   }
 
@@ -230,6 +337,7 @@ export class Merlin {
     prompt.querySelector('.merlin__structure-skip')!.addEventListener('click', () => {
       prompt.remove();
       this.showOverlay('idle');
+      this.updateStatus('Dites « Merlin journal » ou appuyez sur 🎙');
     });
 
     prompt.querySelector('.merlin__structure-go')!.addEventListener('click', () => {
@@ -262,9 +370,13 @@ export class Merlin {
     }
 
     this.showOverlay('idle');
+    this.updateStatus('Dites « Merlin journal » ou appuyez sur 🎙');
+    await this.restartSession();
   }
 
   private resetSilenceTimer(): void {
+    if (!this.heardSpeechInSession) return;
+
     this.clearSilenceTimer();
     this.silenceCountdown = SILENCE_TIMEOUT_MS / 1000;
     this.updateSilenceCountdown();
@@ -283,15 +395,42 @@ export class Merlin {
       clearInterval(this.silenceTimer);
       this.silenceTimer = null;
     }
+    this.updateSilenceCountdown();
   }
 
   private updateSilenceCountdown(): void {
     const el = this.overlay?.querySelector('.merlin__silence');
-    if (el && this.state === 'dictating') {
-      el.textContent =
-        this.silenceCountdown > 0
-          ? `Arrêt auto dans ${this.silenceCountdown}s`
-          : '';
+    if (!el || this.state !== 'dictating') {
+      if (el) el.textContent = '';
+      return;
+    }
+    if (!this.heardSpeechInSession) {
+      el.textContent = 'Parlez…';
+      return;
+    }
+    el.textContent =
+      this.silenceCountdown > 0
+        ? `Arrêt auto dans ${this.silenceCountdown}s`
+        : '';
+  }
+
+  private async requestWakeLock(): Promise<void> {
+    if (!('wakeLock' in navigator)) return;
+    try {
+      this.wakeLock = await navigator.wakeLock.request('screen');
+    } catch {
+      // ignore — optional
+    }
+  }
+
+  private async releaseWakeLock(): Promise<void> {
+    if (this.wakeLock) {
+      try {
+        await this.wakeLock.release();
+      } catch {
+        // ignore
+      }
+      this.wakeLock = null;
     }
   }
 
@@ -305,6 +444,7 @@ export class Merlin {
           <div class="merlin__status"></div>
           <div class="merlin__live"></div>
           <div class="merlin__silence"></div>
+          <p class="merlin__hint">L'app doit rester ouverte — écoute inactive si l'écran est éteint.</p>
           <button type="button" class="merlin__mic-btn" aria-label="Démarrer dictée">🎙</button>
           <button type="button" class="merlin__stop-btn" hidden aria-label="Arrêter dictée">Stop</button>
         </div>
@@ -337,6 +477,13 @@ export class Merlin {
   private hideOverlay(): void {
     this.overlay?.remove();
     this.overlay = null;
+  }
+
+  private updateListeningState(active: boolean): void {
+    const indicator = this.overlay?.querySelector('.merlin__indicator');
+    if (indicator && this.state === 'idle') {
+      indicator.classList.toggle('merlin__indicator--listening', active);
+    }
   }
 
   private updateStatus(text: string): void {

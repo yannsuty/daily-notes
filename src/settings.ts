@@ -48,9 +48,10 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
           <span>Activer Merlin</span>
         </label>
         <p class="modal__desc">
-          Dictée vocale pour votre journal. Dites <strong>« Merlin journal »</strong> pour commencer.
+          Dictée vocale pour votre journal. Dites <strong>« Merlin journal »</strong> pour commencer
+          (l'app doit rester ouverte au premier plan — pas d'écoute écran éteint).
           Pour terminer : <strong>« Merlin termine »</strong>, <strong>« Merlin stop »</strong>,
-          le bouton Stop, ou 8 secondes de silence.
+          le bouton Stop, ou 8 secondes de silence après votre dernier mot.
         </p>
         <label class="modal__label" for="merlin-api-key">Clé API OpenAI (optionnel)</label>
         <input
