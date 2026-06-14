@@ -2,9 +2,9 @@ import { getStoredMerlinApiKey, structureJournalText } from './merlin-ai';
 import type { Journal } from './journal';
 import type { TabBar } from './tabs';
 
-const SILENCE_TIMEOUT_MS = 8000;
-const RESTART_DELAY_MS = 400;
-const INTERIM_COMMIT_MS = 1500;
+const SILENCE_TIMEOUT_MS = 10000;
+const RESTART_DELAY_MS = 500;
+const MIN_CONFIDENCE = 0.35;
 
 const STOP_PHRASES = ['merlin termine', 'merlin stop', "merlin c'est tout", 'merlin c est tout'];
 
@@ -76,8 +76,8 @@ export class Merlin {
   private silenceCountdown = 0;
   private heardSpeechInSession = false;
   private listeningActive = false;
-  private interimCommitTimer: ReturnType<typeof setTimeout> | null = null;
-  private pendingInterim = '';
+  private finalizedIndex = 0;
+  private lastCommittedChunk = '';
   private wakeLock: WakeLockSentinel | null = null;
   private boundVisibilityHandler = (): void => {
     void this.onVisibilityChange();
@@ -144,6 +144,9 @@ export class Merlin {
       this.recognition.onstart = () => {
         this.listeningActive = true;
         this.updateListeningState(true);
+        if (this.state === 'dictating') {
+          this.finalizedIndex = 0;
+        }
       };
     }
 
@@ -201,7 +204,6 @@ export class Merlin {
     this.state = 'off';
     this.listeningActive = false;
     this.clearSilenceTimer();
-    this.clearInterimCommit();
     void this.releaseWakeLock();
     document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
 
@@ -242,7 +244,7 @@ export class Merlin {
   }
 
   private handleResult(event: SpeechRecognitionEvent): void {
-    const { full, newFinal, interim } = parseResults(event);
+    const { full } = parseResults(event);
 
     if (!full) return;
 
@@ -255,51 +257,61 @@ export class Merlin {
     }
 
     if (this.state === 'dictating') {
-      if (newFinal && matchesPhrase(newFinal, STOP_PHRASES)) {
+      if (matchesPhrase(getRecentFinalText(event), STOP_PHRASES)) {
         void this.endDictation();
         return;
       }
 
-      const finalChunk = stripCommands(newFinal);
-      const interimChunk = stripCommands(interim);
+      const interim = getInterimText(event);
+      this.processFinalSegments(event);
 
-      if (finalChunk) {
-        this.clearInterimCommit();
-        this.pendingInterim = '';
-        this.commitSpeech(finalChunk);
-      } else if (interimChunk) {
-        this.pendingInterim = interimChunk;
-        this.scheduleInterimCommit();
-        this.updateDictation(this.sessionText, interimChunk);
+      const preview = this.sessionText + (interim ? ` ${interim}` : '');
+      this.updateDictation(preview);
+    }
+  }
+
+  /** N'écrit que les segments finalisés une seule fois (pattern Web Speech API). */
+  private processFinalSegments(event: SpeechRecognitionEvent): void {
+    for (let i = this.finalizedIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      if (!result.isFinal) continue;
+
+      const alt = result[0];
+      const raw = alt?.transcript ?? '';
+      const confidence = alt?.confidence ?? 1;
+      if (!raw.trim()) {
+        this.finalizedIndex = i + 1;
+        continue;
       }
+      if (confidence > 0 && confidence < MIN_CONFIDENCE) {
+        this.finalizedIndex = i + 1;
+        continue;
+      }
+
+      const chunk = stripCommands(raw);
+      if (chunk) {
+        this.commitSpeech(chunk);
+      }
+      this.finalizedIndex = i + 1;
     }
   }
 
   private commitSpeech(text: string): void {
-    if (!text.trim()) return;
+    const cleaned = collapseStutter(text.trim());
+    if (!cleaned) return;
+
+    const norm = normalize(cleaned);
+    const lastNorm = normalize(this.lastCommittedChunk);
+    if (norm === lastNorm) return;
+
+    const sessionNorm = normalize(this.sessionText);
+    if (sessionNorm.endsWith(norm)) return;
+
     this.heardSpeechInSession = true;
     this.resetSilenceTimer();
-    this.sessionText += (this.sessionText ? ' ' : '') + text.trim();
-    void this.journal.appendToToday(text.trim());
-    this.updateDictation(this.sessionText, '');
-  }
-
-  private scheduleInterimCommit(): void {
-    this.clearInterimCommit();
-    this.interimCommitTimer = setTimeout(() => {
-      if (this.pendingInterim && this.state === 'dictating') {
-        const text = this.pendingInterim;
-        this.pendingInterim = '';
-        this.commitSpeech(text);
-      }
-    }, INTERIM_COMMIT_MS);
-  }
-
-  private clearInterimCommit(): void {
-    if (this.interimCommitTimer) {
-      clearTimeout(this.interimCommitTimer);
-      this.interimCommitTimer = null;
-    }
+    this.lastCommittedChunk = cleaned;
+    this.sessionText += (this.sessionText ? ' ' : '') + cleaned;
+    void this.journal.appendToToday(cleaned);
   }
 
   private async startDictation(): Promise<void> {
@@ -308,29 +320,23 @@ export class Merlin {
 
     this.state = 'dictating';
     this.sessionText = '';
-    this.pendingInterim = '';
+    this.finalizedIndex = 0;
+    this.lastCommittedChunk = '';
     this.heardSpeechInSession = false;
     this.clearSilenceTimer();
-    this.clearInterimCommit();
     this.tabBar.switchTo('journal');
     this.showOverlay('dictating');
     await this.requestWakeLock();
-    this.updateStatus('Dictée en cours — parlez librement');
-    this.updateDictation('', '');
+    this.updateStatus('Dictée en cours — parlez par phrases courtes, faites de courtes pauses');
+    this.updateDictation('');
   }
 
   private async endDictation(): Promise<void> {
     if (this.state !== 'dictating') return;
 
-    if (this.pendingInterim) {
-      this.commitSpeech(this.pendingInterim);
-      this.pendingInterim = '';
-    }
-
     this.state = 'idle';
     this.heardSpeechInSession = false;
     this.clearSilenceTimer();
-    this.clearInterimCommit();
     await this.journal.flushToday();
     await this.releaseWakeLock();
 
@@ -525,11 +531,10 @@ export class Merlin {
     if (el) el.textContent = text ? `Entendu : ${text}` : '';
   }
 
-  private updateDictation(final: string, interim: string): void {
+  private updateDictation(preview: string): void {
     const el = this.overlay?.querySelector('.merlin__live');
     if (!el) return;
-    const display = final + (interim ? ` ${interim}` : '');
-    el.textContent = display;
+    el.textContent = preview;
   }
 
   destroy(): void {
@@ -539,14 +544,11 @@ export class Merlin {
 
 interface ParsedResults {
   full: string;
-  newFinal: string;
-  interim: string;
 }
 
 function parseResults(event: SpeechRecognitionEvent): ParsedResults {
   let fullFinal = '';
   let interim = '';
-  let newFinal = '';
 
   for (let i = 0; i < event.results.length; i++) {
     const transcript = event.results[i][0]?.transcript ?? '';
@@ -557,14 +559,40 @@ function parseResults(event: SpeechRecognitionEvent): ParsedResults {
     }
   }
 
-  for (let i = event.resultIndex; i < event.results.length; i++) {
-    if (event.results[i].isFinal) {
-      newFinal += event.results[i][0]?.transcript ?? '';
+  const full = (fullFinal + interim).trim();
+  return { full };
+}
+
+function getInterimText(event: SpeechRecognitionEvent): string {
+  for (let i = event.results.length - 1; i >= 0; i--) {
+    if (!event.results[i].isFinal) {
+      return stripCommands(event.results[i][0]?.transcript ?? '');
     }
   }
+  return '';
+}
 
-  const full = (fullFinal + interim).trim();
-  return { full, newFinal: newFinal.trim(), interim: interim.trim() };
+function getRecentFinalText(event: SpeechRecognitionEvent): string {
+  let text = '';
+  for (let i = event.resultIndex; i < event.results.length; i++) {
+    if (event.results[i].isFinal) {
+      text += event.results[i][0]?.transcript ?? '';
+    }
+  }
+  return text.trim();
+}
+
+/** Réduit les répétitions consécutives : « le le le » → « le » */
+function collapseStutter(text: string): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  for (const word of words) {
+    const prev = out[out.length - 1];
+    if (!prev || normalize(prev) !== normalize(word)) {
+      out.push(word);
+    }
+  }
+  return out.join(' ');
 }
 
 function normalize(text: string): string {
