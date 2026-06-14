@@ -59,4 +59,72 @@ Les notes sont chiffrées côté client avant envoi. Le serveur ne voit que du c
 - Vite + TypeScript (vanilla)
 - IndexedDB (`idb`)
 - vite-plugin-pwa
+- Capacitor (app Android native)
 - Vercel Serverless + Upstash Redis
+
+## App Android native (Obtainium)
+
+L'app peut être installée comme APK native via [Obtainium](https://github.com/ImranR98/Obtainium), avec mises à jour automatiques depuis les GitHub Releases.
+
+### Prérequis GitHub
+
+Configurer dans le dépôt (**Settings → Secrets and variables → Actions**) :
+
+| Nom | Type | Description |
+|-----|------|-------------|
+| `ANDROID_KEYSTORE_BASE64` | Secret | Keystore encodé en base64 |
+| `ANDROID_KEYSTORE_PASSWORD` | Secret | Mot de passe du keystore |
+| `ANDROID_KEY_ALIAS` | Secret | Alias de la clé (ex. `daily-note`) |
+| `ANDROID_KEY_PASSWORD` | Secret | Mot de passe de la clé |
+| `VERCEL_URL` | Variable | URL Vercel (ex. `https://votre-app.vercel.app`) |
+
+Générer le keystore (une seule fois, à conserver précieusement) :
+
+```bash
+keytool -genkey -v -keystore release.keystore -alias daily-note \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Encoder en base64 pour le secret GitHub :
+
+```bash
+# Linux / macOS
+base64 -w 0 release.keystore
+
+# Windows PowerShell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("release.keystore"))
+```
+
+### Publier une version
+
+```bash
+# Incrémenter versionCode / versionName dans android/app/build.gradle
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Le workflow `.github/workflows/android-release.yml` build l'APK signé et crée la Release automatiquement.
+
+### Installer via Obtainium
+
+1. Installer Obtainium (F-Droid ou [releases GitHub](https://github.com/ImranR98/Obtainium/releases))
+2. **+** → source **GitHub**
+3. URL du repo : `https://github.com/<votre-user>/daily-note`
+4. Filtrer l'asset : `app-release.apk`
+5. Activer la vérification des mises à jour
+6. Installer
+
+### Build local (développement)
+
+```bash
+npm run cap:sync          # build web + sync vers android/
+npx cap open android      # ouvre Android Studio
+```
+
+Pour un build Capacitor local, définir l'URL API :
+
+```bash
+# .env.production
+VITE_API_BASE_URL=https://votre-app.vercel.app
+```
+

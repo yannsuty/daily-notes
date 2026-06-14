@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Daily Note</string>
+    <string name="title_activity_main">Daily Note</string>
+    <string name="package_name">fr.dailynote.app</string>
+    <string name="custom_url_scheme">fr.dailynote.app</string>
+</resources>

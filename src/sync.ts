@@ -1,3 +1,4 @@
+import { apiUrl } from './api-base';
 import { exportPayload, importDays, saveMeta } from './db';
 import {
   decryptPayload,
@@ -13,14 +14,14 @@ let syncTimer: ReturnType<typeof setInterval> | null = null;
 let syncing = false;
 
 async function fetchRemote(syncId: string): Promise<EncryptedBlob | null> {
-  const res = await fetch(`/api/sync?id=${encodeURIComponent(syncId)}`);
+  const res = await fetch(apiUrl(`/api/sync?id=${encodeURIComponent(syncId)}`));
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Pull failed: ${res.status}`);
   return res.json() as Promise<EncryptedBlob>;
 }
 
 async function pushRemote(syncId: string, blob: EncryptedBlob): Promise<void> {
-  const res = await fetch('/api/sync', {
+  const res = await fetch(apiUrl('/api/sync'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: syncId, ...blob }),

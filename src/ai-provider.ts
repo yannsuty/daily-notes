@@ -1,3 +1,5 @@
+import { apiUrl } from './api-base';
+
 export type AiProvider = 'openrouter' | 'openai' | 'custom';
 
 export interface AiConfig {
@@ -108,7 +110,7 @@ async function chatViaOpenRouterProxy(
   }
 
   try {
-    const response = await fetch('/api/ai', {
+    const response = await fetch(apiUrl('/api/ai'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
