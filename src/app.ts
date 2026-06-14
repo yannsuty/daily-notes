@@ -62,8 +62,15 @@ export async function initApp(root: HTMLElement): Promise<void> {
       journal?.refreshAfterSync();
       updateSyncIndicator(syncIndicator);
     },
-    onMerlinChange: (enabled) => {
+    onMerlinChange: (enabled, fromUserGesture) => {
       merlin?.setEnabled(enabled);
+      if (enabled && fromUserGesture) {
+        void merlin?.beginListening().then((ok) => {
+          if (ok) {
+            // status updated inside merlin
+          }
+        });
+      }
     },
   });
   header.appendChild(settingsBtn);

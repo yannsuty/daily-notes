@@ -15,7 +15,7 @@ import { todayKey } from './types';
 export interface SettingsCallbacks {
   onPassphraseSet: () => void;
   onSyncStatus: (status: string) => void;
-  onMerlinChange: (enabled: boolean) => void;
+  onMerlinChange: (enabled: boolean, fromUserGesture?: boolean) => void;
 }
 
 export function createSettingsButton(callbacks: SettingsCallbacks): HTMLElement {
@@ -110,10 +110,12 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
     merlinToggle.addEventListener('change', () => {
       const enabled = merlinToggle.checked;
       void saveMeta({ merlinEnabled: enabled }).then(() => {
-        callbacks.onMerlinChange(enabled);
-        merlinStatusEl.textContent = enabled
-          ? 'Merlin activé.'
-          : 'Merlin désactivé.';
+        callbacks.onMerlinChange(enabled, true);
+        if (enabled) {
+          merlinStatusEl.textContent = 'Merlin activé — appuyez sur 🎙 pour lancer l\'écoute.';
+        } else {
+          merlinStatusEl.textContent = 'Merlin désactivé.';
+        }
       });
     });
 

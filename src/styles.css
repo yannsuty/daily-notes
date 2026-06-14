@@ -417,6 +417,7 @@ body {
 }
 
 .merlin__status,
+.merlin__heard,
 .merlin__live,
 .merlin__silence {
   font-size: 0.75rem;
@@ -424,6 +425,12 @@ body {
   text-align: right;
   max-width: 14rem;
   line-height: 1.4;
+}
+
+.merlin__heard {
+  color: var(--accent);
+  font-size: 0.6875rem;
+  opacity: 0.9;
 }
 
 .merlin__live {
@@ -546,6 +553,11 @@ body {
   color: #8b5cf6;
 }
 
+.mindmap__chip--word {
+  border-color: #6366f1;
+  color: #6366f1;
+}
+
 .mindmap__chip--concept {
   border-color: #10b981;
   color: #10b981;
@@ -640,6 +652,14 @@ body {
   opacity: 0.5;
 }
 
+.mindmap__legend-item--word::before {
+  background: #6366f1;
+}
+
+.mindmap__legend-item--concept::before {
+  background: #10b981;
+}
+
 .mindmap__canvas {
   flex: 1;
   min-height: 0;
@@ -688,6 +708,11 @@ body {
 
 .mindmap__node--tag circle {
   fill: #8b5cf6;
+  opacity: 0.8;
+}
+
+.mindmap__node--word circle {
+  fill: #6366f1;
   opacity: 0.8;
 }
 

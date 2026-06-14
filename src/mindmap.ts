@@ -17,6 +17,7 @@ import { select } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
 import { getAllDays } from './db';
 import {
+  daysFingerprint,
   formatLastSeen,
   getNeighbors,
   getTopIdeas,
@@ -49,6 +50,7 @@ export class MindMap {
   private resizeObserver: ResizeObserver;
   private currentGraph: ThoughtGraph = { nodes: [], links: [] };
   private selectedId: string | null = null;
+  private cacheFingerprint = '';
 
   constructor(options: MindMapOptions) {
     this.container = options.container;
@@ -64,6 +66,8 @@ export class MindMap {
     legend.innerHTML = `
       <span class="mindmap__legend-item mindmap__legend-item--recent">En ce moment</span>
       <span class="mindmap__legend-item mindmap__legend-item--past">Passé</span>
+      <span class="mindmap__legend-item mindmap__legend-item--word">Mots</span>
+      <span class="mindmap__legend-item mindmap__legend-item--concept">Concepts</span>
     `;
 
     const refreshBtn = document.createElement('button');
@@ -104,7 +108,16 @@ export class MindMap {
 
   async refresh(): Promise<void> {
     const days = await getAllDays();
+    const fingerprint = daysFingerprint(days);
+
+    if (fingerprint === this.cacheFingerprint && this.currentGraph.nodes.length > 0) {
+      this.renderSummary(this.currentGraph);
+      this.render(this.currentGraph);
+      return;
+    }
+
     this.currentGraph = parseThoughtsFromDays(days, todayKey());
+    this.cacheFingerprint = fingerprint;
     this.renderSummary(this.currentGraph);
     this.render(this.currentGraph);
   }
@@ -146,7 +159,7 @@ export class MindMap {
         <button type="button" class="mindmap__detail-close" aria-label="Fermer">×</button>
       </div>
       <p class="mindmap__detail-meta">
-        Mentionné ${node.count} fois · Dernière fois ${formatLastSeen(node.lastSeen)}${node.recent ? ' · En ce moment' : ''}
+        ${node.count} occurrence${node.count > 1 ? 's' : ''} · Dernière fois ${formatLastSeen(node.lastSeen)}${node.recent ? ' · En ce moment' : ''}
       </p>
       ${
         neighbors.length > 0
@@ -190,7 +203,7 @@ export class MindMap {
       const empty = document.createElement('p');
       empty.className = 'mindmap__empty';
       empty.textContent =
-        'Aucune idée détectée. Utilisez #tags, [[concepts]] et ## titres dans votre journal pour voir vos pensées prendre forme ici.';
+        'Pas assez de texte pour dégager des idées. Écrivez un peu plus dans votre journal — les mots et concepts récurrents apparaîtront ici automatiquement.';
       this.wrapper.querySelector('.mindmap__empty')?.remove();
       this.wrapper.appendChild(empty);
       return;
@@ -348,7 +361,11 @@ export class MindMap {
 }
 
 function nodeRadius(node: ThoughtNode, maxCount = 1): number {
-  const base = node.type === 'theme' ? 14 : node.type === 'concept' ? 12 : 10;
+  const base =
+    node.type === 'theme' ? 14
+    : node.type === 'concept' ? 13
+    : node.type === 'tag' ? 11
+    : 10;
   const scale = 1 + (node.count / maxCount) * 1.2;
   const recentBoost = node.recent ? 1.15 : 0.85;
   return base * scale * recentBoost;
