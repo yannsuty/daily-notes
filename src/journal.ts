@@ -1,6 +1,7 @@
 import { getDay, getDays, listDayKeysBefore, saveDay } from './db';
 import type { AppMeta, ScrollAnchor } from './types';
 import { addDays, formatDateLabel, todayKey } from './types';
+import { onViewportChange } from './viewport';
 
 const LAZY_LOAD_BATCH = 7;
 const SAVE_DEBOUNCE_MS = 300;
@@ -34,6 +35,8 @@ export class Journal {
   private scrollSaveTimer: ReturnType<typeof setTimeout> | null = null;
   private loadingOlder = false;
   private initComplete = false;
+  private offViewportChange: (() => void) | null = null;
+  private focusedTextarea: HTMLTextAreaElement | null = null;
 
   constructor(options: JournalOptions) {
     this.container = options.container;
@@ -59,9 +62,11 @@ export class Journal {
     this.resizeAllTextareas();
     this.setupScrollPersistence();
     this.setupOlderDaysLoader();
+    this.setupKeyboardScroll();
     window.addEventListener('resize', () => {
       this.updateViewportVars();
       this.resizeAllTextareas();
+      this.scrollFocusedInputIntoView();
     });
 
     await this.waitForLayout();
@@ -156,6 +161,22 @@ export class Journal {
     textarea.addEventListener('input', () => {
       this.autoResize(textarea);
       this.scheduleSave(dateKey, textarea.value);
+      if (document.activeElement === textarea) {
+        this.scrollFocusedInputIntoView();
+      }
+    });
+
+    textarea.addEventListener('focus', () => {
+      this.focusedTextarea = textarea;
+      requestAnimationFrame(() => {
+        setTimeout(() => this.scrollFocusedInputIntoView(), 350);
+      });
+    });
+
+    textarea.addEventListener('blur', () => {
+      if (this.focusedTextarea === textarea) {
+        this.focusedTextarea = null;
+      }
     });
 
     section.appendChild(header);
@@ -171,6 +192,7 @@ export class Journal {
 
   private updateViewportVars(): void {
     const appHeader = document.querySelector<HTMLElement>('.app__header');
+    const tabsHost = document.querySelector<HTMLElement>('.app__tabs-host');
     const dayHeader = this.scrollEl.querySelector<HTMLElement>(
       '.day:last-child .day__header',
     );
@@ -182,11 +204,54 @@ export class Journal {
       );
     }
 
+    if (tabsHost) {
+      document.documentElement.style.setProperty(
+        '--tabs-height',
+        `${tabsHost.getBoundingClientRect().height}px`,
+      );
+    }
+
     if (dayHeader) {
       document.documentElement.style.setProperty(
         '--day-header-height',
         `${dayHeader.getBoundingClientRect().height}px`,
       );
+    }
+  }
+
+  private setupKeyboardScroll(): void {
+    this.offViewportChange = onViewportChange(() => {
+      this.updateViewportVars();
+      this.resizeAllTextareas();
+      this.scrollFocusedInputIntoView();
+    });
+  }
+
+  private scrollFocusedInputIntoView(): void {
+    const textarea = this.focusedTextarea;
+    if (!textarea) return;
+
+    const vv = window.visualViewport;
+    const scrollRect = this.scrollEl.getBoundingClientRect();
+    const inputRect = textarea.getBoundingClientRect();
+    const margin = 20;
+
+    if (vv) {
+      const visibleTop = vv.offsetTop + margin;
+      const visibleBottom = vv.offsetTop + vv.height - margin;
+
+      if (inputRect.bottom > visibleBottom) {
+        const delta = inputRect.bottom - visibleBottom;
+        this.scrollEl.scrollTop += delta;
+      } else if (inputRect.top < visibleTop) {
+        const delta = inputRect.top - visibleTop;
+        this.scrollEl.scrollTop += delta;
+      }
+      return;
+    }
+
+    if (inputRect.bottom > scrollRect.bottom - margin) {
+      this.scrollEl.scrollTop += inputRect.bottom - scrollRect.bottom + margin;
     }
   }
 
@@ -388,6 +453,9 @@ export class Journal {
     textarea.value += separator + text.trim();
     this.autoResize(textarea);
     this.scheduleSave(today, textarea.value);
+    if (document.activeElement === textarea) {
+      this.scrollFocusedInputIntoView();
+    }
   }
 
   replaceTodayChunk(oldChunk: string, newChunk: string): void {
@@ -444,5 +512,7 @@ export class Journal {
   destroy(): void {
     for (const timer of this.saveTimers.values()) clearTimeout(timer);
     if (this.scrollSaveTimer) clearTimeout(this.scrollSaveTimer);
+    this.offViewportChange?.();
+    this.offViewportChange = null;
   }
 }

@@ -4,7 +4,6 @@ import type { TabBar } from './tabs';
 
 const SILENCE_TIMEOUT_MS = 10000;
 const RESTART_DELAY_MS = 500;
-const MIN_CONFIDENCE = 0.35;
 
 const STOP_PHRASES = ['merlin termine', 'merlin stop', "merlin c'est tout", 'merlin c est tout'];
 
@@ -76,6 +75,7 @@ export class Merlin {
   private silenceCountdown = 0;
   private heardSpeechInSession = false;
   private listeningActive = false;
+  private lastHypothesis = '';
   private wakeLock: WakeLockSentinel | null = null;
   private boundVisibilityHandler = (): void => {
     void this.onVisibilityChange();
@@ -109,13 +109,13 @@ export class Merlin {
     if (!Ctor) {
       this.state = 'idle';
       this.showOverlay('idle');
-      this.updateStatus('Reconnaissance vocale non supportée sur ce navigateur.');
+      this.setMicHint('Reconnaissance vocale non supportée');
       return;
     }
 
     this.state = 'idle';
     this.showOverlay('idle');
-    this.updateStatus('Appuyez sur 🎙 pour activer l\'écoute');
+    this.setMicHint('Appuyez pour activer Merlin');
     document.addEventListener('visibilitychange', this.boundVisibilityHandler);
   }
 
@@ -127,7 +127,7 @@ export class Merlin {
 
     const micOk = await this.flashMicrophonePermission();
     if (!micOk) {
-      this.updateStatus('Autorisez le micro dans les réglages du navigateur.');
+      this.setMicHint('Autorisez le micro dans les réglages');
       return false;
     }
 
@@ -142,12 +142,15 @@ export class Merlin {
       this.recognition.onstart = () => {
         this.listeningActive = true;
         this.updateListeningState(true);
+        if (this.state === 'dictating') {
+          this.lastHypothesis = '';
+        }
       };
     }
 
     const started = this.startListening();
     if (started) {
-      this.updateStatus('Écoute active — dites « Merlin journal »');
+      this.setMicHint('Dites « Merlin journal »');
     }
     return started;
   }
@@ -175,7 +178,7 @@ export class Merlin {
           try {
             this.recognition.start();
           } catch {
-            this.updateStatus('Impossible de démarrer le micro — réessayez.');
+            this.setMicHint('Impossible de démarrer le micro');
           }
         }
       }, RESTART_DELAY_MS);
@@ -223,18 +226,15 @@ export class Merlin {
     if (event.error === 'aborted') return;
     if (event.error === 'not-allowed') {
       this.listeningActive = false;
-      this.updateStatus('Micro refusé — autorisez l\'accès au micro.');
+      this.setMicHint('Micro refusé');
       return;
     }
-    this.updateStatus(`Erreur : ${event.error}`);
+    this.setMicHint(`Erreur : ${event.error}`);
   }
 
   private async onVisibilityChange(): Promise<void> {
     if (document.visibilityState === 'visible' && this.state !== 'off' && this.listeningActive) {
       setTimeout(() => this.startListening(), RESTART_DELAY_MS);
-      if (this.state === 'idle') {
-        this.updateStatus('Écoute reprise — dites « Merlin journal »');
-      }
     }
   }
 
@@ -244,7 +244,6 @@ export class Merlin {
     if (!full) return;
 
     if (this.state === 'idle') {
-      this.updateHeard(full);
       if (matchesWake(full)) {
         void this.startDictation();
       }
@@ -258,34 +257,22 @@ export class Merlin {
       }
 
       this.processNewFinals(event);
-
-      const display = stripCommands(parseResults(event).full) || this.sessionText;
-      this.updateDictation(display);
     }
   }
 
   /**
-   * Chrome envoie souvent des segments cumulatifs (« je », puis « je veux », puis « je veux faire »).
-   * On n'ajoute que le delta par rapport à ce qui est déjà écrit.
+   * Une seule écriture par événement, basée sur l'hypothèse la plus complète.
+   * Gère les segments cumulatifs et les redémarrages après pause.
    */
   private processNewFinals(event: SpeechRecognitionEvent): void {
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const result = event.results[i];
-      if (!result.isFinal) continue;
+    const hypothesis = getRecognitionHypothesis(event);
+    if (!hypothesis) return;
+    if (hypothesis === this.lastHypothesis) return;
+    this.lastHypothesis = hypothesis;
 
-      const alt = result[0];
-      const raw = alt?.transcript ?? '';
-      const confidence = alt?.confidence ?? 1;
-      if (!raw.trim()) continue;
-      if (confidence > 0 && confidence < MIN_CONFIDENCE) continue;
-
-      const chunk = stripCommands(raw.trim());
-      if (!chunk) continue;
-
-      const delta = extractTranscriptDelta(this.sessionText, chunk);
-      if (delta) {
-        this.commitSpeech(delta);
-      }
+    const delta = extractTranscriptDelta(this.sessionText, hypothesis);
+    if (delta) {
+      this.commitSpeech(delta);
     }
   }
 
@@ -305,13 +292,12 @@ export class Merlin {
 
     this.state = 'dictating';
     this.sessionText = '';
+    this.lastHypothesis = '';
     this.heardSpeechInSession = false;
     this.clearSilenceTimer();
     this.tabBar.switchTo('journal');
     this.showOverlay('dictating');
     await this.requestWakeLock();
-    this.updateStatus('Dictée en cours — parlez par phrases courtes, faites de courtes pauses');
-    this.updateDictation('');
   }
 
   private async endDictation(): Promise<void> {
@@ -328,7 +314,6 @@ export class Merlin {
       this.showStructurePrompt();
     } else {
       this.showOverlay('idle');
-      this.updateStatus('Session terminée — dites « Merlin journal »');
     }
   }
 
@@ -351,7 +336,6 @@ export class Merlin {
     prompt.querySelector('.merlin__structure-skip')!.addEventListener('click', () => {
       prompt.remove();
       this.showOverlay('idle');
-      this.updateStatus('Dites « Merlin journal »');
     });
 
     prompt.querySelector('.merlin__structure-go')!.addEventListener('click', () => {
@@ -384,7 +368,6 @@ export class Merlin {
     }
 
     this.showOverlay('idle');
-    this.updateStatus('Dites « Merlin journal »');
   }
 
   private resetSilenceTimer(): void {
@@ -412,19 +395,7 @@ export class Merlin {
   }
 
   private updateSilenceCountdown(): void {
-    const el = this.overlay?.querySelector('.merlin__silence');
-    if (!el || this.state !== 'dictating') {
-      if (el) el.textContent = '';
-      return;
-    }
-    if (!this.heardSpeechInSession) {
-      el.textContent = 'Parlez…';
-      return;
-    }
-    el.textContent =
-      this.silenceCountdown > 0
-        ? `Arrêt auto dans ${this.silenceCountdown}s`
-        : '';
+    /* indicateur visuel retiré — la vague suffit */
   }
 
   private async requestWakeLock(): Promise<void> {
@@ -453,13 +424,10 @@ export class Merlin {
       this.overlay.className = 'merlin';
       this.overlay.innerHTML = `
         <div class="merlin__panel">
-          <div class="merlin__indicator" aria-hidden="true"></div>
-          <div class="merlin__status"></div>
-          <div class="merlin__heard"></div>
-          <div class="merlin__live"></div>
-          <div class="merlin__silence"></div>
-          <p class="merlin__hint">L'app doit rester ouverte — pas d'écoute écran éteint.</p>
-          <button type="button" class="merlin__mic-btn" aria-label="Activer et dicter">🎙</button>
+          <div class="merlin__wave" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <button type="button" class="merlin__mic-btn" aria-label="Activer Merlin">🎙</button>
           <button type="button" class="merlin__stop-btn" hidden aria-label="Arrêter dictée">Stop</button>
         </div>
       `;
@@ -474,11 +442,10 @@ export class Merlin {
       document.body.appendChild(this.overlay);
     }
 
-    const indicator = this.overlay.querySelector('.merlin__indicator')!;
     const micBtn = this.overlay.querySelector('.merlin__mic-btn') as HTMLButtonElement;
     const stopBtn = this.overlay.querySelector('.merlin__stop-btn') as HTMLButtonElement;
 
-    indicator.classList.toggle('merlin__indicator--active', mode === 'dictating');
+    this.overlay.classList.toggle('merlin--dictating', mode === 'dictating');
     micBtn.hidden = mode === 'dictating';
     stopBtn.hidden = mode !== 'dictating';
   }
@@ -487,7 +454,6 @@ export class Merlin {
     const ok = await this.activateListening();
     if (!ok) return;
     if (this.state === 'idle') {
-      this.updateStatus('Écoute active — dites « Merlin journal » ou parlez');
       await this.startDictation();
     }
   }
@@ -498,26 +464,12 @@ export class Merlin {
   }
 
   private updateListeningState(active: boolean): void {
-    const indicator = this.overlay?.querySelector('.merlin__indicator');
-    if (indicator) {
-      indicator.classList.toggle('merlin__indicator--listening', active);
-    }
+    this.overlay?.classList.toggle('merlin--listening', active);
   }
 
-  private updateStatus(text: string): void {
-    const el = this.overlay?.querySelector('.merlin__status');
-    if (el) el.textContent = text;
-  }
-
-  private updateHeard(text: string): void {
-    const el = this.overlay?.querySelector('.merlin__heard');
-    if (el) el.textContent = text ? `Entendu : ${text}` : '';
-  }
-
-  private updateDictation(preview: string): void {
-    const el = this.overlay?.querySelector('.merlin__live');
-    if (!el) return;
-    el.textContent = preview;
+  private setMicHint(hint: string): void {
+    const btn = this.overlay?.querySelector<HTMLButtonElement>('.merlin__mic-btn');
+    if (btn) btn.title = hint;
   }
 
   destroy(): void {
@@ -530,35 +482,38 @@ interface ParsedResults {
 }
 
 function parseResults(event: SpeechRecognitionEvent): ParsedResults {
-  let fullFinal = '';
-  let interim = '';
-
-  for (let i = 0; i < event.results.length; i++) {
-    const transcript = event.results[i][0]?.transcript ?? '';
-    if (event.results[i].isFinal) {
-      fullFinal += transcript;
-    } else {
-      interim = transcript;
-    }
-  }
-
-  const full = (fullFinal + interim).trim();
+  const full = getRecognitionHypothesis(event);
   return { full };
 }
 
-function getRecentFinalText(event: SpeechRecognitionEvent): string {
-  let text = '';
-  for (let i = event.resultIndex; i < event.results.length; i++) {
+/** Hypothèse la plus complète : interim (souvent cumulatif) ou dernier final le plus long. */
+function getRecognitionHypothesis(event: SpeechRecognitionEvent): string {
+  let longestFinal = '';
+  let interim = '';
+
+  for (let i = 0; i < event.results.length; i++) {
+    const raw = event.results[i][0]?.transcript ?? '';
+    const cleaned = stripCommands(raw.trim());
+    if (!cleaned) continue;
+
     if (event.results[i].isFinal) {
-      text += event.results[i][0]?.transcript ?? '';
+      if (cleaned.length > longestFinal.length) longestFinal = cleaned;
+    } else {
+      interim = cleaned;
     }
   }
-  return text.trim();
+
+  if (interim.length >= longestFinal.length) return interim;
+  return longestFinal || interim;
+}
+
+function getRecentFinalText(event: SpeechRecognitionEvent): string {
+  return getRecognitionHypothesis(event);
 }
 
 /**
  * Retourne uniquement les mots nouveaux dans `incoming` par rapport à `existing`.
- * Gère les segments cumulatifs de Chrome.
+ * Gère les segments cumulatifs et les reprises après pause (mots isolés déjà présents).
  */
 function extractTranscriptDelta(existing: string, incoming: string): string {
   const prev = existing.trim();
@@ -566,19 +521,38 @@ function extractTranscriptDelta(existing: string, incoming: string): string {
   if (!cur) return '';
   if (!prev) return collapseStutter(cur);
 
-  const prevWords = prev.split(/\s+/).filter(Boolean);
-  const curWords = cur.split(/\s+/).filter(Boolean);
+  const prevNorm = normalize(prev);
+  const curNorm = normalize(cur);
+
+  if (curNorm === prevNorm) return '';
+  if (prevNorm.includes(curNorm)) return '';
+
+  const prevWords = prevNorm.split(/\s+/).filter(Boolean);
+  const curWords = curNorm.split(/\s+/).filter(Boolean);
+  const origCurWords = cur.split(/\s+/).filter(Boolean);
 
   let shared = 0;
-  const maxShared = Math.min(prevWords.length, curWords.length);
-  while (shared < maxShared) {
-    if (normalize(prevWords[shared]) !== normalize(curWords[shared])) break;
+  while (shared < prevWords.length && shared < curWords.length) {
+    if (prevWords[shared] !== curWords[shared]) break;
     shared++;
   }
 
-  if (curWords.length <= shared) return '';
+  if (curWords.length > shared) {
+    return collapseStutter(origCurWords.slice(shared).join(' '));
+  }
 
-  return collapseStutter(curWords.slice(shared).join(' '));
+  if (wordsAreSubsequence(curWords, prevWords)) return '';
+
+  return '';
+}
+
+function wordsAreSubsequence(needle: string[], haystack: string[]): boolean {
+  if (needle.length === 0) return true;
+  let j = 0;
+  for (let i = 0; i < haystack.length && j < needle.length; i++) {
+    if (haystack[i] === needle[j]) j++;
+  }
+  return j === needle.length;
 }
 
 /** Réduit les répétitions consécutives : « le le le » → « le » */
