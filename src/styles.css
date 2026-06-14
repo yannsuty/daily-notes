@@ -535,6 +535,16 @@ body {
   flex-shrink: 0;
 }
 
+.mindmap__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mindmap__ai[disabled] {
+  opacity: 0.7;
+}
+
 .mindmap__summary {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);

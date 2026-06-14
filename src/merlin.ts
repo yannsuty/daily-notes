@@ -1,4 +1,8 @@
-import { getStoredMerlinApiKey, structureJournalText } from './merlin-ai';
+import {
+  correctDictationText,
+  isAiConfigured,
+  structureJournalText,
+} from './merlin-ai';
 import type { Journal } from './journal';
 import type { TabBar } from './tabs';
 
@@ -309,7 +313,7 @@ export class Merlin {
     await this.journal.flushToday();
     await this.releaseWakeLock();
 
-    const hasApiKey = !!getStoredMerlinApiKey();
+    const hasApiKey = isAiConfigured();
     if (this.sessionText.trim() && hasApiKey) {
       this.showStructurePrompt();
     } else {
@@ -326,9 +330,10 @@ export class Merlin {
     const prompt = document.createElement('div');
     prompt.className = 'merlin__structure';
     prompt.innerHTML = `
-      <p class="merlin__structure-text">Structurer cette dictée avec Merlin ?</p>
+      <p class="merlin__structure-text">Améliorer cette dictée avec Merlin ?</p>
       <div class="merlin__structure-actions">
         <button type="button" class="btn btn--ghost merlin__structure-skip">Non</button>
+        <button type="button" class="btn btn--ghost merlin__structure-correct">Corriger</button>
         <button type="button" class="btn btn--primary merlin__structure-go">Structurer</button>
       </div>
     `;
@@ -338,11 +343,41 @@ export class Merlin {
       this.showOverlay('idle');
     });
 
+    prompt.querySelector('.merlin__structure-correct')!.addEventListener('click', () => {
+      void this.runCorrection(prompt);
+    });
+
     prompt.querySelector('.merlin__structure-go')!.addEventListener('click', () => {
       void this.runStructure(prompt);
     });
 
     this.overlay?.appendChild(prompt);
+  }
+
+  private async runCorrection(promptEl: HTMLElement): Promise<void> {
+    const btn = promptEl.querySelector('.merlin__structure-correct') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = 'Correction…';
+
+    const result = await correctDictationText(this.sessionText);
+    promptEl.remove();
+
+    if (result.ok && result.text) {
+      const confirmed = confirm(
+        'Remplacer le texte dicté par la version corrigée ?\n\n' +
+          result.text.slice(0, 300) +
+          (result.text.length > 300 ? '…' : ''),
+      );
+      if (confirmed) {
+        this.journal.replaceTodayChunk(this.sessionText, result.text);
+        this.sessionText = result.text;
+        await this.journal.flushToday();
+      }
+    } else if (!result.ok) {
+      alert(result.error ?? 'Erreur de correction');
+    }
+
+    this.showOverlay('idle');
   }
 
   private async runStructure(promptEl: HTMLElement): Promise<void> {

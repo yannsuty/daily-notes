@@ -377,6 +377,64 @@ function isRecent(dateKey: string, today: string): boolean {
   return diffDays >= 0 && diffDays <= RECENT_DAYS;
 }
 
+export function buildThoughtGraph(
+  days: Record<string, { content: string }>,
+  today: string,
+  aiGraph?: ThoughtGraph | null,
+): ThoughtGraph {
+  const heuristic = parseThoughtsFromDays(days, today);
+
+  if (!aiGraph || aiGraph.nodes.length === 0) {
+    return heuristic;
+  }
+
+  const markupOnly = {
+    nodes: heuristic.nodes.filter((n) => n.type !== 'word'),
+    links: heuristic.links.filter((l) => {
+      const nodeTypes = new Map(heuristic.nodes.map((n) => [n.id, n.type]));
+      const s = nodeTypes.get(l.source);
+      const t = nodeTypes.get(l.target);
+      return s !== 'word' && t !== 'word';
+    }),
+  };
+
+  return mergeThoughtGraphs(markupOnly, aiGraph);
+}
+
+export function mergeThoughtGraphs(a: ThoughtGraph, b: ThoughtGraph): ThoughtGraph {
+  const nodeById = new Map<string, ThoughtNode>();
+
+  for (const node of [...a.nodes, ...b.nodes]) {
+    const existing = nodeById.get(node.id);
+    if (!existing || node.score > existing.score) {
+      nodeById.set(node.id, { ...node });
+    } else if (existing && node.recent) {
+      existing.recent = true;
+      existing.score = Math.max(existing.score, node.score);
+    }
+  }
+
+  const linkWeights = new Map<string, number>();
+  for (const link of [...a.links, ...b.links]) {
+    if (!nodeById.has(link.source) || !nodeById.has(link.target)) continue;
+    const key = [link.source, link.target].sort().join('|');
+    linkWeights.set(key, (linkWeights.get(key) ?? 0) + link.weight);
+  }
+
+  const links: ThoughtLink[] = [];
+  for (const [key, weight] of linkWeights) {
+    const [source, target] = key.split('|');
+    links.push({ source, target, weight });
+  }
+
+  const nodes = [...nodeById.values()].sort((x, y) => {
+    if (x.recent !== y.recent) return x.recent ? -1 : 1;
+    return y.score - x.score;
+  });
+
+  return { nodes: nodes.slice(0, MAX_NODES), links };
+}
+
 export function formatLastSeen(dateKey: string): string {
   const [y, m, d] = dateKey.split('-').map(Number);
   const date = new Date(y, m - 1, d);

@@ -17,11 +17,17 @@ import { select } from 'd3-selection';
 import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
 import { getAllDays } from './db';
 import {
+  cacheAiThoughts,
+  extractThoughtsWithAI,
+  getCachedAiThoughts,
+  isAiConfigured,
+} from './merlin-ai';
+import {
+  buildThoughtGraph,
   daysFingerprint,
   formatLastSeen,
   getNeighbors,
   getTopIdeas,
-  parseThoughtsFromDays,
 } from './parse-thoughts';
 import type { ThoughtGraph, ThoughtNode } from './parse-thoughts';
 import { todayKey } from './types';
@@ -51,6 +57,8 @@ export class MindMap {
   private currentGraph: ThoughtGraph = { nodes: [], links: [] };
   private selectedId: string | null = null;
   private cacheFingerprint = '';
+  private aiGraph: ThoughtGraph | null = null;
+  private aiBtn: HTMLButtonElement | null = null;
 
   constructor(options: MindMapOptions) {
     this.container = options.container;
@@ -70,14 +78,27 @@ export class MindMap {
       <span class="mindmap__legend-item mindmap__legend-item--concept">Concepts</span>
     `;
 
+    const actions = document.createElement('div');
+    actions.className = 'mindmap__actions';
+
     const refreshBtn = document.createElement('button');
     refreshBtn.type = 'button';
     refreshBtn.className = 'btn btn--ghost mindmap__refresh';
     refreshBtn.textContent = 'Actualiser';
     refreshBtn.addEventListener('click', () => void this.refresh());
 
+    this.aiBtn = document.createElement('button');
+    this.aiBtn.type = 'button';
+    this.aiBtn.className = 'btn btn--primary mindmap__ai';
+    this.aiBtn.textContent = 'Analyser avec Merlin';
+    this.aiBtn.hidden = !isAiConfigured();
+    this.aiBtn.addEventListener('click', () => void this.analyzeWithAi());
+
+    actions.appendChild(refreshBtn);
+    actions.appendChild(this.aiBtn);
+
     toolbar.appendChild(legend);
-    toolbar.appendChild(refreshBtn);
+    toolbar.appendChild(actions);
 
     this.summaryEl = document.createElement('div');
     this.summaryEl.className = 'mindmap__summary';
@@ -107,6 +128,10 @@ export class MindMap {
   }
 
   async refresh(): Promise<void> {
+    if (this.aiBtn) {
+      this.aiBtn.hidden = !isAiConfigured();
+    }
+
     const days = await getAllDays();
     const fingerprint = daysFingerprint(days);
 
@@ -116,8 +141,36 @@ export class MindMap {
       return;
     }
 
-    this.currentGraph = parseThoughtsFromDays(days, todayKey());
+    this.aiGraph = getCachedAiThoughts(fingerprint);
+    this.currentGraph = buildThoughtGraph(days, todayKey(), this.aiGraph);
     this.cacheFingerprint = fingerprint;
+    this.renderSummary(this.currentGraph);
+    this.render(this.currentGraph);
+  }
+
+  private async analyzeWithAi(): Promise<void> {
+    if (!this.aiBtn) return;
+
+    this.aiBtn.disabled = true;
+    const prevLabel = this.aiBtn.textContent;
+    this.aiBtn.textContent = 'Analyse…';
+
+    const days = await getAllDays();
+    const fingerprint = daysFingerprint(days);
+    const result = await extractThoughtsWithAI(days, todayKey());
+
+    this.aiBtn.disabled = false;
+    this.aiBtn.textContent = prevLabel;
+
+    if (!result.ok || !result.graph) {
+      alert(result.error ?? 'Analyse impossible.');
+      return;
+    }
+
+    this.aiGraph = result.graph;
+    cacheAiThoughts(fingerprint, result.graph);
+    this.cacheFingerprint = fingerprint;
+    this.currentGraph = buildThoughtGraph(days, todayKey(), this.aiGraph);
     this.renderSummary(this.currentGraph);
     this.render(this.currentGraph);
   }

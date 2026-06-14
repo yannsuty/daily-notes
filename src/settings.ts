@@ -4,8 +4,12 @@ import {
   storePassphrase,
 } from './crypto';
 import {
+  getAiConfig,
+  getDefaultModel,
   getStoredMerlinApiKey,
+  storeAiConfig,
   storeMerlinApiKey,
+  type AiProvider,
 } from './merlin-ai';
 import { getMeta, saveMeta } from './db';
 import { startSyncLoop, syncNow } from './sync';
@@ -53,18 +57,44 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
           Pour terminer : <strong>« Merlin termine »</strong>, <strong>« Merlin stop »</strong>,
           le bouton Stop, ou 8 secondes de silence après votre dernier mot.
         </p>
-        <label class="modal__label" for="merlin-api-key">Clé API OpenAI (optionnel)</label>
+        <label class="modal__label" for="ai-provider">Fournisseur IA</label>
+        <select id="ai-provider" class="modal__input">
+          <option value="openrouter">OpenRouter (modèles gratuits)</option>
+          <option value="openai">OpenAI</option>
+          <option value="custom">API personnelle</option>
+        </select>
+        <label class="modal__label" for="merlin-api-key">Clé API <span id="ai-key-optional">(optionnel pour OpenRouter)</span></label>
         <input
           id="merlin-api-key"
           class="modal__input"
           type="password"
           autocomplete="off"
-          placeholder="sk-…"
+          placeholder="sk-or-… ou sk-…"
         />
+        <label class="modal__label" for="ai-model">Modèle</label>
+        <input
+          id="ai-model"
+          class="modal__input"
+          type="text"
+          autocomplete="off"
+          placeholder="google/gemma-2-9b-it:free"
+        />
+        <div id="ai-custom-url-wrap" hidden>
+          <label class="modal__label" for="ai-base-url">URL de l'API (compatible OpenAI)</label>
+          <input
+            id="ai-base-url"
+            class="modal__input"
+            type="url"
+            autocomplete="off"
+            placeholder="https://votre-serveur/v1/chat/completions"
+          />
+        </div>
         <p class="modal__desc modal__desc--small">
-          Permet de structurer automatiquement vos dictées (#tags, [[concepts]], sections).
+          Corrige les erreurs de dictée, structure vos notes (#tags, [[concepts]]) et alimente la carte mentale.
+          OpenRouter : définissez <code>OPENROUTER_API_KEY</code> sur le serveur (Vercel ou fichier <code>.env</code> en local),
+          ou entrez une clé ci-dessus pour un usage direct depuis le navigateur.
         </p>
-        <button type="button" class="btn btn--ghost" id="save-merlin-key">Enregistrer clé API</button>
+        <button type="button" class="btn btn--ghost" id="save-merlin-key">Enregistrer config IA</button>
         <p class="modal__status" id="merlin-status"></p>
       </section>
 
@@ -96,6 +126,37 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
     const merlinStatusEl = modal.querySelector<HTMLElement>('#merlin-status')!;
     const merlinToggle = modal.querySelector<HTMLInputElement>('#merlin-enabled')!;
     const apiKeyInput = modal.querySelector<HTMLInputElement>('#merlin-api-key')!;
+    const providerSelect = modal.querySelector<HTMLSelectElement>('#ai-provider')!;
+    const modelInput = modal.querySelector<HTMLInputElement>('#ai-model')!;
+    const baseUrlInput = modal.querySelector<HTMLInputElement>('#ai-base-url')!;
+    const customUrlWrap = modal.querySelector<HTMLElement>('#ai-custom-url-wrap')!;
+    const keyOptionalHint = modal.querySelector<HTMLElement>('#ai-key-optional')!;
+
+    const aiConfig = getAiConfig();
+    providerSelect.value = aiConfig.provider;
+    modelInput.value = aiConfig.model;
+    modelInput.placeholder = getDefaultModel(aiConfig.provider);
+    if (aiConfig.baseUrl) baseUrlInput.value = aiConfig.baseUrl;
+
+    const syncCustomUrlVisibility = (): void => {
+      const provider = providerSelect.value;
+      customUrlWrap.hidden = provider !== 'custom';
+      keyOptionalHint.hidden = provider !== 'openrouter';
+    };
+    syncCustomUrlVisibility();
+
+    providerSelect.addEventListener('change', () => {
+      const provider = providerSelect.value as AiProvider;
+      syncCustomUrlVisibility();
+      if (!modelInput.dataset.userEdited) {
+        modelInput.value = '';
+        modelInput.placeholder = getDefaultModel(provider);
+      }
+    });
+
+    modelInput.addEventListener('input', () => {
+      modelInput.dataset.userEdited = '1';
+    });
 
     if (meta.passphraseSet && getStoredPassphrase()) {
       input.placeholder = '•••••••• (déjà configurée)';
@@ -104,7 +165,9 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
 
     if (meta.merlinApiKeySet && getStoredMerlinApiKey()) {
       apiKeyInput.placeholder = '•••••••• (déjà configurée)';
-      merlinStatusEl.textContent = 'Clé API enregistrée sur cet appareil.';
+      merlinStatusEl.textContent = 'Clé API locale enregistrée sur cet appareil.';
+    } else if (aiConfig.provider === 'openrouter') {
+      merlinStatusEl.textContent = 'OpenRouter via OPENROUTER_API_KEY sur le serveur (ou clé locale optionnelle).';
     }
 
     merlinToggle.addEventListener('change', () => {
@@ -121,13 +184,29 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
 
     modal.querySelector('#save-merlin-key')!.addEventListener('click', () => {
       const value = apiKeyInput.value.trim();
-      if (!value) {
-        merlinStatusEl.textContent = 'Entrez une clé API.';
+      const provider = providerSelect.value as AiProvider;
+      const model = modelInput.value.trim() || getDefaultModel(provider);
+      const baseUrl = baseUrlInput.value.trim();
+
+      if (!value && !getStoredMerlinApiKey()) {
+        if (provider !== 'openrouter') {
+          merlinStatusEl.textContent = 'Entrez une clé API.';
+          return;
+        }
+      }
+
+      if (provider === 'custom' && !baseUrl) {
+        merlinStatusEl.textContent = 'Entrez l\'URL de votre API.';
         return;
       }
-      storeMerlinApiKey(value);
+
+      if (value) storeMerlinApiKey(value);
+      storeAiConfig({ provider, model, baseUrl: provider === 'custom' ? baseUrl : '' });
+
       void saveMeta({ merlinApiKeySet: true }).then(() => {
-        merlinStatusEl.textContent = 'Clé API enregistrée.';
+        merlinStatusEl.textContent = value
+          ? 'Configuration IA enregistrée (clé locale).'
+          : 'Configuration IA enregistrée (OpenRouter via serveur).';
         apiKeyInput.value = '';
         apiKeyInput.placeholder = '•••••••• (déjà configurée)';
       });
