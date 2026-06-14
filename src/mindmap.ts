@@ -58,7 +58,8 @@ export class MindMap {
   private selectedId: string | null = null;
   private cacheFingerprint = '';
   private aiGraph: ThoughtGraph | null = null;
-  private aiBtn: HTMLButtonElement | null = null;
+  private aiAnalyzing = false;
+  private statusEl: HTMLElement | null = null;
 
   constructor(options: MindMapOptions) {
     this.container = options.container;
@@ -78,27 +79,18 @@ export class MindMap {
       <span class="mindmap__legend-item mindmap__legend-item--concept">Concepts</span>
     `;
 
-    const actions = document.createElement('div');
-    actions.className = 'mindmap__actions';
-
     const refreshBtn = document.createElement('button');
     refreshBtn.type = 'button';
     refreshBtn.className = 'btn btn--ghost mindmap__refresh';
     refreshBtn.textContent = 'Actualiser';
     refreshBtn.addEventListener('click', () => void this.refresh());
 
-    this.aiBtn = document.createElement('button');
-    this.aiBtn.type = 'button';
-    this.aiBtn.className = 'btn btn--primary mindmap__ai';
-    this.aiBtn.textContent = 'Analyser avec Merlin';
-    this.aiBtn.hidden = !isAiConfigured();
-    this.aiBtn.addEventListener('click', () => void this.analyzeWithAi());
-
-    actions.appendChild(refreshBtn);
-    actions.appendChild(this.aiBtn);
-
     toolbar.appendChild(legend);
-    toolbar.appendChild(actions);
+    toolbar.appendChild(refreshBtn);
+
+    this.statusEl = document.createElement('div');
+    this.statusEl.className = 'mindmap__status';
+    this.statusEl.hidden = true;
 
     this.summaryEl = document.createElement('div');
     this.summaryEl.className = 'mindmap__summary';
@@ -115,6 +107,7 @@ export class MindMap {
     this.wrapper.appendChild(this.svg);
 
     this.container.appendChild(toolbar);
+    this.container.appendChild(this.statusEl);
     this.container.appendChild(this.summaryEl);
     this.container.appendChild(this.wrapper);
     this.container.appendChild(this.detailEl);
@@ -128,48 +121,60 @@ export class MindMap {
   }
 
   async refresh(): Promise<void> {
-    if (this.aiBtn) {
-      this.aiBtn.hidden = !isAiConfigured();
-    }
-
     const days = await getAllDays();
     const fingerprint = daysFingerprint(days);
+    const cachedAi = getCachedAiThoughts(fingerprint);
+    const hasContent = Object.values(days).some((d) => d.content.trim());
 
     if (fingerprint === this.cacheFingerprint && this.currentGraph.nodes.length > 0) {
       this.renderSummary(this.currentGraph);
       this.render(this.currentGraph);
+      if (isAiConfigured() && !cachedAi && !this.aiGraph && hasContent) {
+        void this.runAutoAiAnalysis(days, fingerprint);
+      }
       return;
     }
 
-    this.aiGraph = getCachedAiThoughts(fingerprint);
+    this.aiGraph = cachedAi;
     this.currentGraph = buildThoughtGraph(days, todayKey(), this.aiGraph);
     this.cacheFingerprint = fingerprint;
     this.renderSummary(this.currentGraph);
     this.render(this.currentGraph);
+
+    if (isAiConfigured() && !this.aiGraph && hasContent) {
+      void this.runAutoAiAnalysis(days, fingerprint);
+    }
   }
 
-  private async analyzeWithAi(): Promise<void> {
-    if (!this.aiBtn) return;
-
-    this.aiBtn.disabled = true;
-    const prevLabel = this.aiBtn.textContent;
-    this.aiBtn.textContent = 'Analyse…';
-
-    const days = await getAllDays();
-    const fingerprint = daysFingerprint(days);
-    const result = await extractThoughtsWithAI(days, todayKey());
-
-    this.aiBtn.disabled = false;
-    this.aiBtn.textContent = prevLabel;
-
-    if (!result.ok || !result.graph) {
-      alert(result.error ?? 'Analyse impossible.');
-      return;
+  private setAnalysisStatus(message: string): void {
+    if (!this.statusEl) return;
+    if (message) {
+      this.statusEl.textContent = message;
+      this.statusEl.hidden = false;
+    } else {
+      this.statusEl.textContent = '';
+      this.statusEl.hidden = true;
     }
+  }
+
+  private async runAutoAiAnalysis(
+    days: Record<string, { content: string }>,
+    fingerprint: string,
+  ): Promise<void> {
+    if (this.aiAnalyzing) return;
+    this.aiAnalyzing = true;
+    this.setAnalysisStatus('Merlin analyse vos notes…');
+
+    const result = await extractThoughtsWithAI(days, todayKey());
+    this.aiAnalyzing = false;
+    this.setAnalysisStatus('');
+
+    if (fingerprint !== this.cacheFingerprint) return;
+
+    if (!result.ok || !result.graph) return;
 
     this.aiGraph = result.graph;
     cacheAiThoughts(fingerprint, result.graph);
-    this.cacheFingerprint = fingerprint;
     this.currentGraph = buildThoughtGraph(days, todayKey(), this.aiGraph);
     this.renderSummary(this.currentGraph);
     this.render(this.currentGraph);
