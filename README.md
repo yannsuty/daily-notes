@@ -75,7 +75,7 @@ Configurer dans le dépôt (**Settings → Secrets and variables → Actions**) 
 | `ANDROID_KEYSTORE_BASE64` | Secret | Keystore encodé en base64 |
 | `ANDROID_KEYSTORE_PASSWORD` | Secret | Mot de passe du keystore |
 | `ANDROID_KEY_ALIAS` | Secret | Alias de la clé (ex. `daily-note`) |
-| `ANDROID_KEY_PASSWORD` | Secret | Mot de passe de la clé |
+| `ANDROID_KEY_PASSWORD` | Secret | Mot de passe de la clé (souvent identique au keystore) |
 | `VERCEL_URL` | Variable | URL Vercel (ex. `https://votre-app.vercel.app`) |
 
 Générer le keystore (une seule fois, à conserver précieusement) :
@@ -94,6 +94,14 @@ base64 -w 0 release.keystore
 # Windows PowerShell
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("release.keystore"))
 ```
+
+Vérifier localement que l'alias et le mot de passe sont corrects :
+
+```powershell
+& "C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot\bin\keytool.exe" -list -keystore release.keystore -alias daily-note
+```
+
+> **Erreur CI « keystore password was incorrect »** : les secrets `ANDROID_KEYSTORE_PASSWORD` et `ANDROID_KEY_ALIAS` sont manquants ou incorrects. Vérifiez qu'ils correspondent exactement à ceux saisis lors de `keytool -genkey`. Si vous n'avez qu'un seul mot de passe, définissez au minimum `ANDROID_KEYSTORE_PASSWORD` (le mot de passe de la clé sera réutilisé automatiquement).
 
 ### Publier une version
 

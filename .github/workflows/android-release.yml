@@ -37,6 +37,14 @@ jobs:
       - name: Decode keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
 
+      - name: Verify signing secrets
+        run: |
+          test -n "${ANDROID_KEYSTORE_PASSWORD}" || { echo "::error::ANDROID_KEYSTORE_PASSWORD secret is missing"; exit 1; }
+          test -n "${ANDROID_KEY_ALIAS}" || { echo "::error::ANDROID_KEY_ALIAS secret is missing"; exit 1; }
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+
       - name: Build signed APK
         working-directory: android
         run: chmod +x gradlew && ./gradlew assembleRelease
