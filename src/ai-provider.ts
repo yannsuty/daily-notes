@@ -22,11 +22,21 @@ const MODEL_KEY = 'daily-note-ai-model';
 const BASE_URL_KEY = 'daily-note-ai-base-url';
 const API_KEY_KEY = 'daily-note-merlin-api-key';
 
+export const OPENROUTER_FREE_ROUTER = 'openrouter/free';
+
 const DEFAULT_MODELS: Record<AiProvider, string> = {
-  openrouter: 'google/gemma-2-9b-it:free',
+  openrouter: OPENROUTER_FREE_ROUTER,
   openai: 'gpt-4o-mini',
   custom: '',
 };
+
+/** Modèles gratuits retirés ou renommés par OpenRouter */
+const DEPRECATED_OPENROUTER_MODELS = new Set([
+  'google/gemma-2-9b-it:free',
+  'google/gemma-3-4b-it:free',
+  'google/gemma-3-12b-it:free',
+  'google/gemma-3-27b-it:free',
+]);
 
 const ENDPOINTS: Record<Exclude<AiProvider, 'custom'>, string> = {
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',
@@ -57,7 +67,14 @@ export function getAiConfig(): AiConfig {
   const provider =
     storedProvider ??
     (apiKey?.startsWith('sk-or-') ? 'openrouter' : apiKey?.startsWith('sk-') ? 'openai' : 'openrouter');
-  const model = localStorage.getItem(MODEL_KEY) ?? DEFAULT_MODELS[provider];
+  const modelRaw = localStorage.getItem(MODEL_KEY) ?? DEFAULT_MODELS[provider];
+  if (provider === 'openrouter' && DEPRECATED_OPENROUTER_MODELS.has(modelRaw)) {
+    localStorage.setItem(MODEL_KEY, DEFAULT_MODELS.openrouter);
+  }
+  const model =
+    provider === 'openrouter' && DEPRECATED_OPENROUTER_MODELS.has(modelRaw)
+      ? DEFAULT_MODELS.openrouter
+      : modelRaw;
   const baseUrl = localStorage.getItem(BASE_URL_KEY) ?? '';
   return { provider, model, baseUrl: baseUrl || undefined };
 }
@@ -98,8 +115,7 @@ async function chatViaOpenRouterProxy(
     });
 
     if (!response.ok) {
-      const errBody = await response.text();
-      return { ok: false, error: `API erreur ${response.status}: ${errBody.slice(0, 160)}` };
+      return { ok: false, error: await formatAiError(response, model) };
     }
 
     const data = (await response.json()) as {
@@ -113,6 +129,22 @@ async function chatViaOpenRouterProxy(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
   }
+}
+
+async function formatAiError(response: Response, model: string): Promise<string> {
+  const errBody = await response.text();
+  let detail = errBody.slice(0, 160);
+  try {
+    const parsed = JSON.parse(errBody) as { error?: { message?: string } | string };
+    if (typeof parsed.error === 'string') detail = parsed.error;
+    else if (parsed.error?.message) detail = parsed.error.message;
+  } catch {
+    // keep raw snippet
+  }
+  if (response.status === 404) {
+    detail = `Modèle introuvable (${model}). Utilisez ${OPENROUTER_FREE_ROUTER} dans Réglages (sélection auto d'un modèle gratuit).`;
+  }
+  return `API erreur ${response.status}: ${detail}`;
 }
 
 function resolveEndpoint(config: AiConfig): string | null {
@@ -169,15 +201,28 @@ export async function chatCompletion(
   }
 
   try {
-    const response = await fetch(endpoint, {
+    let activeModel = model;
+    let response = await fetch(endpoint, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify({ ...body, model: activeModel }),
     });
 
+    if (
+      response.status === 404 &&
+      config.provider === 'openrouter' &&
+      activeModel !== OPENROUTER_FREE_ROUTER
+    ) {
+      activeModel = OPENROUTER_FREE_ROUTER;
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ...body, model: activeModel }),
+      });
+    }
+
     if (!response.ok) {
-      const errBody = await response.text();
-      return { ok: false, error: `API erreur ${response.status}: ${errBody.slice(0, 160)}` };
+      return { ok: false, error: await formatAiError(response, activeModel) };
     }
 
     const data = (await response.json()) as {

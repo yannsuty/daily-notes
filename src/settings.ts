@@ -77,7 +77,7 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
           class="modal__input"
           type="text"
           autocomplete="off"
-          placeholder="google/gemma-2-9b-it:free"
+          placeholder="openrouter/free"
         />
         <div id="ai-custom-url-wrap" hidden>
           <label class="modal__label" for="ai-base-url">URL de l'API (compatible OpenAI)</label>
@@ -91,8 +91,8 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
         </div>
         <p class="modal__desc modal__desc--small">
           Corrige les erreurs de dictée, structure vos notes (#tags, [[concepts]]) et alimente la carte mentale.
-          OpenRouter : définissez <code>OPENROUTER_API_KEY</code> sur le serveur (Vercel ou fichier <code>.env</code> en local),
-          ou entrez une clé ci-dessus pour un usage direct depuis le navigateur.
+          OpenRouter : définissez <code>OPENROUTER_API_KEY</code> sur le serveur (Vercel ou fichier <code>.env</code> en local).
+          Modèle recommandé : <code>openrouter/free</code> (choisit automatiquement un modèle gratuit disponible).
         </p>
         <button type="button" class="btn btn--ghost" id="save-merlin-key">Enregistrer config IA</button>
         <p class="modal__status" id="merlin-status"></p>

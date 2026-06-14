@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_FREE_ROUTER = 'openrouter/free';
 
 interface AiBody {
   model: string;
@@ -20,6 +21,29 @@ function referer(): string {
     return `https://${process.env.VERCEL_URL}`;
   }
   return 'http://localhost:5173';
+}
+
+async function callOpenRouter(
+  apiKey: string,
+  body: AiBody,
+): Promise<{ status: number; payload: string }> {
+  const upstream = await fetch(OPENROUTER_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      'HTTP-Referer': referer(),
+      'X-Title': 'Daily Note',
+    },
+    body: JSON.stringify({
+      model: body.model,
+      messages: body.messages,
+      temperature: body.temperature ?? 0.4,
+      ...(body.response_format ? { response_format: body.response_format } : {}),
+    }),
+  });
+
+  return { status: upstream.status, payload: await upstream.text() };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -44,29 +68,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const upstream = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': referer(),
-        'X-Title': 'Daily Note',
-      },
-      body: JSON.stringify({
-        model: body.model,
-        messages: body.messages,
-        temperature: body.temperature ?? 0.4,
-        ...(body.response_format ? { response_format: body.response_format } : {}),
-      }),
-    });
+    let usedModel = body.model;
+    let result = await callOpenRouter(apiKey, body);
 
-    const payload = await upstream.text();
-    if (!upstream.ok) {
-      return res.status(upstream.status).send(payload.slice(0, 500));
+    if (result.status === 404 && usedModel !== OPENROUTER_FREE_ROUTER) {
+      usedModel = OPENROUTER_FREE_ROUTER;
+      result = await callOpenRouter(apiKey, { ...body, model: OPENROUTER_FREE_ROUTER });
+    }
+
+    if (result.status < 200 || result.status >= 300) {
+      let detail = result.payload.slice(0, 300);
+      try {
+        const parsed = JSON.parse(result.payload) as { error?: { message?: string } };
+        if (parsed.error?.message) detail = parsed.error.message;
+      } catch {
+        // keep raw snippet
+      }
+      return res.status(result.status).json({
+        error: {
+          message: detail,
+          source: 'openrouter',
+          model: usedModel,
+          requestedModel: body.model,
+        },
+      });
     }
 
     res.setHeader('Content-Type', 'application/json');
-    return res.status(200).send(payload);
+    return res.status(200).send(result.payload);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Proxy error';
     return res.status(500).json({ error: message });

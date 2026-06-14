@@ -42,16 +42,26 @@ function createOpenRouterDevProxy(apiKey: string) {
 
     try {
       const rawBody = await readRequestBody(req);
-      const upstream = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-          'HTTP-Referer': 'http://localhost:5173',
-          'X-Title': 'Daily Note',
-        },
-        body: rawBody,
-      });
+      const parsed = JSON.parse(rawBody) as { model?: string };
+      const freeRouter = 'openrouter/free';
+
+      const call = (body: string) =>
+        fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+            'HTTP-Referer': 'http://localhost:5173',
+            'X-Title': 'Daily Note',
+          },
+          body,
+        });
+
+      let upstream = await call(rawBody);
+      if (upstream.status === 404 && parsed.model && parsed.model !== freeRouter) {
+        parsed.model = freeRouter;
+        upstream = await call(JSON.stringify(parsed));
+      }
 
       const payload = await upstream.text();
       res.statusCode = upstream.status;
