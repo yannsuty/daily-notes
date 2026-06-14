@@ -20,12 +20,12 @@ android {
         release {
             def keystoreFile = System.getenv('ANDROID_KEYSTORE_FILE')
             if (keystoreFile) {
-                def storePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
-                def keyPassword = System.getenv('ANDROID_KEY_PASSWORD') ?: storePassword
+                def keystorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                def keystoreKeyPassword = System.getenv('ANDROID_KEY_PASSWORD') ?: keystorePassword
                 storeFile file(keystoreFile)
-                storePassword storePassword
+                storePassword keystorePassword
                 keyAlias System.getenv('ANDROID_KEY_ALIAS')
-                keyPassword keyPassword
+                keyPassword keystoreKeyPassword
             }
         }
     }
