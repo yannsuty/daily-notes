@@ -76,8 +76,6 @@ export class Merlin {
   private silenceCountdown = 0;
   private heardSpeechInSession = false;
   private listeningActive = false;
-  private finalizedIndex = 0;
-  private lastCommittedChunk = '';
   private wakeLock: WakeLockSentinel | null = null;
   private boundVisibilityHandler = (): void => {
     void this.onVisibilityChange();
@@ -144,9 +142,6 @@ export class Merlin {
       this.recognition.onstart = () => {
         this.listeningActive = true;
         this.updateListeningState(true);
-        if (this.state === 'dictating') {
-          this.finalizedIndex = 0;
-        }
       };
     }
 
@@ -262,37 +257,35 @@ export class Merlin {
         return;
       }
 
-      const interim = getInterimText(event);
-      this.processFinalSegments(event);
+      this.processNewFinals(event);
 
-      const preview = this.sessionText + (interim ? ` ${interim}` : '');
-      this.updateDictation(preview);
+      const display = stripCommands(parseResults(event).full) || this.sessionText;
+      this.updateDictation(display);
     }
   }
 
-  /** N'écrit que les segments finalisés une seule fois (pattern Web Speech API). */
-  private processFinalSegments(event: SpeechRecognitionEvent): void {
-    for (let i = this.finalizedIndex; i < event.results.length; i++) {
+  /**
+   * Chrome envoie souvent des segments cumulatifs (« je », puis « je veux », puis « je veux faire »).
+   * On n'ajoute que le delta par rapport à ce qui est déjà écrit.
+   */
+  private processNewFinals(event: SpeechRecognitionEvent): void {
+    for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       if (!result.isFinal) continue;
 
       const alt = result[0];
       const raw = alt?.transcript ?? '';
       const confidence = alt?.confidence ?? 1;
-      if (!raw.trim()) {
-        this.finalizedIndex = i + 1;
-        continue;
-      }
-      if (confidence > 0 && confidence < MIN_CONFIDENCE) {
-        this.finalizedIndex = i + 1;
-        continue;
-      }
+      if (!raw.trim()) continue;
+      if (confidence > 0 && confidence < MIN_CONFIDENCE) continue;
 
-      const chunk = stripCommands(raw);
-      if (chunk) {
-        this.commitSpeech(chunk);
+      const chunk = stripCommands(raw.trim());
+      if (!chunk) continue;
+
+      const delta = extractTranscriptDelta(this.sessionText, chunk);
+      if (delta) {
+        this.commitSpeech(delta);
       }
-      this.finalizedIndex = i + 1;
     }
   }
 
@@ -300,16 +293,8 @@ export class Merlin {
     const cleaned = collapseStutter(text.trim());
     if (!cleaned) return;
 
-    const norm = normalize(cleaned);
-    const lastNorm = normalize(this.lastCommittedChunk);
-    if (norm === lastNorm) return;
-
-    const sessionNorm = normalize(this.sessionText);
-    if (sessionNorm.endsWith(norm)) return;
-
     this.heardSpeechInSession = true;
     this.resetSilenceTimer();
-    this.lastCommittedChunk = cleaned;
     this.sessionText += (this.sessionText ? ' ' : '') + cleaned;
     void this.journal.appendToToday(cleaned);
   }
@@ -320,8 +305,6 @@ export class Merlin {
 
     this.state = 'dictating';
     this.sessionText = '';
-    this.finalizedIndex = 0;
-    this.lastCommittedChunk = '';
     this.heardSpeechInSession = false;
     this.clearSilenceTimer();
     this.tabBar.switchTo('journal');
@@ -563,15 +546,6 @@ function parseResults(event: SpeechRecognitionEvent): ParsedResults {
   return { full };
 }
 
-function getInterimText(event: SpeechRecognitionEvent): string {
-  for (let i = event.results.length - 1; i >= 0; i--) {
-    if (!event.results[i].isFinal) {
-      return stripCommands(event.results[i][0]?.transcript ?? '');
-    }
-  }
-  return '';
-}
-
 function getRecentFinalText(event: SpeechRecognitionEvent): string {
   let text = '';
   for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -580,6 +554,31 @@ function getRecentFinalText(event: SpeechRecognitionEvent): string {
     }
   }
   return text.trim();
+}
+
+/**
+ * Retourne uniquement les mots nouveaux dans `incoming` par rapport à `existing`.
+ * Gère les segments cumulatifs de Chrome.
+ */
+function extractTranscriptDelta(existing: string, incoming: string): string {
+  const prev = existing.trim();
+  const cur = incoming.trim();
+  if (!cur) return '';
+  if (!prev) return collapseStutter(cur);
+
+  const prevWords = prev.split(/\s+/).filter(Boolean);
+  const curWords = cur.split(/\s+/).filter(Boolean);
+
+  let shared = 0;
+  const maxShared = Math.min(prevWords.length, curWords.length);
+  while (shared < maxShared) {
+    if (normalize(prevWords[shared]) !== normalize(curWords[shared])) break;
+    shared++;
+  }
+
+  if (curWords.length <= shared) return '';
+
+  return collapseStutter(curWords.slice(shared).join(' '));
 }
 
 /** Réduit les répétitions consécutives : « le le le » → « le » */
