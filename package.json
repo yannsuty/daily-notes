@@ -9,6 +9,7 @@
     "build:cap": "cross-env CAPACITOR=true tsc && cross-env CAPACITOR=true vite build",
     "cap:sync": "npm run build:cap && npx cap sync",
     "cap:android": "npx cap open android",
+    "android:local": "powershell -ExecutionPolicy Bypass -File scripts/android-build-local.ps1",
     "icons": "node scripts/generate-icons.mjs",
     "postinstall": "node scripts/generate-icons.mjs",
     "preview": "vite preview"

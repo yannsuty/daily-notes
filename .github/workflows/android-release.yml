@@ -41,6 +41,12 @@ jobs:
         run: |
           test -n "${ANDROID_KEYSTORE_PASSWORD}" || { echo "::error::ANDROID_KEYSTORE_PASSWORD secret is missing"; exit 1; }
           test -n "${ANDROID_KEY_ALIAS}" || { echo "::error::ANDROID_KEY_ALIAS secret is missing"; exit 1; }
+          echo "Aliases in keystore:"
+          keytool -list -keystore release.keystore -storepass "$ANDROID_KEYSTORE_PASSWORD" || exit 1
+          keytool -list -keystore release.keystore -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1 || {
+            echo "::error::ANDROID_KEY_ALIAS '$ANDROID_KEY_ALIAS' not found in keystore (see alias list above)"
+            exit 1
+          }
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
