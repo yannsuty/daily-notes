@@ -1,65 +1,23 @@
 import {
   correctDictationText,
-  isAiConfigured,
   structureJournalText,
 } from './merlin-ai';
 import type { Journal } from './journal';
+import {
+  createMerlinSpeechEngine,
+  type MerlinSpeechEngine,
+} from './merlin-speech';
+import {
+  extractTranscriptDelta,
+  collapseStutter,
+  matchesPhrase,
+  matchesWake,
+  STOP_PHRASES,
+  stripCommands,
+} from './merlin-text';
 import type { TabBar } from './tabs';
 
 const SILENCE_TIMEOUT_MS = 10000;
-const RESTART_DELAY_MS = 500;
-
-const STOP_PHRASES = ['merlin termine', 'merlin stop', "merlin c'est tout", 'merlin c est tout'];
-
-interface SpeechRecognitionResult {
-  readonly isFinal: boolean;
-  readonly length: number;
-  item(index: number): SpeechRecognitionAlternative;
-  [index: number]: SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionAlternative {
-  readonly transcript: string;
-  readonly confidence: number;
-}
-
-interface SpeechRecognitionEvent extends Event {
-  readonly resultIndex: number;
-  readonly results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionResultList {
-  readonly length: number;
-  item(index: number): SpeechRecognitionResult;
-  [index: number]: SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  readonly error: string;
-}
-
-interface MerlinSpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start(): void;
-  stop(): void;
-  abort(): void;
-  onresult: ((ev: SpeechRecognitionEvent) => void) | null;
-  onerror: ((ev: SpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
-  onstart: (() => void) | null;
-}
-
-type SpeechRecognitionCtor = new () => MerlinSpeechRecognition;
-
-function getSpeechRecognition(): SpeechRecognitionCtor | null {
-  const w = window as Window & {
-    SpeechRecognition?: SpeechRecognitionCtor;
-    webkitSpeechRecognition?: SpeechRecognitionCtor;
-  };
-  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
-}
 
 export interface MerlinOptions {
   journal: Journal;
@@ -72,7 +30,8 @@ export class Merlin {
   private journal: Journal;
   private tabBar: TabBar;
   private state: MerlinState = 'off';
-  private recognition: MerlinSpeechRecognition | null = null;
+  private engine: MerlinSpeechEngine | null = null;
+  private engineReady: Promise<void> | null = null;
   private overlay: HTMLElement | null = null;
   private sessionText = '';
   private silenceTimer: ReturnType<typeof setInterval> | null = null;
@@ -92,25 +51,49 @@ export class Merlin {
 
   setEnabled(enabled: boolean): void {
     if (enabled) {
-      this.prepare();
+      void this.prepare();
     } else {
-      this.stop();
+      void this.stop();
     }
   }
 
-  /** Démarre l'écoute — à appeler depuis un clic utilisateur. */
   beginListening(): Promise<boolean> {
     return this.activateListening();
   }
 
   isSupported(): boolean {
-    return getSpeechRecognition() !== null;
+    return true;
   }
 
-  /** Affiche l'overlay ; l'écoute démarre au premier clic utilisateur (requis par le navigateur). */
-  private prepare(): void {
-    const Ctor = getSpeechRecognition();
-    if (!Ctor) {
+  private ensureEngine(): Promise<void> {
+    if (this.engine) return Promise.resolve();
+    if (this.engineReady) return this.engineReady;
+
+    this.engineReady = createMerlinSpeechEngine({
+      onStart: () => {
+        this.listeningActive = true;
+        this.updateListeningState(true);
+        if (this.state === 'dictating') {
+          this.lastHypothesis = '';
+        }
+      },
+      onEnd: () => {
+        this.listeningActive = false;
+        this.updateListeningState(false);
+      },
+      onError: (code) => this.handleSpeechError(code),
+      onTranscript: (text) => this.handleTranscript(text),
+    }).then((engine) => {
+      this.engine = engine;
+    });
+
+    return this.engineReady;
+  }
+
+  private async prepare(): Promise<void> {
+    await this.ensureEngine();
+    const supported = await this.engine!.isSupported();
+    if (!supported) {
       this.state = 'idle';
       this.showOverlay('idle');
       this.setMicHint('Reconnaissance vocale non supportée');
@@ -124,127 +107,65 @@ export class Merlin {
   }
 
   private async activateListening(): Promise<boolean> {
+    await this.ensureEngine();
+    if (!this.engine) return false;
     if (this.listeningActive) return true;
 
-    const Ctor = getSpeechRecognition();
-    if (!Ctor) return false;
-
-    const micOk = await this.flashMicrophonePermission();
+    const micOk = await this.engine.requestPermission();
     if (!micOk) {
       this.setMicHint('Autorisez le micro dans les réglages');
       return false;
     }
 
-    if (!this.recognition) {
-      this.recognition = new Ctor();
-      this.recognition.continuous = true;
-      this.recognition.interimResults = true;
-      this.recognition.lang = 'fr-FR';
-      this.recognition.onresult = (event) => this.handleResult(event);
-      this.recognition.onerror = (event) => this.handleError(event);
-      this.recognition.onend = () => this.handleEnd();
-      this.recognition.onstart = () => {
-        this.listeningActive = true;
-        this.updateListeningState(true);
-        if (this.state === 'dictating') {
-          this.lastHypothesis = '';
-        }
-      };
-    }
-
-    const started = this.startListening();
+    const started = await this.engine.start();
     if (started) {
       this.setMicHint('Dites « Merlin journal »');
+    } else {
+      this.setMicHint('Impossible de démarrer le micro');
     }
     return started;
   }
 
-  /** Demande la permission sans garder le flux ouvert (évite les conflits avec SpeechRecognition). */
-  private async flashMicrophonePermission(): Promise<boolean> {
-    if (!navigator.mediaDevices?.getUserMedia) return true;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      for (const track of stream.getTracks()) track.stop();
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private startListening(): boolean {
-    if (this.state === 'off' || !this.recognition) return false;
-    try {
-      this.recognition.start();
-      return true;
-    } catch {
-      setTimeout(() => {
-        if (this.state !== 'off' && this.recognition) {
-          try {
-            this.recognition.start();
-          } catch {
-            this.setMicHint('Impossible de démarrer le micro');
-          }
-        }
-      }, RESTART_DELAY_MS);
-      return false;
-    }
-  }
-
-  private handleEnd(): void {
-    this.listeningActive = false;
-    this.updateListeningState(false);
-    if (this.state === 'off') return;
-
-    setTimeout(() => {
-      if (this.state !== 'off' && this.recognition) {
-        this.startListening();
-      }
-    }, RESTART_DELAY_MS);
-  }
-
-  private stop(): void {
+  private async stop(): Promise<void> {
     this.state = 'off';
     this.listeningActive = false;
     this.clearSilenceTimer();
     void this.releaseWakeLock();
     document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
 
-    if (this.recognition) {
-      this.recognition.onend = null;
-      this.recognition.onresult = null;
-      this.recognition.onerror = null;
-      this.recognition.onstart = null;
-      try {
-        this.recognition.abort();
-      } catch {
-        // ignore
-      }
-      this.recognition = null;
+    if (this.engine) {
+      await this.engine.abort();
     }
 
     this.hideOverlay();
   }
 
-  private handleError(event: SpeechRecognitionErrorEvent): void {
-    if (event.error === 'no-speech') return;
-    if (event.error === 'aborted') return;
-    if (event.error === 'not-allowed') {
+  private handleSpeechError(code: string): void {
+    if (code === 'not-allowed' || code === 'permission-denied') {
       this.listeningActive = false;
       this.setMicHint('Micro refusé');
       return;
     }
-    this.setMicHint(`Erreur : ${event.error}`);
+    if (code === 'restart-failed' || code === 'start-failed') {
+      this.setMicHint('Impossible de démarrer le micro');
+      return;
+    }
+    this.setMicHint(`Erreur : ${code}`);
   }
 
   private async onVisibilityChange(): Promise<void> {
-    if (document.visibilityState === 'visible' && this.state !== 'off' && this.listeningActive) {
-      setTimeout(() => this.startListening(), RESTART_DELAY_MS);
+    if (
+      document.visibilityState === 'visible' &&
+      this.state !== 'off' &&
+      !this.listeningActive &&
+      this.engine
+    ) {
+      await this.engine.start();
     }
   }
 
-  private handleResult(event: SpeechRecognitionEvent): void {
-    const { full } = parseResults(event);
-
+  private handleTranscript(raw: string): void {
+    const full = stripCommands(raw.trim());
     if (!full) return;
 
     if (this.state === 'idle') {
@@ -255,21 +176,16 @@ export class Merlin {
     }
 
     if (this.state === 'dictating') {
-      if (matchesPhrase(getRecentFinalText(event), STOP_PHRASES)) {
+      if (matchesPhrase(full, STOP_PHRASES)) {
         void this.endDictation();
         return;
       }
 
-      this.processNewFinals(event);
+      this.processTranscript(full);
     }
   }
 
-  /**
-   * Une seule écriture par événement, basée sur l'hypothèse la plus complète.
-   * Gère les segments cumulatifs et les redémarrages après pause.
-   */
-  private processNewFinals(event: SpeechRecognitionEvent): void {
-    const hypothesis = getRecognitionHypothesis(event);
+  private processTranscript(hypothesis: string): void {
     if (!hypothesis) return;
     if (hypothesis === this.lastHypothesis) return;
     this.lastHypothesis = hypothesis;
@@ -313,8 +229,7 @@ export class Merlin {
     await this.journal.flushToday();
     await this.releaseWakeLock();
 
-    const hasApiKey = isAiConfigured();
-    if (this.sessionText.trim() && hasApiKey) {
+    if (this.sessionText.trim()) {
       this.showStructurePrompt();
     } else {
       this.showOverlay('idle');
@@ -410,11 +325,9 @@ export class Merlin {
 
     this.clearSilenceTimer();
     this.silenceCountdown = SILENCE_TIMEOUT_MS / 1000;
-    this.updateSilenceCountdown();
 
     this.silenceTimer = setInterval(() => {
       this.silenceCountdown -= 1;
-      this.updateSilenceCountdown();
       if (this.silenceCountdown <= 0) {
         void this.endDictation();
       }
@@ -426,11 +339,6 @@ export class Merlin {
       clearInterval(this.silenceTimer);
       this.silenceTimer = null;
     }
-    this.updateSilenceCountdown();
-  }
-
-  private updateSilenceCountdown(): void {
-    /* indicateur visuel retiré — la vague suffit */
   }
 
   private async requestWakeLock(): Promise<void> {
@@ -508,140 +416,6 @@ export class Merlin {
   }
 
   destroy(): void {
-    this.stop();
+    void this.stop();
   }
-}
-
-interface ParsedResults {
-  full: string;
-}
-
-function parseResults(event: SpeechRecognitionEvent): ParsedResults {
-  const full = getRecognitionHypothesis(event);
-  return { full };
-}
-
-/** Hypothèse la plus complète : interim (souvent cumulatif) ou dernier final le plus long. */
-function getRecognitionHypothesis(event: SpeechRecognitionEvent): string {
-  let longestFinal = '';
-  let interim = '';
-
-  for (let i = 0; i < event.results.length; i++) {
-    const raw = event.results[i][0]?.transcript ?? '';
-    const cleaned = stripCommands(raw.trim());
-    if (!cleaned) continue;
-
-    if (event.results[i].isFinal) {
-      if (cleaned.length > longestFinal.length) longestFinal = cleaned;
-    } else {
-      interim = cleaned;
-    }
-  }
-
-  if (interim.length >= longestFinal.length) return interim;
-  return longestFinal || interim;
-}
-
-function getRecentFinalText(event: SpeechRecognitionEvent): string {
-  return getRecognitionHypothesis(event);
-}
-
-/**
- * Retourne uniquement les mots nouveaux dans `incoming` par rapport à `existing`.
- * Gère les segments cumulatifs et les reprises après pause (mots isolés déjà présents).
- */
-function extractTranscriptDelta(existing: string, incoming: string): string {
-  const prev = existing.trim();
-  const cur = incoming.trim();
-  if (!cur) return '';
-  if (!prev) return collapseStutter(cur);
-
-  const prevNorm = normalize(prev);
-  const curNorm = normalize(cur);
-
-  if (curNorm === prevNorm) return '';
-  if (prevNorm.includes(curNorm)) return '';
-
-  const prevWords = prevNorm.split(/\s+/).filter(Boolean);
-  const curWords = curNorm.split(/\s+/).filter(Boolean);
-  const origCurWords = cur.split(/\s+/).filter(Boolean);
-
-  let shared = 0;
-  while (shared < prevWords.length && shared < curWords.length) {
-    if (prevWords[shared] !== curWords[shared]) break;
-    shared++;
-  }
-
-  if (curWords.length > shared) {
-    return collapseStutter(origCurWords.slice(shared).join(' '));
-  }
-
-  if (wordsAreSubsequence(curWords, prevWords)) return '';
-
-  return '';
-}
-
-function wordsAreSubsequence(needle: string[], haystack: string[]): boolean {
-  if (needle.length === 0) return true;
-  let j = 0;
-  for (let i = 0; i < haystack.length && j < needle.length; i++) {
-    if (haystack[i] === needle[j]) j++;
-  }
-  return j === needle.length;
-}
-
-/** Réduit les répétitions consécutives : « le le le » → « le » */
-function collapseStutter(text: string): string {
-  const words = text.split(/\s+/).filter(Boolean);
-  const out: string[] = [];
-  for (const word of words) {
-    const prev = out[out.length - 1];
-    if (!prev || normalize(prev) !== normalize(word)) {
-      out.push(word);
-    }
-  }
-  return out.join(' ');
-}
-
-function normalize(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[,.!?;:]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function matchesWake(text: string): boolean {
-  const norm = normalize(text);
-  if (norm.includes('merlin journal')) return true;
-  if (norm.includes('merlin le journal')) return true;
-  if (norm.includes('merlin du journal')) return true;
-
-  const merlinIdx = norm.indexOf('merlin');
-  const journalIdx = norm.indexOf('journal');
-  if (merlinIdx >= 0 && journalIdx > merlinIdx && journalIdx - merlinIdx < 25) {
-    return true;
-  }
-  return false;
-}
-
-function matchesPhrase(text: string, phrases: string[]): boolean {
-  const norm = normalize(text);
-  return phrases.some((p) => norm.includes(normalize(p)));
-}
-
-function stripCommands(text: string): string {
-  let result = text;
-  const allPhrases = [
-    'merlin journal',
-    'merlin le journal',
-    ...STOP_PHRASES,
-  ];
-  for (const phrase of allPhrases) {
-    const re = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-    result = result.replace(re, '');
-  }
-  return result.trim();
 }

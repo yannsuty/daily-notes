@@ -20,7 +20,6 @@ import {
   cacheAiThoughts,
   extractThoughtsWithAI,
   getCachedAiThoughts,
-  isAiConfigured,
 } from './merlin-ai';
 import {
   buildThoughtGraph,
@@ -129,7 +128,7 @@ export class MindMap {
     if (fingerprint === this.cacheFingerprint && this.currentGraph.nodes.length > 0) {
       this.renderSummary(this.currentGraph);
       this.render(this.currentGraph);
-      if (isAiConfigured() && !cachedAi && !this.aiGraph && hasContent) {
+      if (!cachedAi && !this.aiGraph && hasContent) {
         void this.runAutoAiAnalysis(days, fingerprint);
       }
       return;
@@ -141,7 +140,7 @@ export class MindMap {
     this.renderSummary(this.currentGraph);
     this.render(this.currentGraph);
 
-    if (isAiConfigured() && !this.aiGraph && hasContent) {
+    if (!this.aiGraph && hasContent) {
       void this.runAutoAiAnalysis(days, fingerprint);
     }
   }

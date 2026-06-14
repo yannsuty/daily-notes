@@ -1,45 +1,6 @@
-import {
-  chatCompletion,
-  clearStoredAiApiKey,
-  getAiConfig,
-  getDefaultModel,
-  getStoredAiApiKey,
-  isAiConfigured,
-  parseJsonFromAi,
-  storeAiApiKey,
-  storeAiConfig,
-  type AiConfig,
-  type AiProvider,
-} from './ai-provider';
+import { chatCompletion, parseJsonFromAi } from './ai-provider';
 import type { ThoughtGraph, ThoughtLink, ThoughtNode } from './parse-thoughts';
 import { addDays } from './types';
-
-export {
-  clearStoredAiApiKey,
-  getAiConfig,
-  getDefaultModel,
-  getStoredAiApiKey,
-  isAiConfigured,
-  storeAiApiKey,
-  storeAiConfig,
-  type AiConfig,
-  type AiProvider,
-};
-
-/** @deprecated use getStoredAiApiKey */
-export function storeMerlinApiKey(key: string): void {
-  storeAiApiKey(key);
-}
-
-/** @deprecated use getStoredAiApiKey */
-export function getStoredMerlinApiKey(): string | null {
-  return getStoredAiApiKey();
-}
-
-/** @deprecated use clearStoredAiApiKey */
-export function clearStoredMerlinApiKey(): void {
-  clearStoredAiApiKey();
-}
 
 export interface StructureResult {
   ok: boolean;
