@@ -26,6 +26,9 @@ export async function initApp(root: HTMLElement): Promise<void> {
   syncIndicator.className = 'app__sync-status';
   syncIndicator.setAttribute('aria-live', 'polite');
 
+  const navHost = document.createElement('div');
+  navHost.className = 'app__nav';
+
   const tabsHost = document.createElement('div');
   tabsHost.className = 'app__tabs-host';
 
@@ -72,12 +75,14 @@ export async function initApp(root: HTMLElement): Promise<void> {
         });
       }
     },
+    onReanalyzeThoughts: () => mindMap?.resetAiAnalysis() ?? Promise.resolve(),
   });
-  header.appendChild(settingsBtn);
+  navHost.appendChild(tabsHost);
+  navHost.appendChild(settingsBtn);
 
   root.appendChild(header);
-  root.appendChild(tabsHost);
   root.appendChild(mainContainer);
+  root.appendChild(navHost);
 
   const meta = await getMeta();
 

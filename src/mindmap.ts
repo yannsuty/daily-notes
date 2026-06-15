@@ -18,6 +18,7 @@ import { zoom, zoomIdentity, type ZoomBehavior } from 'd3-zoom';
 import { getAllDays } from './db';
 import {
   cacheAiThoughts,
+  clearAiThoughtsCache,
   extractThoughtsWithAI,
   getCachedAiThoughts,
 } from './merlin-ai';
@@ -116,6 +117,14 @@ export class MindMap {
   }
 
   async init(): Promise<void> {
+    await this.refresh();
+  }
+
+  async resetAiAnalysis(): Promise<void> {
+    clearAiThoughtsCache();
+    this.aiGraph = null;
+    this.cacheFingerprint = '';
+    this.currentGraph = { nodes: [], links: [] };
     await this.refresh();
   }
 

@@ -12,6 +12,7 @@ export interface SettingsCallbacks {
   onPassphraseSet: () => void;
   onSyncStatus: (status: string) => void;
   onMerlinChange: (enabled: boolean, fromUserGesture?: boolean) => void;
+  onReanalyzeThoughts: () => Promise<void>;
 }
 
 export function createSettingsButton(callbacks: SettingsCallbacks): HTMLElement {
@@ -19,7 +20,7 @@ export function createSettingsButton(callbacks: SettingsCallbacks): HTMLElement 
   btn.className = 'settings-btn';
   btn.type = 'button';
   btn.setAttribute('aria-label', 'Réglages');
-  btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`;
+  btn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`;
   btn.addEventListener('click', () => openSettingsModal(callbacks));
   return btn;
 }
@@ -43,14 +44,16 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
           <input type="checkbox" id="merlin-enabled" ${meta.merlinEnabled ? 'checked' : ''} />
           <span>Activer Merlin</span>
         </label>
-        <p class="modal__desc">
-          Dictée vocale pour votre journal. Dites <strong>« Merlin journal »</strong> pour commencer
-          (l'app doit rester ouverte au premier plan — pas d'écoute écran éteint).
-          Pour terminer : <strong>« Merlin termine »</strong>, <strong>« Merlin stop »</strong>,
-          le bouton Stop, ou 8 secondes de silence après votre dernier mot.
-          Corrige les erreurs de dictée, structure vos notes (#tags, [[concepts]]) et alimente la carte mentale.
-        </p>
         <p class="modal__status" id="merlin-status"></p>
+      </section>
+
+      <section class="modal__section">
+        <h3 class="modal__section-title">Pensées</h3>
+        <p class="modal__desc">
+          Relance l'analyse IA de vos notes pour régénérer la carte des pensées.
+        </p>
+        <p class="modal__status" id="thoughts-status"></p>
+        <button type="button" class="btn btn--sync" id="reanalyze-thoughts">Réanalyser les pensées</button>
       </section>
 
       <section class="modal__section">
@@ -80,6 +83,8 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
     const input = modal.querySelector<HTMLInputElement>('#passphrase')!;
     const merlinStatusEl = modal.querySelector<HTMLElement>('#merlin-status')!;
     const merlinToggle = modal.querySelector<HTMLInputElement>('#merlin-enabled')!;
+    const thoughtsStatusEl = modal.querySelector<HTMLElement>('#thoughts-status')!;
+    const reanalyzeBtn = modal.querySelector<HTMLButtonElement>('#reanalyze-thoughts')!;
 
     if (meta.passphraseSet && getStoredPassphrase()) {
       input.placeholder = '•••••••• (déjà configurée)';
@@ -95,6 +100,15 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
         } else {
           merlinStatusEl.textContent = 'Merlin désactivé.';
         }
+      });
+    });
+
+    reanalyzeBtn.addEventListener('click', () => {
+      reanalyzeBtn.disabled = true;
+      thoughtsStatusEl.textContent = 'Analyse en cours…';
+      void callbacks.onReanalyzeThoughts().then(() => {
+        thoughtsStatusEl.textContent = 'Analyse relancée. Consultez l\'onglet Pensées.';
+        reanalyzeBtn.disabled = false;
       });
     });
 

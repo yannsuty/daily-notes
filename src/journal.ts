@@ -192,7 +192,7 @@ export class Journal {
 
   private updateViewportVars(): void {
     const appHeader = document.querySelector<HTMLElement>('.app__header');
-    const tabsHost = document.querySelector<HTMLElement>('.app__tabs-host');
+    const tabsHost = document.querySelector<HTMLElement>('.app__nav');
     const dayHeader = this.scrollEl.querySelector<HTMLElement>(
       '.day:last-child .day__header',
     );

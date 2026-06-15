@@ -162,6 +162,18 @@ export function cacheAiThoughts(fingerprint: string, graph: ThoughtGraph): void 
   }
 }
 
+export function clearAiThoughtsCache(): void {
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(THOUGHTS_CACHE_PREFIX)) {
+        localStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
 function prepareJournalExcerpt(
   days: Record<string, { content: string }>,
   today: string,

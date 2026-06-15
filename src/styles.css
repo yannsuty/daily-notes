@@ -74,6 +74,7 @@ body {
   background: var(--surface);
   flex-shrink: 0;
   z-index: 10;
+  order: 1;
 }
 
 .app__title {
@@ -123,6 +124,7 @@ body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  order: 3;
 }
 
 .journal {
@@ -309,10 +311,24 @@ body {
   opacity: 0.85;
 }
 
-.app__tabs-host {
+.app__nav {
+  display: flex;
+  align-items: stretch;
   flex-shrink: 0;
+  order: 2;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  z-index: 10;
+}
+
+.app__tabs-host {
+  flex: 1;
+  min-width: 0;
+}
+
+.app__nav .settings-btn {
+  flex-shrink: 0;
+  margin: 0.25rem 0.5rem 0.25rem 0;
 }
 
 .tabs {
@@ -341,6 +357,68 @@ body {
 .tabs__btn--active {
   color: var(--accent);
   border-bottom-color: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .app__header {
+    order: 1;
+  }
+
+  .app__main {
+    order: 2;
+    padding-bottom: var(--tabs-height, 3rem);
+  }
+
+  .app__nav {
+    order: 3;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-bottom: none;
+    border-top: 1px solid var(--border);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .app__nav .settings-btn {
+    margin: 0;
+    width: 52px;
+    height: auto;
+    border-radius: 0;
+  }
+
+  .tabs {
+    padding: 0;
+  }
+
+  .tabs__btn {
+    flex: 1;
+    text-align: center;
+    padding: 0.75rem 0.5rem;
+    margin-bottom: 0;
+    border-bottom: none;
+    border-top: 2px solid transparent;
+  }
+
+  .tabs__btn--active {
+    border-bottom-color: transparent;
+    border-top-color: var(--accent);
+  }
+
+  .merlin {
+    bottom: calc(var(--tabs-height, 3rem) + max(0.5rem, env(safe-area-inset-bottom)));
+    right: max(1rem, env(safe-area-inset-right));
+  }
+
+  .keyboard-open .merlin {
+    bottom: calc(var(--keyboard-inset, 0px) + 0.5rem);
+  }
+
+  .journal__scroll {
+    scroll-padding-bottom: calc(
+      var(--keyboard-inset, 0px) + var(--tabs-height, 3rem) + 1rem
+    );
+  }
 }
 
 .tab-panel {
