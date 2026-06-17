@@ -28,6 +28,8 @@ import type { TabId } from './tabs';
 const DICTATION_SILENCE_MS = 10000;
 const CONVERSING_SILENCE_MS = 2500;
 const WAKE_ACK = 'Oui ?';
+/** Micro flottant (overlay) — désactivé pour le moment */
+const FLOATING_MIC_ENABLED = false;
 
 export interface MerlinOptions {
   journal: Journal;
@@ -541,6 +543,11 @@ export class Merlin {
   }
 
   private showStructurePrompt(): void {
+    if (!FLOATING_MIC_ENABLED) {
+      this.setStatusHint('Dites « Merlin » ou « Merlin journal »');
+      return;
+    }
+
     if (!this.overlay) this.showOverlay('idle');
 
     const existing = this.overlay?.querySelector('.merlin__structure');
@@ -673,6 +680,8 @@ export class Merlin {
   }
 
   private showOverlay(mode: OverlayMode): void {
+    if (!FLOATING_MIC_ENABLED) return;
+
     if (!this.overlay) {
       this.overlay = document.createElement('div');
       this.overlay.className = 'merlin';
@@ -746,10 +755,12 @@ export class Merlin {
   }
 
   private updateListeningState(active: boolean): void {
+    if (!FLOATING_MIC_ENABLED) return;
     this.overlay?.classList.toggle('merlin--listening', active);
   }
 
   private setStatusHint(hint: string): void {
+    if (!FLOATING_MIC_ENABLED) return;
     const status = this.overlay?.querySelector<HTMLElement>('.merlin__status');
     if (status) status.textContent = hint;
     const btn = this.overlay?.querySelector<HTMLButtonElement>('.merlin__mic-btn');
