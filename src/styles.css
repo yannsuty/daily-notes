@@ -484,6 +484,20 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
+  max-width: 10rem;
+}
+
+.merlin__status {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.3;
+  max-width: 9rem;
+}
+
+.merlin__status:empty {
+  display: none;
 }
 
 .merlin__wave {
@@ -495,7 +509,10 @@ body {
 }
 
 .merlin--listening .merlin__wave,
-.merlin--dictating .merlin__wave {
+.merlin--dictating .merlin__wave,
+.merlin--conversing .merlin__wave,
+.merlin--speaking .merlin__wave,
+.merlin--processing .merlin__wave {
   display: flex;
 }
 
@@ -538,6 +555,20 @@ body {
   animation-duration: 0.55s;
 }
 
+.merlin--conversing .merlin__wave span {
+  background: #7c3aed;
+}
+
+.merlin--speaking .merlin__wave span {
+  background: #2563eb;
+  animation-duration: 0.7s;
+}
+
+.merlin--processing .merlin__wave span {
+  background: #f59e0b;
+  animation-duration: 1.1s;
+}
+
 @keyframes merlin-wave {
   0%,
   100% {
@@ -551,7 +582,8 @@ body {
 }
 
 .merlin__mic-btn,
-.merlin__stop-btn {
+.merlin__stop-btn,
+.merlin__interrupt-btn {
   width: 52px;
   height: 52px;
   border: none;
@@ -575,6 +607,17 @@ body {
   font-size: 0.75rem;
   font-weight: 600;
   box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+}
+
+.merlin__interrupt-btn {
+  background: #f59e0b;
+  font-size: 0.625rem;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+  width: auto;
+  min-width: 52px;
+  padding: 0 0.5rem;
+  border-radius: 26px;
 }
 
 .merlin__structure {
@@ -939,6 +982,23 @@ body {
   border-top: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
+}
+
+.merlin-chat__voice {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  border-radius: 10px;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 1.125rem;
+  cursor: pointer;
+}
+
+.merlin-chat__voice:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .merlin-chat__input {

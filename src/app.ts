@@ -111,6 +111,9 @@ export async function initApp(root: HTMLElement): Promise<void> {
     onConversationUpdate: () => {
       void syncNow().then(() => updateSyncIndicator(syncIndicator));
     },
+    onVoiceRequest: () => {
+      void merlin?.beginConversing();
+    },
   });
 
   journal = new Journal({
@@ -133,7 +136,14 @@ export async function initApp(root: HTMLElement): Promise<void> {
   await journal.init();
   await mindMap.init();
 
-  merlin = new Merlin({ journal, tabBar });
+  merlin = new Merlin({
+    journal,
+    tabBar,
+    merlinChat,
+    onConversationUpdate: () => {
+      void syncNow().then(() => updateSyncIndicator(syncIndicator));
+    },
+  });
   if (meta.merlinEnabled) {
     merlin.setEnabled(true);
   }

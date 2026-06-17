@@ -3,7 +3,10 @@ export const STOP_PHRASES = [
   'merlin stop',
   "merlin c'est tout",
   'merlin c est tout',
+  'merlin au revoir',
 ];
+
+export type WakeIntent = 'assistant' | 'journal';
 
 export function normalize(text: string): string {
   return text
@@ -15,7 +18,7 @@ export function normalize(text: string): string {
     .trim();
 }
 
-export function matchesWake(text: string): boolean {
+export function matchesWakeJournal(text: string): boolean {
   const norm = normalize(text);
   if (norm.includes('merlin journal')) return true;
   if (norm.includes('merlin le journal')) return true;
@@ -29,19 +32,57 @@ export function matchesWake(text: string): boolean {
   return false;
 }
 
+export function matchesWakeAssistant(text: string): boolean {
+  const norm = normalize(text);
+  if (!norm.includes('merlin')) return false;
+  if (matchesWakeJournal(text)) return false;
+  return true;
+}
+
+/** @deprecated Use parseWakeIntent */
+export function matchesWake(text: string): boolean {
+  return matchesWakeJournal(text);
+}
+
+export function parseWakeIntent(text: string): WakeIntent | null {
+  if (matchesWakeJournal(text)) return 'journal';
+  if (matchesWakeAssistant(text)) return 'assistant';
+  return null;
+}
+
 export function matchesPhrase(text: string, phrases: string[]): boolean {
   const norm = normalize(text);
   return phrases.some((p) => norm.includes(normalize(p)));
 }
 
+const WAKE_STRIP_PATTERNS = [
+  'merlin journal',
+  'merlin le journal',
+  'merlin du journal',
+  'merlin',
+  ...STOP_PHRASES,
+];
+
 export function stripCommands(text: string): string {
   let result = text;
-  const allPhrases = ['merlin journal', 'merlin le journal', ...STOP_PHRASES];
-  for (const phrase of allPhrases) {
+  for (const phrase of WAKE_STRIP_PATTERNS) {
     const re = new RegExp(phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
     result = result.replace(re, '');
   }
   return result.trim();
+}
+
+export function extractAssistantQuery(text: string): string {
+  let result = text.trim();
+  const patterns = [
+    /^merlin[,:\s]+/i,
+    /^dis merlin[,:\s]+/i,
+    /^hey merlin[,:\s]+/i,
+  ];
+  for (const re of patterns) {
+    result = result.replace(re, '');
+  }
+  return stripCommands(result).trim();
 }
 
 export function collapseStutter(text: string): string {

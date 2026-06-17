@@ -56,8 +56,27 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
         <h3 class="modal__section-title">Merlin vocal</h3>
         <label class="modal__toggle">
           <input type="checkbox" id="merlin-enabled" ${meta.merlinEnabled ? 'checked' : ''} />
-          <span>Activer Merlin</span>
+          <span>Activer Merlin (écoute et micro)</span>
         </label>
+        <label class="modal__toggle">
+          <input type="checkbox" id="merlin-continuous" ${meta.merlinContinuousListen !== false ? 'checked' : ''} />
+          <span>Écoute continue (wake word « Merlin »)</span>
+        </label>
+        <label class="modal__toggle">
+          <input type="checkbox" id="merlin-tts" ${meta.merlinTtsEnabled !== false ? 'checked' : ''} />
+          <span>Réponses vocales (synthèse)</span>
+        </label>
+        <label class="modal__label" for="merlin-tts-rate">Vitesse de la voix</label>
+        <input
+          id="merlin-tts-rate"
+          class="modal__input"
+          type="range"
+          min="0.5"
+          max="1.5"
+          step="0.1"
+          value="${meta.merlinTtsRate ?? 1}"
+        />
+        <p class="modal__desc">Dites « Merlin » pour discuter, « Merlin journal » pour dicter.</p>
         <p class="modal__status" id="merlin-status"></p>
       </section>
 
@@ -97,6 +116,9 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
     const input = modal.querySelector<HTMLInputElement>('#passphrase')!;
     const merlinStatusEl = modal.querySelector<HTMLElement>('#merlin-status')!;
     const merlinToggle = modal.querySelector<HTMLInputElement>('#merlin-enabled')!;
+    const merlinContinuous = modal.querySelector<HTMLInputElement>('#merlin-continuous')!;
+    const merlinTts = modal.querySelector<HTMLInputElement>('#merlin-tts')!;
+    const merlinTtsRate = modal.querySelector<HTMLInputElement>('#merlin-tts-rate')!;
     const thoughtsStatusEl = modal.querySelector<HTMLElement>('#thoughts-status')!;
     const reanalyzeBtn = modal.querySelector<HTMLButtonElement>('#reanalyze-thoughts')!;
     const memoryListEl = modal.querySelector<HTMLElement>('#merlin-memory-list')!;
@@ -129,11 +151,27 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
       void saveMeta({ merlinEnabled: enabled }).then(() => {
         callbacks.onMerlinChange(enabled, true);
         if (enabled) {
-          merlinStatusEl.textContent = 'Merlin activé — appuyez sur 🎙 pour lancer l\'écoute.';
+          merlinStatusEl.textContent = 'Merlin activé — dites « Merlin » ou appuyez sur 🎙.';
         } else {
           merlinStatusEl.textContent = 'Merlin désactivé.';
         }
       });
+    });
+
+    merlinContinuous.addEventListener('change', () => {
+      void saveMeta({ merlinContinuousListen: merlinContinuous.checked }).then(() => {
+        merlinStatusEl.textContent = merlinContinuous.checked
+          ? 'Écoute continue activée.'
+          : 'Écoute continue désactivée — utilisez le bouton 🎙.';
+      });
+    });
+
+    merlinTts.addEventListener('change', () => {
+      void saveMeta({ merlinTtsEnabled: merlinTts.checked });
+    });
+
+    merlinTtsRate.addEventListener('change', () => {
+      void saveMeta({ merlinTtsRate: parseFloat(merlinTtsRate.value) });
     });
 
     reanalyzeBtn.addEventListener('click', () => {

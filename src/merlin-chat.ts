@@ -1,24 +1,29 @@
 import { getMerlinConversation } from './db';
 import { getWelcomeMessage, handleUserMessage } from './merlin-agent';
+import { getMerlinTtsPrefs, speakMerlin } from './merlin-tts';
 import type { MerlinMessage } from './types';
 
 export interface MerlinChatOptions {
   container: HTMLElement;
   onConversationUpdate?: () => void;
+  onVoiceRequest?: () => void;
 }
 
 export class MerlinChat {
   private container: HTMLElement;
   private onConversationUpdate?: () => void;
+  private onVoiceRequest?: () => void;
   private messagesEl: HTMLElement | null = null;
   private inputEl: HTMLTextAreaElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
+  private voiceBtn: HTMLButtonElement | null = null;
   private statusEl: HTMLElement | null = null;
   private thinking = false;
 
   constructor(options: MerlinChatOptions) {
     this.container = options.container;
     this.onConversationUpdate = options.onConversationUpdate;
+    this.onVoiceRequest = options.onVoiceRequest;
   }
 
   async init(): Promise<void> {
@@ -27,6 +32,7 @@ export class MerlinChat {
       <div class="merlin-chat__messages" role="log" aria-live="polite" aria-label="Conversation avec Merlin"></div>
       <div class="merlin-chat__status" aria-live="polite"></div>
       <form class="merlin-chat__composer">
+        <button type="button" class="merlin-chat__voice" aria-label="Parler à Merlin" title="Parler à Merlin">🎙</button>
         <textarea
           class="merlin-chat__input"
           rows="1"
@@ -40,12 +46,17 @@ export class MerlinChat {
     this.messagesEl = this.container.querySelector('.merlin-chat__messages');
     this.inputEl = this.container.querySelector('.merlin-chat__input');
     this.sendBtn = this.container.querySelector('.merlin-chat__send');
+    this.voiceBtn = this.container.querySelector('.merlin-chat__voice');
     this.statusEl = this.container.querySelector('.merlin-chat__status');
 
     const form = this.container.querySelector('.merlin-chat__composer') as HTMLFormElement;
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       void this.send();
+    });
+
+    this.voiceBtn?.addEventListener('click', () => {
+      this.onVoiceRequest?.();
     });
 
     this.inputEl?.addEventListener('keydown', (e) => {
@@ -103,6 +114,7 @@ export class MerlinChat {
   private setThinking(active: boolean, message = ''): void {
     this.thinking = active;
     if (this.sendBtn) this.sendBtn.disabled = active;
+    if (this.voiceBtn) this.voiceBtn.disabled = active;
     if (this.inputEl) this.inputEl.disabled = active;
     if (this.statusEl) {
       this.statusEl.textContent = message;
@@ -117,11 +129,20 @@ export class MerlinChat {
     if (!text) return;
 
     this.inputEl.value = '';
-    this.appendBubble('user', text, `pending-${Date.now()}`);
+    await this.submitMessage(text);
+  }
+
+  async submitMessage(text: string): Promise<void> {
+    if (this.thinking) return;
+
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    this.appendBubble('user', trimmed, `pending-${Date.now()}`);
     this.scrollToBottom();
     this.setThinking(true, 'Merlin réfléchit…');
 
-    const result = await handleUserMessage(text);
+    const result = await handleUserMessage(trimmed);
 
     this.setThinking(false);
 
@@ -139,6 +160,15 @@ export class MerlinChat {
 
     await this.renderMessages();
     this.onConversationUpdate?.();
+
+    if (result.content) {
+      const prefs = await getMerlinTtsPrefs();
+      if (prefs.enabled) {
+        this.setThinking(true, 'Merlin parle…');
+        await speakMerlin(result.content);
+        this.setThinking(false);
+      }
+    }
   }
 
   private showError(message: string): void {

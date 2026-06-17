@@ -3,7 +3,17 @@ import type { PluginListenerHandle } from '@capacitor/core';
 import type { SpeechRecognitionPlugin } from '@capgo/capacitor-speech-recognition';
 
 const RESTART_DELAY_MS = 500;
-const CONTEXTUAL_STRINGS = ['Merlin', 'journal', 'termine', 'stop'];
+const CONTEXTUAL_STRINGS = [
+  'Merlin',
+  'journal',
+  'termine',
+  'stop',
+  'retiens',
+  'au revoir',
+  'quoi',
+  'hier',
+  'aujourd',
+];
 
 export interface SpeechEngineCallbacks {
   onStart: () => void;

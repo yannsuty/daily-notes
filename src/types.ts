@@ -14,6 +14,9 @@ export interface AppMeta {
   passphraseSet: boolean;
   lastSyncAt: number;
   merlinEnabled: boolean;
+  merlinTtsEnabled?: boolean;
+  merlinTtsRate?: number;
+  merlinContinuousListen?: boolean;
 }
 
 export interface MerlinMessage {
@@ -93,5 +96,8 @@ export function defaultMeta(): AppMeta {
     passphraseSet: false,
     lastSyncAt: 0,
     merlinEnabled: false,
+    merlinTtsEnabled: true,
+    merlinTtsRate: 1,
+    merlinContinuousListen: true,
   };
 }

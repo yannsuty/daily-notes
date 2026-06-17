@@ -262,6 +262,9 @@ export async function exportPayload(): Promise<SyncPayload> {
       lastVisitDate: meta.lastVisitDate,
       lastSyncAt: meta.lastSyncAt,
       merlinEnabled: meta.merlinEnabled,
+      merlinTtsEnabled: meta.merlinTtsEnabled,
+      merlinTtsRate: meta.merlinTtsRate,
+      merlinContinuousListen: meta.merlinContinuousListen,
     },
     merlin,
   };
