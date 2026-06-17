@@ -375,8 +375,8 @@ body {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  .app__nav .settings-btn {
-    display: none;
+  .tabs {
+    padding: 0;
   }
 
   .tabs__btn {
