@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Antenna -->
+  <rect x="246" y="56" width="20" height="48" rx="10" fill="#8b9cb3"/>
+  <circle cx="256" cy="48" r="18" fill="#f59e0b"/>
+  <!-- Head shell -->
+  <rect x="108" y="108" width="296" height="280" rx="48" fill="#c8d3e0"/>
+  <rect x="124" y="124" width="264" height="248" rx="36" fill="#e8edf4"/>
+  <!-- Brow panel -->
+  <rect x="148" y="156" width="216" height="28" rx="8" fill="#9aa8ba"/>
+  <!-- Eyes -->
+  <circle cx="196" cy="228" r="36" fill="#1a1a2e"/>
+  <circle cx="196" cy="228" r="24" fill="#22d3ee"/>
+  <circle cx="188" cy="220" r="8" fill="#e0f7fa" opacity="0.9"/>
+  <circle cx="316" cy="228" r="36" fill="#1a1a2e"/>
+  <circle cx="316" cy="228" r="24" fill="#22d3ee"/>
+  <circle cx="308" cy="220" r="8" fill="#e0f7fa" opacity="0.9"/>
+  <!-- Mouth grille -->
+  <rect x="168" y="296" width="176" height="56" rx="12" fill="#7b8da0"/>
+  <rect x="184" y="308" width="20" height="32" rx="4" fill="#1a1a2e" opacity="0.35"/>
+  <rect x="212" y="308" width="20" height="32" rx="4" fill="#1a1a2e" opacity="0.35"/>
+  <rect x="240" y="308" width="20" height="32" rx="4" fill="#1a1a2e" opacity="0.35"/>
+  <rect x="268" y="308" width="20" height="32" rx="4" fill="#1a1a2e" opacity="0.35"/>
+  <rect x="296" y="308" width="20" height="32" rx="4" fill="#1a1a2e" opacity="0.35"/>
+  <!-- Cheek bolts -->
+  <circle cx="140" cy="260" r="10" fill="#8b9cb3"/>
+  <circle cx="372" cy="260" r="10" fill="#8b9cb3"/>
+  <!-- Neck -->
+  <rect x="216" y="388" width="80" height="36" rx="12" fill="#8b9cb3"/>
+</svg>
