@@ -4,4 +4,8 @@
     <string name="title_activity_main">Merlin</string>
     <string name="package_name">fr.dailynote.app</string>
     <string name="custom_url_scheme">fr.dailynote.app</string>
+    <string name="merlin_listen_channel">Merlin écoute</string>
+    <string name="merlin_listen_channel_desc">Notification pendant l\'écoute du wake word en arrière-plan</string>
+    <string name="merlin_listen_title">Merlin</string>
+    <string name="merlin_listen_text">À l\'écoute — dites « Merlin »</string>
 </resources>

@@ -76,7 +76,7 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
           step="0.1"
           value="${meta.merlinTtsRate ?? 1}"
         />
-        <p class="modal__desc">Dites « Merlin » pour discuter, « Merlin journal » pour dicter.</p>
+        <p class="modal__desc">Dites « Merlin » pour discuter, « Merlin journal » pour dicter. Sur Android, l'écoute continue fonctionne en arrière-plan via une notification.</p>
         <p class="modal__status" id="merlin-status"></p>
       </section>
 

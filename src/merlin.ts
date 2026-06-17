@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import {
   correctDictationText,
   structureJournalText,
@@ -20,6 +21,7 @@ import {
   stripCommands,
 } from './merlin-text';
 import { isMerlinSpeaking, speakMerlin, stopMerlinSpeech } from './merlin-tts';
+import type { MerlinWakeType } from './merlin-background';
 import type { TabBar } from './tabs';
 
 const DICTATION_SILENCE_MS = 10000;
@@ -55,6 +57,7 @@ export class Merlin {
   private sttPaused = false;
   private lastHypothesis = '';
   private wakeLock: WakeLockSentinel | null = null;
+  private backgroundActive = false;
   private boundVisibilityHandler = (): void => {
     void this.onVisibilityChange();
   };
@@ -133,8 +136,59 @@ export class Merlin {
     document.addEventListener('visibilitychange', this.boundVisibilityHandler);
 
     const meta = await getMeta();
+    if (Capacitor.isNativePlatform()) {
+      const { initMerlinBackground } = await import('./merlin-background');
+      await initMerlinBackground({
+        onWake: (type, query) => {
+          void this.handleBackgroundWake(type, query);
+        },
+      });
+    }
+
     if (meta.merlinContinuousListen !== false) {
       void this.activateListening();
+    }
+  }
+
+  private async handleBackgroundWake(type: MerlinWakeType, query: string): Promise<void> {
+    if (this.state === 'off') return;
+
+    this.backgroundActive = false;
+    await this.resumeListening();
+
+    if (type === 'journal') {
+      void this.startDictation();
+      return;
+    }
+
+    void this.startConversing(query.trim() || undefined);
+  }
+
+  private async syncBackgroundListening(): Promise<void> {
+    if (!Capacitor.isNativePlatform() || this.state === 'off') return;
+
+    const meta = await getMeta();
+    if (meta.merlinContinuousListen === false) return;
+
+    const { startBackgroundListening, stopBackgroundListening } = await import(
+      './merlin-background'
+    );
+
+    const shouldRunInBackground =
+      document.visibilityState === 'hidden' && this.state === 'idle';
+
+    if (shouldRunInBackground) {
+      if (!this.backgroundActive) {
+        await this.pauseListening();
+        const started = await startBackgroundListening();
+        this.backgroundActive = started;
+      }
+    } else if (this.backgroundActive) {
+      await stopBackgroundListening();
+      this.backgroundActive = false;
+      if (!this.sttPaused) {
+        await this.activateListening();
+      }
     }
   }
 
@@ -152,6 +206,7 @@ export class Merlin {
     const started = await this.engine.start();
     if (started) {
       this.setStatusHint('À l\'écoute…');
+      void this.syncBackgroundListening();
     } else {
       this.setStatusHint('Impossible de démarrer le micro');
     }
@@ -180,6 +235,11 @@ export class Merlin {
     this.sttPaused = false;
     this.clearSilenceTimer();
     void stopMerlinSpeech();
+    if (Capacitor.isNativePlatform()) {
+      const { destroyMerlinBackground } = await import('./merlin-background');
+      await destroyMerlinBackground();
+      this.backgroundActive = false;
+    }
     void this.releaseWakeLock();
     document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
 
@@ -204,6 +264,11 @@ export class Merlin {
   }
 
   private async onVisibilityChange(): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      await this.syncBackgroundListening();
+      return;
+    }
+
     if (
       document.visibilityState === 'visible' &&
       this.state !== 'off' &&
@@ -393,6 +458,7 @@ export class Merlin {
     this.showOverlay('idle');
     this.setStatusHint('Dites « Merlin » ou « Merlin journal »');
     await this.resumeListening();
+    await this.syncBackgroundListening();
   }
 
   private async startDictation(): Promise<void> {
@@ -424,6 +490,7 @@ export class Merlin {
       this.showOverlay('idle');
       this.setStatusHint('Dites « Merlin » ou « Merlin journal »');
     }
+    await this.syncBackgroundListening();
   }
 
   private showStructurePrompt(): void {
