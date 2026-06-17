@@ -4,7 +4,7 @@ import { Merlin } from './merlin';
 import { MerlinChat } from './merlin-chat';
 import { getMeta, saveMeta } from './db';
 import {
-  createSettingsButton,
+  SettingsPage,
   initSyncFromMeta,
   touchVisitMeta,
 } from './settings';
@@ -45,9 +45,13 @@ export async function initApp(root: HTMLElement): Promise<void> {
   const thoughtsPanel = document.createElement('div');
   thoughtsPanel.id = 'tab-thoughts';
 
+  const settingsPanel = document.createElement('div');
+  settingsPanel.id = 'tab-settings';
+
   mainContainer.appendChild(merlinPanel);
   mainContainer.appendChild(journalPanel);
   mainContainer.appendChild(thoughtsPanel);
+  mainContainer.appendChild(settingsPanel);
 
   header.appendChild(title);
   header.appendChild(syncIndicator);
@@ -56,9 +60,10 @@ export async function initApp(root: HTMLElement): Promise<void> {
   let mindMap: MindMap | null = null;
   let merlin: Merlin | null = null;
   let merlinChat: MerlinChat | null = null;
+  let settingsPage: SettingsPage | null = null;
   let tabBar: TabBar | null = null;
 
-  const settingsBtn = createSettingsButton({
+  const settingsCallbacks = {
     onPassphraseSet: () => {
       void getMeta().then((updatedMeta) => {
         initSyncFromMeta(updatedMeta, () => {
@@ -73,7 +78,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
       void merlinChat?.refresh();
       updateSyncIndicator(syncIndicator);
     },
-    onMerlinChange: (enabled, fromUserGesture) => {
+    onMerlinChange: (enabled: boolean, fromUserGesture?: boolean) => {
       merlin?.setEnabled(enabled);
       if (enabled && fromUserGesture) {
         void merlin?.beginListening().then((ok) => {
@@ -85,9 +90,9 @@ export async function initApp(root: HTMLElement): Promise<void> {
     },
     onReanalyzeThoughts: () => mindMap?.resetAiAnalysis() ?? Promise.resolve(),
     onMemoryCleared: () => void merlinChat?.refresh(),
-  });
+  };
+
   navHost.appendChild(tabsHost);
-  navHost.appendChild(settingsBtn);
 
   root.appendChild(header);
   root.appendChild(mainContainer);
@@ -102,6 +107,9 @@ export async function initApp(root: HTMLElement): Promise<void> {
       }
       if (tab === 'merlin') {
         void merlinChat?.refresh();
+      }
+      if (tab === 'settings') {
+        void settingsPage?.refresh();
       }
     },
   });
@@ -128,13 +136,17 @@ export async function initApp(root: HTMLElement): Promise<void> {
     container: thoughtsPanel,
   });
 
+  settingsPage = new SettingsPage(settingsPanel, settingsCallbacks);
+
   tabBar.registerPanel('merlin', merlinPanel);
   tabBar.registerPanel('journal', journalPanel);
   tabBar.registerPanel('thoughts', thoughtsPanel);
+  tabBar.registerPanel('settings', settingsPanel);
 
   await merlinChat.init();
   await journal.init();
   await mindMap.init();
+  await settingsPage.init();
 
   merlin = new Merlin({
     journal,

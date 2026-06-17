@@ -1,6 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+const appVersion = (JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string }).version;
 
 function readRequestBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -82,6 +85,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: isCapacitor ? './' : '/',
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion),
+    },
     plugins: [
       {
         name: 'openrouter-dev-proxy',
