@@ -3,7 +3,7 @@ import {
   getStoredPassphrase,
   storePassphrase,
 } from './crypto';
-import { getMeta, saveMeta } from './db';
+import { getMeta, saveMeta, clearMerlinConversation, clearMerlinFacts, getMerlinFacts } from './db';
 import { startSyncLoop, syncNow } from './sync';
 import type { AppMeta } from './types';
 import { todayKey } from './types';
@@ -13,6 +13,7 @@ export interface SettingsCallbacks {
   onSyncStatus: (status: string) => void;
   onMerlinChange: (enabled: boolean, fromUserGesture?: boolean) => void;
   onReanalyzeThoughts: () => Promise<void>;
+  onMemoryCleared?: () => void;
 }
 
 export function createSettingsButton(callbacks: SettingsCallbacks): HTMLElement {
@@ -39,7 +40,20 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
       <h2 id="settings-title" class="modal__title">Réglages</h2>
 
       <section class="modal__section">
-        <h3 class="modal__section-title">Merlin</h3>
+        <h3 class="modal__section-title">Mémoire de Merlin</h3>
+        <p class="modal__desc">
+          Faits mémorisés automatiquement ou sur demande. Synchronisés avec vos notes si la sync est active.
+        </p>
+        <div class="modal__memory-list" id="merlin-memory-list"></div>
+        <p class="modal__status" id="memory-status"></p>
+        <div class="modal__actions">
+          <button type="button" class="btn btn--ghost" id="clear-memory-facts">Effacer les faits</button>
+          <button type="button" class="btn btn--ghost" id="clear-memory-chat">Effacer la conversation</button>
+        </div>
+      </section>
+
+      <section class="modal__section">
+        <h3 class="modal__section-title">Merlin vocal</h3>
         <label class="modal__toggle">
           <input type="checkbox" id="merlin-enabled" ${meta.merlinEnabled ? 'checked' : ''} />
           <span>Activer Merlin</span>
@@ -85,6 +99,25 @@ function openSettingsModal(callbacks: SettingsCallbacks): void {
     const merlinToggle = modal.querySelector<HTMLInputElement>('#merlin-enabled')!;
     const thoughtsStatusEl = modal.querySelector<HTMLElement>('#thoughts-status')!;
     const reanalyzeBtn = modal.querySelector<HTMLButtonElement>('#reanalyze-thoughts')!;
+    const memoryListEl = modal.querySelector<HTMLElement>('#merlin-memory-list')!;
+    const memoryStatusEl = modal.querySelector<HTMLElement>('#memory-status')!;
+
+    void renderMemoryList(memoryListEl);
+
+    modal.querySelector('#clear-memory-facts')!.addEventListener('click', () => {
+      void clearMerlinFacts().then(async () => {
+        memoryStatusEl.textContent = 'Faits mémorisés effacés.';
+        await renderMemoryList(memoryListEl);
+        callbacks.onMemoryCleared?.();
+      });
+    });
+
+    modal.querySelector('#clear-memory-chat')!.addEventListener('click', () => {
+      void clearMerlinConversation().then(() => {
+        memoryStatusEl.textContent = 'Conversation effacée.';
+        callbacks.onMemoryCleared?.();
+      });
+    });
 
     if (meta.passphraseSet && getStoredPassphrase()) {
       input.placeholder = '•••••••• (déjà configurée)';
@@ -191,4 +224,26 @@ export function initSyncFromMeta(
 
 export async function touchVisitMeta(): Promise<AppMeta> {
   return saveMeta({ lastVisitDate: todayKey() });
+}
+
+async function renderMemoryList(container: HTMLElement): Promise<void> {
+  const facts = await getMerlinFacts();
+  if (facts.length === 0) {
+    container.innerHTML = '<p class="modal__desc">Aucun fait mémorisé pour l\'instant.</p>';
+    return;
+  }
+  container.innerHTML = facts
+    .map(
+      (f) =>
+        `<div class="modal__memory-item"><strong>${escapeHtml(f.key)}</strong> : ${escapeHtml(f.value)}</div>`,
+    )
+    .join('');
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

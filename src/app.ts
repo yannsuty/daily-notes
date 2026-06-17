@@ -1,6 +1,7 @@
 import { Journal, resetSessionScroll } from './journal';
 import { MindMap } from './mindmap';
 import { Merlin } from './merlin';
+import { MerlinChat } from './merlin-chat';
 import { getMeta, saveMeta } from './db';
 import {
   createSettingsButton,
@@ -20,7 +21,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
 
   const title = document.createElement('span');
   title.className = 'app__title';
-  title.textContent = 'Daily Note';
+  title.textContent = 'Merlin';
 
   const syncIndicator = document.createElement('span');
   syncIndicator.className = 'app__sync-status';
@@ -35,12 +36,16 @@ export async function initApp(root: HTMLElement): Promise<void> {
   const mainContainer = document.createElement('main');
   mainContainer.className = 'app__main';
 
+  const merlinPanel = document.createElement('div');
+  merlinPanel.id = 'tab-merlin';
+
   const journalPanel = document.createElement('div');
   journalPanel.id = 'tab-journal';
 
   const thoughtsPanel = document.createElement('div');
   thoughtsPanel.id = 'tab-thoughts';
 
+  mainContainer.appendChild(merlinPanel);
   mainContainer.appendChild(journalPanel);
   mainContainer.appendChild(thoughtsPanel);
 
@@ -50,6 +55,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
   let journal: Journal | null = null;
   let mindMap: MindMap | null = null;
   let merlin: Merlin | null = null;
+  let merlinChat: MerlinChat | null = null;
   let tabBar: TabBar | null = null;
 
   const settingsBtn = createSettingsButton({
@@ -57,12 +63,14 @@ export async function initApp(root: HTMLElement): Promise<void> {
       void getMeta().then((updatedMeta) => {
         initSyncFromMeta(updatedMeta, () => {
           journal?.refreshAfterSync();
+          void merlinChat?.refresh();
           updateSyncIndicator(syncIndicator);
         });
       });
     },
     onSyncStatus: () => {
       journal?.refreshAfterSync();
+      void merlinChat?.refresh();
       updateSyncIndicator(syncIndicator);
     },
     onMerlinChange: (enabled, fromUserGesture) => {
@@ -76,6 +84,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
       }
     },
     onReanalyzeThoughts: () => mindMap?.resetAiAnalysis() ?? Promise.resolve(),
+    onMemoryCleared: () => void merlinChat?.refresh(),
   });
   navHost.appendChild(tabsHost);
   navHost.appendChild(settingsBtn);
@@ -91,6 +100,16 @@ export async function initApp(root: HTMLElement): Promise<void> {
       if (tab === 'thoughts') {
         void mindMap?.refresh();
       }
+      if (tab === 'merlin') {
+        void merlinChat?.refresh();
+      }
+    },
+  });
+
+  merlinChat = new MerlinChat({
+    container: merlinPanel,
+    onConversationUpdate: () => {
+      void syncNow().then(() => updateSyncIndicator(syncIndicator));
     },
   });
 
@@ -106,9 +125,11 @@ export async function initApp(root: HTMLElement): Promise<void> {
     container: thoughtsPanel,
   });
 
+  tabBar.registerPanel('merlin', merlinPanel);
   tabBar.registerPanel('journal', journalPanel);
   tabBar.registerPanel('thoughts', thoughtsPanel);
 
+  await merlinChat.init();
   await journal.init();
   await mindMap.init();
 
@@ -131,10 +152,12 @@ export async function initApp(root: HTMLElement): Promise<void> {
   if (meta.passphraseSet && getStoredPassphrase()) {
     initSyncFromMeta(meta, () => {
       journal?.refreshAfterSync();
+      void merlinChat?.refresh();
       updateSyncIndicator(syncIndicator);
     });
     void syncNow().then(() => {
       journal?.refreshAfterSync();
+      void merlinChat?.refresh();
       updateSyncIndicator(syncIndicator);
     });
   }

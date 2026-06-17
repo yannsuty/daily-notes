@@ -1,4 +1,4 @@
-export type TabId = 'journal' | 'thoughts';
+export type TabId = 'merlin' | 'journal' | 'thoughts';
 
 const STORAGE_KEY = 'daily-note-active-tab';
 
@@ -22,9 +22,11 @@ export class TabBar {
     this.root.setAttribute('role', 'tablist');
     this.root.setAttribute('aria-label', 'Navigation');
 
+    const merlinBtn = this.createTabButton('merlin', 'Merlin');
     const journalBtn = this.createTabButton('journal', 'Journal');
     const thoughtsBtn = this.createTabButton('thoughts', 'Pensées');
 
+    this.root.appendChild(merlinBtn);
     this.root.appendChild(journalBtn);
     this.root.appendChild(thoughtsBtn);
     container.appendChild(this.root);
@@ -86,6 +88,9 @@ export class TabBar {
 
   private loadActiveTab(): TabId {
     const stored = sessionStorage.getItem(STORAGE_KEY);
-    return stored === 'thoughts' ? 'thoughts' : 'journal';
+    if (stored === 'journal' || stored === 'thoughts' || stored === 'merlin') {
+      return stored;
+    }
+    return 'merlin';
   }
 }

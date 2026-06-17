@@ -16,9 +16,39 @@ export interface AppMeta {
   merlinEnabled: boolean;
 }
 
+export interface MerlinMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+}
+
+export interface MerlinFact {
+  id: string;
+  key: string;
+  value: string;
+  source: 'explicit' | 'inferred';
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MerlinConversation {
+  id: string;
+  messages: MerlinMessage[];
+  summary: string;
+  updatedAt: number;
+}
+
+export interface MerlinSyncData {
+  conversation: MerlinConversation;
+  facts: MerlinFact[];
+  updatedAt: number;
+}
+
 export interface SyncPayload {
   days: Record<string, DayEntry>;
   meta: Partial<AppMeta>;
+  merlin?: MerlinSyncData;
 }
 
 export interface EncryptedBlob {

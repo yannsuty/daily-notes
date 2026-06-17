@@ -52,7 +52,7 @@ function createOpenRouterDevProxy(apiKey: string) {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
             'HTTP-Referer': 'http://localhost:5173',
-            'X-Title': 'Daily Note',
+            'X-Title': 'Merlin',
           },
           body,
         });
@@ -99,9 +99,9 @@ export default defineConfig(({ mode }) => {
               registerType: 'autoUpdate',
               includeAssets: ['icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'],
               manifest: {
-                name: 'Daily Note',
-                short_name: 'Daily Note',
-                description: 'Notes journalières — local-first',
+                name: 'Merlin',
+                short_name: 'Merlin',
+                description: 'Assistant personnel — local-first',
                 theme_color: '#1a1a1a',
                 background_color: '#1a1a1a',
                 display: 'standalone',

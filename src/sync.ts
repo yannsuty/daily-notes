@@ -1,5 +1,5 @@
 import { apiUrl } from './api-base';
-import { exportPayload, importDays, saveMeta } from './db';
+import { exportPayload, importDays, importMerlinData, mergeMerlinData, saveMeta } from './db';
 import {
   decryptPayload,
   deriveSyncId,
@@ -56,6 +56,7 @@ export async function syncNow(): Promise<{ ok: boolean; error?: string }> {
 
     let mergedDays = localPayload.days;
     let mergedMeta = localPayload.meta;
+    let mergedMerlin = localPayload.merlin;
 
     const remoteBlob = await fetchRemote(syncId);
     if (remoteBlob) {
@@ -67,11 +68,23 @@ export async function syncNow(): Promise<{ ok: boolean; error?: string }> {
       const remotePayload = JSON.parse(decrypted) as SyncPayload;
       mergedDays = mergeDays(localPayload.days, remotePayload.days);
       mergedMeta = { ...remotePayload.meta, ...localPayload.meta };
+      if (remotePayload.merlin && localPayload.merlin) {
+        mergedMerlin = mergeMerlinData(localPayload.merlin, remotePayload.merlin);
+      } else {
+        mergedMerlin = localPayload.merlin ?? remotePayload.merlin;
+      }
     }
 
     await importDays(mergedDays);
+    if (mergedMerlin) {
+      await importMerlinData(mergedMerlin);
+    }
 
-    const mergedPayload: SyncPayload = { days: mergedDays, meta: mergedMeta };
+    const mergedPayload: SyncPayload = {
+      days: mergedDays,
+      meta: mergedMeta,
+      merlin: mergedMerlin,
+    };
     const encrypted = await encryptPayload(
       passphrase,
       JSON.stringify(mergedPayload),

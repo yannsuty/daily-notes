@@ -1,6 +1,6 @@
-# Daily Note
+# Merlin
 
-PWA de notes journalières — local-first, sync chiffrée entre appareils.
+Assistant personnel local-first — journal, chat avec Merlin, sync chiffrée entre appareils.
 
 ## Fonctionnalités
 
