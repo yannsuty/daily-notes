@@ -102,6 +102,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
 
   tabBar = new TabBar(tabsHost, {
     onChange: (tab) => {
+      merlin?.onTabChange(tab);
       if (tab === 'thoughts') {
         void mindMap?.refresh();
       }
@@ -159,6 +160,9 @@ export async function initApp(root: HTMLElement): Promise<void> {
   if (meta.merlinEnabled) {
     merlin.setEnabled(true);
   }
+
+  tabBar.syncPanels();
+  merlin?.onTabChange(tabBar.getActiveTab());
 
   const today = todayKey();
   if (meta.lastVisitDate !== today) {

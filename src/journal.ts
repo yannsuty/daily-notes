@@ -47,7 +47,7 @@ export class Journal {
     this.earliestLoaded = todayKey();
 
     this.container.innerHTML = '';
-    this.container.className = 'journal';
+    this.container.classList.add('journal', 'tab-panel');
 
     this.scrollEl = document.createElement('div');
     this.scrollEl.className = 'journal__scroll';

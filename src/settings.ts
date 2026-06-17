@@ -27,7 +27,7 @@ export class SettingsPage {
   }
 
   async init(): Promise<void> {
-    this.container.className = 'settings-page tab-panel';
+    this.container.classList.add('settings-page', 'tab-panel');
     await this.render();
   }
 

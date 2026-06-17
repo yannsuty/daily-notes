@@ -27,7 +27,8 @@ export class MerlinChat {
   }
 
   async init(): Promise<void> {
-    this.container.className = 'merlin-chat';
+    this.container.innerHTML = '';
+    this.container.classList.add('merlin-chat', 'tab-panel');
     this.container.innerHTML = `
       <div class="merlin-chat__messages" role="log" aria-live="polite" aria-label="Conversation avec Merlin"></div>
       <div class="merlin-chat__status" aria-live="polite"></div>

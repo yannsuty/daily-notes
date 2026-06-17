@@ -45,6 +45,13 @@ export class TabBar {
     return this.activeTab;
   }
 
+  syncPanels(): void {
+    for (const id of this.panels.keys()) {
+      this.updatePanelVisibility(id);
+    }
+    this.updateButtonStates();
+  }
+
   switchTo(tab: TabId): void {
     if (tab === this.activeTab) return;
     this.activeTab = tab;
@@ -78,6 +85,7 @@ export class TabBar {
     const isActive = tab === this.activeTab;
     panel.hidden = !isActive;
     panel.classList.toggle('tab-panel--active', isActive);
+    panel.classList.toggle('tab-panel--hidden', !isActive);
   }
 
   private updateButtonStates(): void {

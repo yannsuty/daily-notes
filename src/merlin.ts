@@ -23,6 +23,7 @@ import {
 import { isMerlinSpeaking, speakMerlin, stopMerlinSpeech } from './merlin-tts';
 import type { MerlinWakeType } from './merlin-background';
 import type { TabBar } from './tabs';
+import type { TabId } from './tabs';
 
 const DICTATION_SILENCE_MS = 10000;
 const CONVERSING_SILENCE_MS = 2500;
@@ -78,6 +79,46 @@ export class Merlin {
       void this.prepare();
     } else {
       void this.stop();
+    }
+  }
+
+  onTabChange(tab: TabId): void {
+    if (this.state === 'off') return;
+
+    if (tab === 'merlin') {
+      void this.onMerlinTabSelected();
+      return;
+    }
+
+    void this.onMerlinTabHidden();
+  }
+
+  private async onMerlinTabHidden(): Promise<void> {
+    if (this.state === 'conversing') {
+      await this.endConversing();
+    } else if (this.state === 'speaking' || this.state === 'processing') {
+      await this.interruptSpeech();
+    }
+
+    if (this.state === 'idle') {
+      await this.pauseListening();
+      this.hideOverlay();
+    }
+  }
+
+  private async onMerlinTabSelected(): Promise<void> {
+    if (Capacitor.isNativePlatform() && this.backgroundActive) {
+      const { stopBackgroundListening } = await import('./merlin-background');
+      await stopBackgroundListening();
+      this.backgroundActive = false;
+    }
+
+    if (this.state === 'idle') {
+      this.showOverlay('idle');
+      const meta = await getMeta();
+      if (meta.merlinContinuousListen !== false) {
+        await this.activateListening();
+      }
     }
   }
 
@@ -295,7 +336,7 @@ export class Merlin {
         void this.startDictation();
         return;
       }
-      if (intent === 'assistant') {
+      if (intent === 'assistant' && this.tabBar.getActiveTab() === 'merlin') {
         const query = extractAssistantQuery(full);
         void this.startConversing(query || undefined);
       }
@@ -455,9 +496,15 @@ export class Merlin {
     this.clearSilenceTimer();
     await stopMerlinSpeech();
     await this.releaseWakeLock();
-    this.showOverlay('idle');
     this.setStatusHint('Dites « Merlin » ou « Merlin journal »');
-    await this.resumeListening();
+
+    if (this.tabBar.getActiveTab() === 'merlin') {
+      this.showOverlay('idle');
+      await this.resumeListening();
+    } else {
+      await this.pauseListening();
+      this.hideOverlay();
+    }
     await this.syncBackgroundListening();
   }
 

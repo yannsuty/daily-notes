@@ -65,7 +65,7 @@ export class MindMap {
     this.container = options.container;
 
     this.container.innerHTML = '';
-    this.container.className = 'mindmap';
+    this.container.classList.add('mindmap', 'tab-panel');
 
     const toolbar = document.createElement('div');
     toolbar.className = 'mindmap__toolbar';
