@@ -1,6 +1,7 @@
 import { apiUrl } from './api-base';
 import { getAiClientConfig } from './merlin-env';
 import { OPENROUTER_FREE_ROUTER } from '../lib/openrouter-fallback';
+import { backoffMs, sleep, waitForOnline } from '../lib/retry-backoff';
 
 export { OPENROUTER_FREE_ROUTER };
 
@@ -29,13 +30,8 @@ export const LLM_UNAVAILABLE_MSG =
 export const LLM_DEFERRED_MSG =
   "Merlin n'est pas disponible, votre réponse arrive.";
 
-/** Délais entre tentatives côté client avant le message différé. */
-const CLIENT_RETRY_DELAYS_MS = [2000, 4000, 8000];
-const OFFLINE_WAIT_MS = 8000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+/** Tentatives côté client avant le message différé (backoff 2^n ms). */
+const CLIENT_MAX_RETRIES = 4;
 
 function isRetryableFailure(status: number, data?: unknown): boolean {
   return (
@@ -45,19 +41,6 @@ function isRetryableFailure(status: number, data?: unknown): boolean {
     status === 503 ||
     (data as { retryable?: boolean } | undefined)?.retryable === true
   );
-}
-
-async function waitForOnline(maxMs: number): Promise<void> {
-  if (navigator.onLine) return;
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, maxMs);
-    const onOnline = (): void => {
-      clearTimeout(timer);
-      window.removeEventListener('online', onOnline);
-      resolve();
-    };
-    window.addEventListener('online', onOnline);
-  });
 }
 
 async function formatAiError(response: Response, model: string, body?: unknown): Promise<string> {
@@ -115,7 +98,13 @@ async function fetchCompletion(
 
 export async function chatCompletion(
   messages: ChatMessage[],
-  options?: { temperature?: number; jsonMode?: boolean; model?: string },
+  options?: {
+    temperature?: number;
+    jsonMode?: boolean;
+    model?: string;
+    /** Nombre max de nouvelles tentatives après la 1re (Infinity = sans limite). */
+    maxRetries?: number;
+  },
 ): Promise<AiResult> {
   const clientConfig = await getAiClientConfig();
   const model =
@@ -136,13 +125,14 @@ export async function chatCompletion(
     body.response_format = { type: 'json_object' };
   }
 
-  if (!navigator.onLine) {
-    await waitForOnline(OFFLINE_WAIT_MS);
-  }
+  const maxRetries = options?.maxRetries ?? CLIENT_MAX_RETRIES;
+  let attempt = 0;
 
-  const maxAttempts = CLIENT_RETRY_DELAYS_MS.length + 1;
+  while (true) {
+    if (!navigator.onLine) {
+      await waitForOnline();
+    }
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const { response, data } = await fetchCompletion(body);
 
@@ -155,11 +145,16 @@ export async function chatCompletion(
         if (text) {
           return { ok: true, text, modelUsed };
         }
-        if (attempt < maxAttempts - 1) {
-          await sleep(CLIENT_RETRY_DELAYS_MS[attempt]);
-          continue;
-        }
-        return { ok: false, error: 'Réponse vide de l\'API.', retryable: true };
+
+        const emptyResult: AiResult = {
+          ok: false,
+          error: 'Réponse vide de l\'API.',
+          retryable: true,
+        };
+        if (attempt >= maxRetries) return emptyResult;
+        await sleep(backoffMs(attempt));
+        attempt += 1;
+        continue;
       }
 
       const retryable = isRetryableFailure(response.status, data);
@@ -171,38 +166,31 @@ export async function chatCompletion(
         };
       }
 
-      if (attempt < maxAttempts - 1) {
-        if (!navigator.onLine) {
-          await waitForOnline(CLIENT_RETRY_DELAYS_MS[attempt]);
-        } else {
-          await sleep(CLIENT_RETRY_DELAYS_MS[attempt]);
-        }
-        continue;
-      }
-
-      return {
+      const failResult: AiResult = {
         ok: false,
         error: await formatAiError(response, model, data),
         retryable: true,
       };
+      if (attempt >= maxRetries) return failResult;
+
+      await sleep(backoffMs(attempt));
+      attempt += 1;
     } catch (err) {
-      if (attempt < maxAttempts - 1) {
-        if (!navigator.onLine) {
-          await waitForOnline(CLIENT_RETRY_DELAYS_MS[attempt]);
-        } else {
-          await sleep(CLIENT_RETRY_DELAYS_MS[attempt]);
-        }
-        continue;
-      }
-      return {
+      const failResult: AiResult = {
         ok: false,
         error: err instanceof Error ? err.message : 'Erreur réseau',
         retryable: true,
       };
+      if (attempt >= maxRetries) return failResult;
+
+      if (!navigator.onLine) {
+        await waitForOnline();
+      } else {
+        await sleep(backoffMs(attempt));
+      }
+      attempt += 1;
     }
   }
-
-  return { ok: false, error: 'Erreur réseau', retryable: true };
 }
 
 export async function withAiFallback<T>(
