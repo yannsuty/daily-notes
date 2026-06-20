@@ -3,7 +3,7 @@ import {
   callOpenRouterWithFallback,
   OPENROUTER_FREE_ROUTER,
   type OpenRouterBody,
-} from '../lib/openrouter-fallback';
+} from './lib/openrouter-fallback.js';
 
 interface AiClientConfigPayload {
   apiKey?: string;
