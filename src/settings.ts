@@ -1,4 +1,16 @@
-import { checkForAppUpdate, downloadAndInstallUpdate, getInstalledAppInfo, isNativeAndroid, resolveInstalledReleaseLabel } from './app-update';
+import {
+  checkForAppUpdate,
+  clearPendingDownload,
+  downloadAndInstallUpdate,
+  formatDownloadProgress,
+  getInstalledAppInfo,
+  getPendingDownloadState,
+  installDownloadedUpdate,
+  isNativeAndroid,
+  offDownloadProgress,
+  onDownloadProgress,
+  resolveInstalledReleaseLabel,
+} from './app-update';
 import {
   clearStoredPassphrase,
   getStoredPassphrase,
@@ -200,14 +212,24 @@ export class SettingsPage {
             }
           </p>
           <p class="settings__status" id="app-update-status"></p>
-          <button
-            type="button"
-            class="btn btn--primary"
-            id="check-app-update"
-            ${isNativeAndroid() ? '' : 'disabled'}
-          >
-            Vérifier et mettre à jour
-          </button>
+          <div class="settings__actions">
+            <button
+              type="button"
+              class="btn btn--primary"
+              id="check-app-update"
+              ${isNativeAndroid() ? '' : 'disabled'}
+            >
+              Vérifier et mettre à jour
+            </button>
+            <button
+              type="button"
+              class="btn btn--ghost"
+              id="clear-app-download"
+              ${isNativeAndroid() ? '' : 'disabled'}
+            >
+              Effacer le téléchargement
+            </button>
+          </div>
         </section>
       </div>
 
@@ -236,6 +258,15 @@ export class SettingsPage {
     const envStatusEl = this.container.querySelector<HTMLElement>('#env-status')!;
     const appUpdateStatusEl = this.container.querySelector<HTMLElement>('#app-update-status')!;
     const appUpdateBtn = this.container.querySelector<HTMLButtonElement>('#check-app-update')!;
+    const clearAppDownloadBtn = this.container.querySelector<HTMLButtonElement>('#clear-app-download')!;
+
+    const showDownloadProgress = (percent?: number): void => {
+      if (percent != null && percent > 0) {
+        appUpdateStatusEl.textContent = `Téléchargement… ${percent} %`;
+        return;
+      }
+      appUpdateStatusEl.textContent = 'Téléchargement…';
+    };
 
     void renderMemoryList(memoryListEl);
     void renderActionsList(actionsListEl, actionsStatusEl);
@@ -382,18 +413,31 @@ export class SettingsPage {
     });
 
     if (isNativeAndroid()) {
-      void checkForAppUpdate().then((update) => {
-        if (update.error) {
-          appUpdateStatusEl.textContent = update.error;
+      void getPendingDownloadState().then((pending) => {
+        if (pending) {
+          appUpdateStatusEl.textContent = formatDownloadProgress(pending);
           return;
         }
-        if (update.available && update.latestVersionCode != null) {
-          appUpdateStatusEl.textContent = `Mise à jour disponible : v${update.latestVersion} · build ${update.latestVersionCode}.`;
-          return;
-        }
-        appUpdateStatusEl.textContent = `${update.currentReleaseLabel} — vous êtes à jour.`;
+
+        void checkForAppUpdate().then((update) => {
+          if (update.error) {
+            appUpdateStatusEl.textContent = update.error;
+            return;
+          }
+          if (update.available && update.latestVersionCode != null) {
+            appUpdateStatusEl.textContent = `Mise à jour disponible : v${update.latestVersion} · build ${update.latestVersionCode}.`;
+            return;
+          }
+          appUpdateStatusEl.textContent = `${update.currentReleaseLabel} — vous êtes à jour.`;
+        });
       });
     }
+
+    clearAppDownloadBtn.addEventListener('click', () => {
+      void clearPendingDownload().then(() => {
+        appUpdateStatusEl.textContent = 'Téléchargement effacé.';
+      });
+    });
 
     appUpdateBtn.addEventListener('click', () => {
       if (!isNativeAndroid()) {
@@ -406,6 +450,27 @@ export class SettingsPage {
 
       void (async () => {
         try {
+          const pending = await getPendingDownloadState();
+          if (pending?.status === 'paused' && pending.url && pending.versionCode != null) {
+            showDownloadProgress(pending.percent);
+            await onDownloadProgress((event) => {
+              showDownloadProgress(event.percent);
+            });
+            try {
+              await downloadAndInstallUpdate(pending.url, pending.versionCode);
+              appUpdateStatusEl.textContent = 'Installation — confirmez dans Android.';
+            } finally {
+              await offDownloadProgress();
+            }
+            return;
+          }
+
+          if (pending?.status === 'complete') {
+            await installDownloadedUpdate();
+            appUpdateStatusEl.textContent = 'Installation — confirmez dans Android.';
+            return;
+          }
+
           const update = await checkForAppUpdate();
           if (update.error) {
             appUpdateStatusEl.textContent = update.error;
@@ -426,11 +491,23 @@ export class SettingsPage {
               ? `v${update.latestVersion} · build ${update.latestVersionCode}`
               : `v${update.latestVersion}`;
           appUpdateStatusEl.textContent = `Mise à jour ${latestLabel} trouvée. Téléchargement…`;
-          await downloadAndInstallUpdate(update.apkUrl);
-          appUpdateStatusEl.textContent = `Installation de ${latestLabel} — confirmez dans Android.`;
+
+          await onDownloadProgress((event) => {
+            showDownloadProgress(event.percent);
+          });
+
+          try {
+            await downloadAndInstallUpdate(update.apkUrl, update.latestVersionCode ?? 0);
+            appUpdateStatusEl.textContent = `Installation de ${latestLabel} — confirmez dans Android.`;
+          } finally {
+            await offDownloadProgress();
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Mise à jour impossible.';
-          appUpdateStatusEl.textContent = message;
+          const pending = await getPendingDownloadState();
+          appUpdateStatusEl.textContent = pending
+            ? `${message} ${formatDownloadProgress(pending)}`
+            : message;
         } finally {
           appUpdateBtn.disabled = false;
         }

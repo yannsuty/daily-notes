@@ -31,6 +31,8 @@ Avant de créer un tag, merger une release ou modifier une version, **vérifier 
 
 - [ ] La détection compare **`versionCode`** (via `app-version.json`), pas seulement `versionName`
 - [ ] Le tag GitHub affiché peut différer du `versionName` APK, mais `versionCode` est la source de vérité Android
+- [ ] Le téléchargement APK est **repriseable** (`ApkDownloadManager`) : fichier `.part` + `merlin-update.meta.json` dans le cache
+- [ ] En cas de réseau instable, le bouton « Vérifier et mettre à jour » doit **reprendre** au dernier octet (HTTP Range)
 
 ## Avant de pousser le tag
 

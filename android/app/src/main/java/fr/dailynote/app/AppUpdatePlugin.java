@@ -14,14 +14,10 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 
 @CapacitorPlugin(name = "AppUpdate")
 public class AppUpdatePlugin extends Plugin {
-    private static final String APK_FILE_NAME = "merlin-update.apk";
+    private volatile boolean downloadInProgress = false;
 
     @PluginMethod
     public void getAppInfo(PluginCall call) {
@@ -78,72 +74,127 @@ public class AppUpdatePlugin extends Plugin {
     }
 
     @PluginMethod
-    public void downloadAndInstall(PluginCall call) {
-        String url = call.getString("url");
-        if (url == null || url.isEmpty()) {
-            call.reject("URL de téléchargement manquante");
+    public void getDownloadState(PluginCall call) {
+        ApkDownloadManager manager = createDownloadManager();
+        ApkDownloadManager.DownloadMeta pending = manager.getPendingDownload();
+        File readyApk = manager.getReadyApkFile();
+
+        JSObject result = new JSObject();
+        if (readyApk != null) {
+            result.put("status", "complete");
+            result.put("downloadedBytes", readyApk.length());
+            result.put("totalBytes", readyApk.length());
+            result.put("percent", 100);
+            call.resolve(result);
             return;
         }
 
+        if (pending == null) {
+            result.put("status", "idle");
+            call.resolve(result);
+            return;
+        }
+
+        result.put("status", "paused");
+        result.put("url", pending.url);
+        result.put("versionCode", pending.versionCode);
+        result.put("downloadedBytes", pending.downloadedBytes);
+        result.put("totalBytes", pending.totalBytes);
+        if (pending.totalBytes > 0) {
+            result.put("percent", (int) (pending.downloadedBytes * 100 / pending.totalBytes));
+        }
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void clearDownload(PluginCall call) {
+        createDownloadManager().clearPendingDownload();
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void downloadAndInstall(PluginCall call) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && !getContext().getPackageManager().canRequestPackageInstalls()) {
             call.reject("INSTALL_PERMISSION_REQUIRED");
             return;
         }
 
+        if (downloadInProgress) {
+            call.reject("DOWNLOAD_IN_PROGRESS");
+            return;
+        }
+
+        ApkDownloadManager manager = createDownloadManager();
+        File readyApk = manager.getReadyApkFile();
+        if (readyApk != null) {
+            try {
+                launchInstaller(readyApk);
+                call.resolve();
+            } catch (Exception e) {
+                call.reject("Installation impossible", e);
+            }
+            return;
+        }
+
+        String url = call.getString("url");
+        if (url == null || url.isEmpty()) {
+            call.reject("URL de téléchargement manquante");
+            return;
+        }
+
+        Long versionCode = call.getLong("versionCode");
+        if (versionCode == null) {
+            versionCode = 0L;
+        }
+
+        downloadInProgress = true;
+        long expectedVersionCode = versionCode;
+
         new Thread(() -> {
             try {
-                File apkFile = downloadApk(url);
+                ApkDownloadManager manager = createDownloadManager();
+                File apkFile = manager.download(
+                        url,
+                        expectedVersionCode,
+                        (downloadedBytes, totalBytes) -> emitProgress(downloadedBytes, totalBytes));
                 bridge.getActivity().runOnUiThread(() -> {
                     try {
                         launchInstaller(apkFile);
                         call.resolve();
                     } catch (Exception e) {
                         call.reject("Installation impossible", e);
+                    } finally {
+                        downloadInProgress = false;
                     }
                 });
             } catch (Exception e) {
-                bridge.getActivity().runOnUiThread(() -> call.reject("Téléchargement échoué", e));
+                bridge.getActivity().runOnUiThread(() -> {
+                    downloadInProgress = false;
+                    JSObject payload = new JSObject();
+                    payload.put("resumable", true);
+                    call.reject("Téléchargement interrompu — réessayez pour reprendre", e, payload);
+                });
             }
         }).start();
     }
 
-    private File downloadApk(String urlString) throws Exception {
+    private ApkDownloadManager createDownloadManager() {
         File cacheDir = getContext().getExternalCacheDir();
         if (cacheDir == null) {
             cacheDir = getContext().getCacheDir();
         }
-        File apkFile = new File(cacheDir, APK_FILE_NAME);
-        if (apkFile.exists() && !apkFile.delete()) {
-            throw new IllegalStateException("Impossible de supprimer l'ancienne mise à jour");
+        return new ApkDownloadManager(cacheDir);
+    }
+
+    private void emitProgress(long downloadedBytes, long totalBytes) {
+        JSObject payload = new JSObject();
+        payload.put("downloadedBytes", downloadedBytes);
+        payload.put("totalBytes", totalBytes);
+        if (totalBytes > 0) {
+            payload.put("percent", (int) (downloadedBytes * 100 / totalBytes));
         }
-
-        HttpURLConnection connection = (HttpURLConnection) new URL(urlString).openConnection();
-        connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("Accept", "application/octet-stream");
-        connection.setRequestProperty("User-Agent", "Merlin-Android-App");
-        connection.setConnectTimeout(30_000);
-        connection.setReadTimeout(120_000);
-        connection.connect();
-
-        int status = connection.getResponseCode();
-        if (status < 200 || status >= 300) {
-            connection.disconnect();
-            throw new IllegalStateException("HTTP " + status);
-        }
-
-        try (InputStream input = connection.getInputStream();
-                FileOutputStream output = new FileOutputStream(apkFile)) {
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = input.read(buffer)) != -1) {
-                output.write(buffer, 0, read);
-            }
-        } finally {
-            connection.disconnect();
-        }
-
-        return apkFile;
+        notifyListeners("downloadProgress", payload);
     }
 
     private void launchInstaller(File apkFile) {

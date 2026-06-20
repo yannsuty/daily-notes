@@ -1,4 +1,4 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
 const GITHUB_OWNER = 'yannsuty';
 const GITHUB_REPO = 'daily-notes';
@@ -9,7 +9,28 @@ export interface AppUpdatePlugin {
   getAppInfo(): Promise<{ versionName: string; versionCode: number }>;
   canInstallPackages(): Promise<{ allowed: boolean }>;
   openInstallPermissionSettings(): Promise<{ allowed: boolean }>;
-  downloadAndInstall(options: { url: string }): Promise<void>;
+  getDownloadState(): Promise<DownloadState>;
+  clearDownload(): Promise<void>;
+  downloadAndInstall(options: { url: string; versionCode: number }): Promise<void>;
+  addListener(
+    eventName: 'downloadProgress',
+    listenerFunc: (event: DownloadProgressEvent) => void,
+  ): Promise<PluginListenerHandle>;
+}
+
+export interface DownloadProgressEvent {
+  downloadedBytes: number;
+  totalBytes: number;
+  percent?: number;
+}
+
+export interface DownloadState {
+  status: 'idle' | 'paused' | 'complete';
+  url?: string;
+  versionCode?: number;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  percent?: number;
 }
 
 const AppUpdate = registerPlugin<AppUpdatePlugin>('AppUpdate');
@@ -315,7 +336,73 @@ export async function ensureInstallPermission(): Promise<boolean> {
   return result.allowed;
 }
 
-export async function downloadAndInstallUpdate(apkUrl: string): Promise<void> {
+export async function getPendingDownloadState(): Promise<DownloadState | null> {
+  if (!isNativeAndroid()) {
+    return null;
+  }
+
+  try {
+    const state = await AppUpdate.getDownloadState();
+    if (state.status === 'idle') {
+      return null;
+    }
+    return state;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearPendingDownload(): Promise<void> {
+  if (!isNativeAndroid()) {
+    return;
+  }
+
+  await AppUpdate.clearDownload();
+}
+
+export function formatDownloadProgress(state: DownloadState): string {
+  if (state.status === 'complete') {
+    return 'Téléchargement terminé — prêt à installer.';
+  }
+
+  const percent =
+    state.percent ??
+    (state.totalBytes && state.downloadedBytes
+      ? Math.floor((state.downloadedBytes * 100) / state.totalBytes)
+      : undefined);
+
+  if (percent != null && percent > 0) {
+    return `Téléchargement interrompu à ${percent} % — appuyez pour reprendre.`;
+  }
+
+  return 'Téléchargement interrompu — appuyez pour reprendre.';
+}
+
+let progressListener: PluginListenerHandle | null = null;
+
+export async function onDownloadProgress(
+  listener: (event: DownloadProgressEvent) => void,
+): Promise<void> {
+  if (!isNativeAndroid()) {
+    return;
+  }
+
+  if (progressListener) {
+    await progressListener.remove();
+    progressListener = null;
+  }
+
+  progressListener = await AppUpdate.addListener('downloadProgress', listener);
+}
+
+export async function offDownloadProgress(): Promise<void> {
+  if (progressListener) {
+    await progressListener.remove();
+    progressListener = null;
+  }
+}
+
+export async function installDownloadedUpdate(): Promise<void> {
   if (!isNativeAndroid()) {
     throw new Error('Disponible uniquement sur l’app Android.');
   }
@@ -325,5 +412,21 @@ export async function downloadAndInstallUpdate(apkUrl: string): Promise<void> {
     throw new Error('Autorisez l’installation d’apps inconnues pour Merlin.');
   }
 
-  await AppUpdate.downloadAndInstall({ url: apkUrl });
+  await AppUpdate.downloadAndInstall({ url: 'ready', versionCode: 0 });
+}
+
+export async function downloadAndInstallUpdate(
+  apkUrl: string,
+  versionCode: number,
+): Promise<void> {
+  if (!isNativeAndroid()) {
+    throw new Error('Disponible uniquement sur l’app Android.');
+  }
+
+  const allowed = await ensureInstallPermission();
+  if (!allowed) {
+    throw new Error('Autorisez l’installation d’apps inconnues pour Merlin.');
+  }
+
+  await AppUpdate.downloadAndInstall({ url: apkUrl, versionCode });
 }
