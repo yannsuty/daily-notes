@@ -1,17 +1,13 @@
-/** Exposant maximal : délai plafonné à 2^64 ms. */
-export const MAX_BACKOFF_EXP = 64;
-
-/** Plafond pratique pour setTimeout (≈ 24,8 jours). */
-const MAX_TIMEOUT_MS = 2_147_483_647;
+/** Indice maximal pour n dans 2 + 2×n secondes. */
+export const MAX_BACKOFF_N = 64;
 
 /**
- * Délai de backoff pour la tentative `attempt` (0-indexée) : 2^attempt ms,
- * plafonné à 2^MAX_BACKOFF_EXP ms puis au max supporté par setTimeout.
+ * Délai de backoff pour la tentative `attempt` (0-indexée) : (2 + 2×n) secondes,
+ * avec n plafonné à MAX_BACKOFF_N (soit 130 s max).
  */
 export function backoffMs(attempt: number): number {
-  const exp = Math.min(Math.max(0, attempt), MAX_BACKOFF_EXP);
-  if (exp >= 31) return MAX_TIMEOUT_MS;
-  return 2 ** exp;
+  const n = Math.min(Math.max(0, attempt), MAX_BACKOFF_N);
+  return (2 + 2 * n) * 1000;
 }
 
 export function sleep(ms: number): Promise<void> {

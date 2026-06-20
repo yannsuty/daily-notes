@@ -30,7 +30,7 @@ export const LLM_UNAVAILABLE_MSG =
 export const LLM_DEFERRED_MSG =
   "Merlin n'est pas disponible, votre réponse arrive.";
 
-/** Tentatives côté client avant le message différé (backoff 2^n ms). */
+/** Tentatives côté client avant le message différé (backoff 2+2×n s). */
 const CLIENT_MAX_RETRIES = 4;
 
 function isRetryableFailure(status: number, data?: unknown): boolean {
