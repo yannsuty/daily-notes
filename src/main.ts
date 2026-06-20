@@ -1,9 +1,9 @@
 import { initApp } from './app';
-import { installGlobalErrorHandlers } from './logger';
 import { initVisualViewport } from './viewport';
+import { initSentry } from './sentry';
 import './styles.css';
 
-installGlobalErrorHandlers();
+initSentry();
 initVisualViewport();
 
 const root = document.getElementById('app');

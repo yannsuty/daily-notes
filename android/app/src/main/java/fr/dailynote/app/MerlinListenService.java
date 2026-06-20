@@ -24,8 +24,6 @@ public class MerlinListenService extends Service implements RecognitionListener 
     public static final String EXTRA_WAKE_TYPE = "merlin_wake_type";
     public static final String EXTRA_WAKE_QUERY = "merlin_wake_query";
 
-    private static final String TAG = "MerlinListen";
-
     private static final String CHANNEL_ID = "merlin_listen";
     private static final int NOTIFICATION_ID = 42001;
     private static final long RESTART_DELAY_MS = 600;
@@ -45,7 +43,6 @@ public class MerlinListenService extends Service implements RecognitionListener 
     public void onCreate() {
         super.onCreate();
         running = true;
-        MerlinLogWriter.log(this, "info", TAG, "Service créé");
     }
 
     @Override
@@ -69,7 +66,6 @@ public class MerlinListenService extends Service implements RecognitionListener 
     public void onDestroy() {
         shouldListen = false;
         running = false;
-        MerlinLogWriter.log(this, "info", TAG, "Service détruit");
         destroyRecognizer();
         super.onDestroy();
     }
@@ -121,7 +117,6 @@ public class MerlinListenService extends Service implements RecognitionListener 
             return;
         }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            MerlinLogWriter.log(this, "error", TAG, "Reconnaissance vocale indisponible — arrêt du service");
             stopSelf();
             return;
         }
@@ -149,8 +144,8 @@ public class MerlinListenService extends Service implements RecognitionListener 
             try {
                 speechRecognizer.cancel();
                 speechRecognizer.destroy();
-            } catch (Exception e) {
-                MerlinLogWriter.log(this, "warn", TAG, "Erreur destruction recognizer: " + e.getMessage());
+            } catch (Exception ignored) {
+                // ignore
             }
             speechRecognizer = null;
         }
@@ -170,8 +165,6 @@ public class MerlinListenService extends Service implements RecognitionListener 
         destroyRecognizer();
         stopForeground(STOP_FOREGROUND_REMOVE);
         running = false;
-
-        MerlinLogWriter.log(this, "info", TAG, "Wake détecté type=" + match.type);
 
         Intent launch = new Intent(this, MainActivity.class);
         launch.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -201,36 +194,10 @@ public class MerlinListenService extends Service implements RecognitionListener 
     @Override
     public void onError(int error) {
         isListening = false;
-        MerlinLogWriter.log(this, "warn", TAG, "SpeechRecognizer error: " + speechErrorLabel(error));
         if (!shouldListen) {
             return;
         }
         scheduleListen();
-    }
-
-    private static String speechErrorLabel(int error) {
-        switch (error) {
-            case SpeechRecognizer.ERROR_AUDIO:
-                return "ERROR_AUDIO";
-            case SpeechRecognizer.ERROR_CLIENT:
-                return "ERROR_CLIENT";
-            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS:
-                return "ERROR_INSUFFICIENT_PERMISSIONS";
-            case SpeechRecognizer.ERROR_NETWORK:
-                return "ERROR_NETWORK";
-            case SpeechRecognizer.ERROR_NETWORK_TIMEOUT:
-                return "ERROR_NETWORK_TIMEOUT";
-            case SpeechRecognizer.ERROR_NO_MATCH:
-                return "ERROR_NO_MATCH";
-            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY:
-                return "ERROR_RECOGNIZER_BUSY";
-            case SpeechRecognizer.ERROR_SERVER:
-                return "ERROR_SERVER";
-            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT:
-                return "ERROR_SPEECH_TIMEOUT";
-            default:
-                return "ERROR_UNKNOWN(" + error + ")";
-        }
     }
 
     @Override
