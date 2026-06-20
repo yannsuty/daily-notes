@@ -1107,6 +1107,76 @@ body {
   word-break: break-word;
 }
 
+.merlin-chat__text--markdown {
+  white-space: normal;
+}
+
+.merlin-chat__text--markdown p {
+  margin: 0 0 0.5em;
+}
+
+.merlin-chat__text--markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.merlin-chat__text--markdown strong {
+  font-weight: 600;
+}
+
+.merlin-chat__text--markdown ul,
+.merlin-chat__text--markdown ol {
+  margin: 0.25em 0 0.5em;
+  padding-left: 1.25em;
+}
+
+.merlin-chat__text--markdown li + li {
+  margin-top: 0.15em;
+}
+
+.merlin-chat__text--markdown h1,
+.merlin-chat__text--markdown h2,
+.merlin-chat__text--markdown h3,
+.merlin-chat__text--markdown h4 {
+  margin: 0.5em 0 0.25em;
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.merlin-chat__text--markdown h1:first-child,
+.merlin-chat__text--markdown h2:first-child,
+.merlin-chat__text--markdown h3:first-child,
+.merlin-chat__text--markdown h4:first-child {
+  margin-top: 0;
+}
+
+.merlin-chat__text--markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.merlin-chat__text--markdown pre {
+  margin: 0.5em 0;
+  padding: 0.5em 0.75em;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  overflow-x: auto;
+}
+
+.merlin-chat__text--markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .merlin-chat__text--markdown code,
+  .merlin-chat__text--markdown pre {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
 .merlin-chat__error {
   align-self: center;
   padding: 0.5rem 0.75rem;
