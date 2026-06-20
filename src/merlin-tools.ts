@@ -1,4 +1,9 @@
 import {
+  describeAutomation,
+  executeAutomationAction,
+  isAutomationPlatform,
+} from './merlin-automation';
+import {
   deleteMerlinList,
   getMerlinCustomToolByName,
   getMerlinLists,
@@ -382,6 +387,27 @@ export async function deleteList(title: string): Promise<ToolResult> {
   return { ok: true, content: `Liste « ${list.title} » supprimée.`, mutation: 'list_updated' };
 }
 
+export async function automateAction(args: Record<string, string>): Promise<ToolResult> {
+  if (!isAutomationPlatform()) {
+    return {
+      ok: false,
+      content: "L'automatisation est disponible uniquement sur l'application Android Merlin.",
+    };
+  }
+
+  const summary = describeAutomation(args);
+  if (!summary) {
+    return {
+      ok: false,
+      content:
+        "Je n'ai pas compris l'automatisation. Utilisez kind=open_app|open_url|share_text|tap_sequence avec les bons paramètres.",
+    };
+  }
+
+  const result = await executeAutomationAction(args);
+  return { ok: result.ok, content: result.content };
+}
+
 const MUTATION_TOOLS = new Set([
   'create_list',
   'add_list_item',
@@ -390,6 +416,7 @@ const MUTATION_TOOLS = new Set([
   'complete_reminder',
   'trigger_context',
   'delete_list',
+  'automate_action',
 ]);
 
 export function isMutationTool(name: string): boolean {
@@ -439,6 +466,8 @@ export async function executeMerlinTool(
       return triggerContext(args.tags ?? args.context ?? '');
     case 'delete_list':
       return deleteList(args.list ?? args.title ?? '');
+    case 'automate_action':
+      return automateAction(args);
     case 'save_custom_tool': {
       const { saveCustomToolFromArgs } = await import('./merlin-custom-tools');
       return saveCustomToolFromArgs(args);
@@ -469,6 +498,7 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)
+- automate_action(kind, app?, url?, text?, target?, package?, steps_json?) — automatisation Android (open_app, open_url, share_text, tap_sequence). Toujours confirmée avec l'utilisateur avant exécution.
 - save_custom_tool(name, description, steps_json) — sauvegarder une routine réutilisable`;
 
 export function templateReplyForTool(name: string, toolResult: ToolResult): string | null {

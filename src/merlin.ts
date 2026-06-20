@@ -19,8 +19,11 @@ import {
   matchesPhrase,
   parseWakeIntent,
   STOP_PHRASES,
+  CONFIRM_PHRASES,
+  CANCEL_PHRASES,
   stripCommands,
 } from './merlin-text';
+import { getPendingAutomation } from './merlin-pending-action';
 import { isMerlinSpeaking, speakMerlin, stopMerlinSpeech } from './merlin-tts';
 import type { MerlinWakeType } from './merlin-background';
 import type { TabBar } from './tabs';
@@ -367,6 +370,12 @@ export class Merlin {
     }
 
     if (this.state === 'conversing') {
+      if (getPendingAutomation()) {
+        if (matchesPhrase(full, CONFIRM_PHRASES) || matchesPhrase(full, CANCEL_PHRASES)) {
+          void this.submitPendingVoiceConfirmation(full);
+          return;
+        }
+      }
       if (matchesPhrase(full, STOP_PHRASES)) {
         void this.endConversing();
         return;
@@ -478,6 +487,58 @@ export class Merlin {
 
     if (result.content) {
       await this.speakResponse(result.content);
+    }
+
+    if (result.pendingAutomation) {
+      this.state = 'conversing';
+      this.showOverlay('conversing');
+      this.setStatusHint('Dites « oui » pour confirmer ou « non » pour annuler');
+      this.conversingText = '';
+      this.conversingHypothesis = '';
+      this.heardSpeechInSession = false;
+      await this.resumeListening();
+      return;
+    }
+
+    this.state = 'conversing';
+    this.showOverlay('conversing');
+    this.setStatusHint('Je vous écoute…');
+    await this.resumeListening();
+  }
+
+  private async submitPendingVoiceConfirmation(phrase: string): Promise<void> {
+    this.state = 'processing';
+    this.clearSilenceTimer();
+    this.showOverlay('processing');
+    this.setStatusHint('Merlin exécute…');
+    await this.pauseListening();
+
+    const result = await handleUserMessage(phrase);
+
+    if (!result.ok) {
+      this.state = 'conversing';
+      this.showOverlay('conversing');
+      this.setStatusHint(result.error ?? 'Erreur');
+      await this.resumeListening();
+      return;
+    }
+
+    await this.merlinChat?.refresh();
+    this.onConversationUpdate?.();
+    this.conversingText = '';
+    this.conversingHypothesis = '';
+    this.heardSpeechInSession = false;
+
+    if (result.content) {
+      await this.speakResponse(result.content);
+    }
+
+    if (getPendingAutomation()) {
+      this.state = 'conversing';
+      this.showOverlay('conversing');
+      this.setStatusHint('Dites « oui » pour confirmer ou « non » pour annuler');
+      await this.resumeListening();
+      return;
     }
 
     this.state = 'conversing';
