@@ -366,7 +366,7 @@ export class SettingsPage {
       reanalyzeBtn.disabled = true;
       thoughtsStatusEl.textContent = 'Analyse en cours…';
       void this.callbacks.onReanalyzeThoughts().then(() => {
-        thoughtsStatusEl.textContent = 'Analyse relancée. Consultez l\'onglet Pensées.';
+        thoughtsStatusEl.textContent = 'Analyse relancée. Ouvrez Galerie > Pensées.';
         reanalyzeBtn.disabled = false;
       });
     });
