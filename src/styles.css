@@ -333,16 +333,23 @@ body {
 }
 
 .tabs__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0.625rem 1rem;
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
   cursor: pointer;
   margin-bottom: -1px;
+}
+
+.tabs__icon {
+  width: 1.375rem;
+  height: 1.375rem;
+  display: block;
 }
 
 .tabs__btn:hover {
@@ -384,10 +391,14 @@ body {
     flex: 1;
     text-align: center;
     padding: 0.75rem 0.25rem;
-    font-size: 0.8125rem;
     margin-bottom: 0;
     border-bottom: none;
     border-top: 2px solid transparent;
+  }
+
+  .tabs__icon {
+    width: 1.5rem;
+    height: 1.5rem;
   }
 
   .tabs__btn--active {
@@ -410,6 +421,123 @@ body {
 .tab-panel--hidden,
 .tab-panel[hidden] {
   display: none !important;
+}
+
+.gallery {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.gallery__home {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.gallery__title {
+  margin: 0 0 1rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.gallery__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+}
+
+.gallery__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.gallery__card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.gallery__card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.625rem;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+.gallery__card-icon-svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.gallery__card-label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.gallery__card-desc {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.gallery__view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.gallery__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.gallery__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-inline: 0.5rem;
+}
+
+.gallery__back svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.gallery__view-title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.gallery__content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gallery__content .mindmap {
+  height: 100%;
 }
 
 .modal--wide {

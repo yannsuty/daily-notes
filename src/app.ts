@@ -1,5 +1,5 @@
+import { Gallery } from './gallery';
 import { Journal, resetSessionScroll } from './journal';
-import { MindMap } from './mindmap';
 import { Merlin } from './merlin';
 import { MerlinChat } from './merlin-chat';
 import { setDeferredReplyHandler } from './merlin-pending';
@@ -43,22 +43,22 @@ export async function initApp(root: HTMLElement): Promise<void> {
   const journalPanel = document.createElement('div');
   journalPanel.id = 'tab-journal';
 
-  const thoughtsPanel = document.createElement('div');
-  thoughtsPanel.id = 'tab-thoughts';
+  const galleryPanel = document.createElement('div');
+  galleryPanel.id = 'tab-gallery';
 
   const settingsPanel = document.createElement('div');
   settingsPanel.id = 'tab-settings';
 
   mainContainer.appendChild(merlinPanel);
   mainContainer.appendChild(journalPanel);
-  mainContainer.appendChild(thoughtsPanel);
+  mainContainer.appendChild(galleryPanel);
   mainContainer.appendChild(settingsPanel);
 
   header.appendChild(title);
   header.appendChild(syncIndicator);
 
   let journal: Journal | null = null;
-  let mindMap: MindMap | null = null;
+  let gallery: Gallery | null = null;
   let merlin: Merlin | null = null;
   let merlinChat: MerlinChat | null = null;
   let settingsPage: SettingsPage | null = null;
@@ -92,7 +92,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
         });
       }
     },
-    onReanalyzeThoughts: () => mindMap?.resetAiAnalysis() ?? Promise.resolve(),
+    onReanalyzeThoughts: () => gallery?.resetAiAnalysis() ?? Promise.resolve(),
     onMemoryCleared: () => void merlinChat?.refresh(),
   };
 
@@ -107,8 +107,8 @@ export async function initApp(root: HTMLElement): Promise<void> {
   tabBar = new TabBar(tabsHost, {
     onChange: (tab) => {
       merlin?.onTabChange(tab);
-      if (tab === 'thoughts') {
-        void mindMap?.refresh();
+      if (tab === 'gallery') {
+        gallery?.onTabActive();
       }
       if (tab === 'merlin') {
         void merlinChat?.refresh();
@@ -137,20 +137,20 @@ export async function initApp(root: HTMLElement): Promise<void> {
     },
   });
 
-  mindMap = new MindMap({
-    container: thoughtsPanel,
+  gallery = new Gallery({
+    container: galleryPanel,
   });
 
   settingsPage = new SettingsPage(settingsPanel, settingsCallbacks);
 
   tabBar.registerPanel('merlin', merlinPanel);
   tabBar.registerPanel('journal', journalPanel);
-  tabBar.registerPanel('thoughts', thoughtsPanel);
+  tabBar.registerPanel('gallery', galleryPanel);
   tabBar.registerPanel('settings', settingsPanel);
 
   await merlinChat.init();
   await journal.init();
-  await mindMap.init();
+  await gallery.init();
   await settingsPage.init();
 
   merlin = new Merlin({
