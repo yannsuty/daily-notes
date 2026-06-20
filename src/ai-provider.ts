@@ -26,6 +26,40 @@ export interface AiResult {
 export const LLM_UNAVAILABLE_MSG =
   "Je n'arrive pas à répondre pour l'instant. Tes listes et rappels fonctionnent toujours.";
 
+export const LLM_DEFERRED_MSG =
+  "Merlin n'est pas disponible, votre réponse arrive.";
+
+/** Délais entre tentatives côté client avant le message différé. */
+const CLIENT_RETRY_DELAYS_MS = [2000, 4000, 8000];
+const OFFLINE_WAIT_MS = 8000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableFailure(status: number, data?: unknown): boolean {
+  return (
+    status === 408 ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    (data as { retryable?: boolean } | undefined)?.retryable === true
+  );
+}
+
+async function waitForOnline(maxMs: number): Promise<void> {
+  if (navigator.onLine) return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, maxMs);
+    const onOnline = (): void => {
+      clearTimeout(timer);
+      window.removeEventListener('online', onOnline);
+      resolve();
+    };
+    window.addEventListener('online', onOnline);
+  });
+}
+
 async function formatAiError(response: Response, model: string, body?: unknown): Promise<string> {
   let errBody = '';
   try {
@@ -102,44 +136,73 @@ export async function chatCompletion(
     body.response_format = { type: 'json_object' };
   }
 
-  try {
-    let { response, data } = await fetchCompletion(body);
+  if (!navigator.onLine) {
+    await waitForOnline(OFFLINE_WAIT_MS);
+  }
 
-    if (!response.ok) {
-      const errData = data as { retryable?: boolean } | undefined;
-      if (response.status === 503 && errData?.retryable) {
-        await new Promise((r) => setTimeout(r, 2000));
-        ({ response, data } = await fetchCompletion(body));
+  const maxAttempts = CLIENT_RETRY_DELAYS_MS.length + 1;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const { response, data } = await fetchCompletion(body);
+
+      if (response.ok) {
+        const modelUsed = response.headers.get('X-Merlin-Model-Used') ?? undefined;
+        const payload = data as {
+          choices?: { message?: { content?: string } }[];
+        };
+        const text = payload?.choices?.[0]?.message?.content?.trim();
+        if (text) {
+          return { ok: true, text, modelUsed };
+        }
+        if (attempt < maxAttempts - 1) {
+          await sleep(CLIENT_RETRY_DELAYS_MS[attempt]);
+          continue;
+        }
+        return { ok: false, error: 'Réponse vide de l\'API.', retryable: true };
       }
 
-      if (!response.ok) {
-        const retryable =
-          response.status === 503 ||
-          (data as { retryable?: boolean } | undefined)?.retryable === true;
+      const retryable = isRetryableFailure(response.status, data);
+      if (!retryable) {
         return {
           ok: false,
           error: await formatAiError(response, model, data),
-          retryable,
+          retryable: false,
         };
       }
-    }
 
-    const modelUsed = response.headers.get('X-Merlin-Model-Used') ?? undefined;
-    const payload = data as {
-      choices?: { message?: { content?: string } }[];
-    };
-    const text = payload?.choices?.[0]?.message?.content?.trim();
-    if (!text) {
-      return { ok: false, error: 'Réponse vide de l\'API.', retryable: true };
+      if (attempt < maxAttempts - 1) {
+        if (!navigator.onLine) {
+          await waitForOnline(CLIENT_RETRY_DELAYS_MS[attempt]);
+        } else {
+          await sleep(CLIENT_RETRY_DELAYS_MS[attempt]);
+        }
+        continue;
+      }
+
+      return {
+        ok: false,
+        error: await formatAiError(response, model, data),
+        retryable: true,
+      };
+    } catch (err) {
+      if (attempt < maxAttempts - 1) {
+        if (!navigator.onLine) {
+          await waitForOnline(CLIENT_RETRY_DELAYS_MS[attempt]);
+        } else {
+          await sleep(CLIENT_RETRY_DELAYS_MS[attempt]);
+        }
+        continue;
+      }
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Erreur réseau',
+        retryable: true,
+      };
     }
-    return { ok: true, text, modelUsed };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'Erreur réseau',
-      retryable: true,
-    };
   }
+
+  return { ok: false, error: 'Erreur réseau', retryable: true };
 }
 
 export async function withAiFallback<T>(

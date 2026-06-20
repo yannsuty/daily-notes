@@ -183,6 +183,19 @@ export async function appendMerlinMessage(
   return conv;
 }
 
+export async function updateMerlinMessageContent(
+  messageId: string,
+  content: string,
+): Promise<MerlinConversation | null> {
+  const conv = await getMerlinConversation();
+  const message = conv.messages.find((m) => m.id === messageId);
+  if (!message) return null;
+  message.content = content;
+  conv.updatedAt = Date.now();
+  await saveMerlinConversation(conv);
+  return conv;
+}
+
 export async function updateMerlinConversationSummary(
   summary: string,
   trimmedMessages: MerlinMessage[],

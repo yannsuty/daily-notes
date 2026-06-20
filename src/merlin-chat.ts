@@ -343,6 +343,17 @@ export class MerlinChat {
       return;
     }
 
+    if (result.deferred) {
+      this.setAiBanner(true);
+      await this.renderAll();
+      this.onConversationUpdate?.();
+      const prefs = await getMerlinTtsPrefs();
+      if (prefs.enabled && result.content) {
+        await speakMerlin(result.content);
+      }
+      return;
+    }
+
     this.setAiBanner(false);
     await this.renderAll();
     this.onConversationUpdate?.();
