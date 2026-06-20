@@ -1,3 +1,4 @@
+import { checkForAppUpdate, downloadAndInstallUpdate, getInstalledAppVersion, isNativeAndroid } from './app-update';
 import {
   clearStoredPassphrase,
   getStoredPassphrase,
@@ -71,6 +72,9 @@ export class SettingsPage {
             )
             .join('')
         : '<p class="settings__desc">Aucune variable personnalisée.</p>';
+
+    const installedVersion = isNativeAndroid() ? await getInstalledAppVersion() : null;
+    const versionLabel = installedVersion ?? APP_VERSION;
 
     this.container.innerHTML = `
       <div class="settings-page__scroll">
@@ -182,10 +186,31 @@ export class SettingsPage {
           </div>
           <button type="button" class="btn btn--sync" id="sync-now">Synchroniser maintenant</button>
         </section>
+
+        <section class="settings__section" id="app-update-section">
+          <h3 class="settings__section-title">Mise à jour de l'app</h3>
+          <p class="settings__desc">
+            Version installée : <strong>v${escapeHtml(versionLabel)}</strong>.
+            ${
+              isNativeAndroid()
+                ? 'Les mises à jour sont téléchargées depuis GitHub Releases.'
+                : 'Disponible uniquement dans l’app Android installée hors Play Store.'
+            }
+          </p>
+          <p class="settings__status" id="app-update-status"></p>
+          <button
+            type="button"
+            class="btn btn--primary"
+            id="check-app-update"
+            ${isNativeAndroid() ? '' : 'disabled'}
+          >
+            Vérifier et mettre à jour
+          </button>
+        </section>
       </div>
 
       <footer class="settings-page__footer">
-        <span>Merlin v${escapeHtml(APP_VERSION)}</span>
+        <span>Merlin v${escapeHtml(versionLabel)}</span>
       </footer>
     `;
 
@@ -207,6 +232,8 @@ export class SettingsPage {
     const actionsListEl = this.container.querySelector<HTMLElement>('#merlin-actions-list')!;
     const actionsStatusEl = this.container.querySelector<HTMLElement>('#actions-status')!;
     const envStatusEl = this.container.querySelector<HTMLElement>('#env-status')!;
+    const appUpdateStatusEl = this.container.querySelector<HTMLElement>('#app-update-status')!;
+    const appUpdateBtn = this.container.querySelector<HTMLButtonElement>('#check-app-update')!;
 
     void renderMemoryList(memoryListEl);
     void renderActionsList(actionsListEl, actionsStatusEl);
@@ -350,6 +377,40 @@ export class SettingsPage {
           : `Erreur : ${result.error ?? 'inconnue'}`;
         if (result.ok) this.callbacks.onSyncStatus('synced');
       });
+    });
+
+    appUpdateBtn.addEventListener('click', () => {
+      if (!isNativeAndroid()) {
+        appUpdateStatusEl.textContent = 'Disponible uniquement sur l’app Android.';
+        return;
+      }
+
+      appUpdateBtn.disabled = true;
+      appUpdateStatusEl.textContent = 'Recherche d’une mise à jour…';
+
+      void (async () => {
+        try {
+          const update = await checkForAppUpdate();
+          if (update.error) {
+            appUpdateStatusEl.textContent = update.error;
+            return;
+          }
+
+          if (!update.available || !update.apkUrl) {
+            appUpdateStatusEl.textContent = `Vous êtes à jour (v${update.currentVersion}).`;
+            return;
+          }
+
+          appUpdateStatusEl.textContent = `Mise à jour v${update.latestVersion} trouvée. Téléchargement…`;
+          await downloadAndInstallUpdate(update.apkUrl);
+          appUpdateStatusEl.textContent = `Installation de la v${update.latestVersion} — confirmez dans Android.`;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Mise à jour impossible.';
+          appUpdateStatusEl.textContent = message;
+        } finally {
+          appUpdateBtn.disabled = false;
+        }
+      })();
     });
   }
 }
