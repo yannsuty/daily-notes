@@ -210,7 +210,8 @@ final class ApkDownloadManager {
         return urlString;
     }
 
-    private long parseTotalBytes(HttpURLConnection connection, long startByte, long fallbackTotal) {
+    private long parseTotalBytes(HttpURLConnection connection, long startByte, long fallbackTotal)
+            throws IOException {
         String contentRange = connection.getHeaderField("Content-Range");
         if (contentRange != null && contentRange.contains("/")) {
             String totalPart = contentRange.substring(contentRange.lastIndexOf('/') + 1).trim();
