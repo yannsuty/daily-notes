@@ -384,7 +384,7 @@ body {
     flex: 1;
     text-align: center;
     padding: 0.75rem 0.25rem;
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     margin-bottom: 0;
     border-bottom: none;
     border-top: 2px solid transparent;
@@ -393,15 +393,6 @@ body {
   .tabs__btn--active {
     border-bottom-color: transparent;
     border-top-color: var(--accent);
-  }
-
-  .merlin {
-    bottom: calc(var(--tabs-height, 3rem) + max(0.5rem, env(safe-area-inset-bottom)));
-    right: max(1rem, env(safe-area-inset-right));
-  }
-
-  .keyboard-open .merlin {
-    bottom: calc(var(--keyboard-inset, 0px) + 0.5rem);
   }
 
   .journal__scroll {
@@ -461,13 +452,19 @@ body {
 
 .merlin {
   position: fixed;
-  bottom: max(1rem, env(safe-area-inset-bottom));
-  right: max(1rem, env(safe-area-inset-right));
   z-index: 40;
+  transform: translateY(-50%);
+  touch-action: none;
 }
 
-.keyboard-open .merlin {
-  bottom: calc(var(--keyboard-inset, 0px) + 1rem);
+.merlin--left {
+  left: max(0.5rem, env(safe-area-inset-left));
+  right: auto;
+}
+
+.merlin--right {
+  right: max(0.5rem, env(safe-area-inset-right));
+  left: auto;
 }
 
 .merlin__panel {
@@ -476,6 +473,11 @@ body {
   align-items: center;
   gap: 0.5rem;
   max-width: 10rem;
+  cursor: grab;
+}
+
+.merlin__panel--dragging {
+  cursor: grabbing;
 }
 
 .merlin__status {

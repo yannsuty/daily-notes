@@ -30,6 +30,15 @@ const CONVERSING_SILENCE_MS = 2500;
 const WAKE_ACK = 'Oui ?';
 /** Micro flottant (overlay) — désactivé pour le moment */
 const FLOATING_MIC_ENABLED = false;
+const MERLIN_POS_KEY = 'daily-note-merlin-position';
+const FAB_DRAG_THRESHOLD_PX = 8;
+
+type MerlinSide = 'left' | 'right';
+
+interface MerlinFabPosition {
+  side: MerlinSide;
+  yPercent: number;
+}
 
 export interface MerlinOptions {
   journal: Journal;
@@ -61,6 +70,11 @@ export class Merlin {
   private lastHypothesis = '';
   private wakeLock: WakeLockSentinel | null = null;
   private backgroundActive = false;
+  private fabPosition: MerlinFabPosition = loadMerlinPosition();
+  private suppressNextMicClick = false;
+  private boundResizeHandler = (): void => {
+    this.applyFabPosition(this.fabPosition);
+  };
   private boundVisibilityHandler = (): void => {
     void this.onVisibilityChange();
   };
@@ -191,6 +205,11 @@ export class Merlin {
     if (meta.merlinContinuousListen !== false) {
       void this.activateListening();
     }
+
+    window.addEventListener('resize', this.boundResizeHandler);
+    if (this.overlay) {
+      this.applyFabPosition(this.fabPosition);
+    }
   }
 
   private async handleBackgroundWake(type: MerlinWakeType, query: string): Promise<void> {
@@ -285,6 +304,7 @@ export class Merlin {
     }
     void this.releaseWakeLock();
     document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+    window.removeEventListener('resize', this.boundResizeHandler);
 
     if (this.engine) {
       await this.engine.abort();
@@ -697,7 +717,13 @@ export class Merlin {
         </div>
       `;
 
-      this.overlay.querySelector('.merlin__mic-btn')!.addEventListener('click', () => {
+      this.overlay.querySelector('.merlin__mic-btn')!.addEventListener('click', (e) => {
+        if (this.suppressNextMicClick) {
+          this.suppressNextMicClick = false;
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         void this.onMicPressed();
       });
       this.overlay.querySelector('.merlin__stop-btn')!.addEventListener('click', () => {
@@ -711,7 +737,11 @@ export class Merlin {
         void this.interruptSpeech();
       });
 
+      const panel = this.overlay.querySelector('.merlin__panel') as HTMLElement;
+      this.setupFabDrag(panel);
+
       document.body.appendChild(this.overlay);
+      this.applyFabPosition(this.fabPosition);
     }
 
     const micBtn = this.overlay.querySelector('.merlin__mic-btn') as HTMLButtonElement;
@@ -767,7 +797,134 @@ export class Merlin {
     if (btn) btn.title = hint;
   }
 
+  private getFabBounds(): { minY: number; maxY: number } {
+    const rootStyle = getComputedStyle(document.documentElement);
+    const headerHeight = parseCssLength(rootStyle.getPropertyValue('--app-header-height'), 48);
+    const tabsHeight = window.matchMedia('(max-width: 640px)').matches
+      ? parseCssLength(rootStyle.getPropertyValue('--tabs-height'), 40)
+      : 0;
+    const keyboardInset = parseCssLength(rootStyle.getPropertyValue('--keyboard-inset'), 0);
+    const fabHalf = 26;
+    const margin = 8;
+    const minY = headerHeight + fabHalf + margin;
+    const maxY =
+      window.innerHeight - tabsHeight - keyboardInset - fabHalf - margin;
+    return { minY, maxY: Math.max(minY, maxY) };
+  }
+
+  private applyFabPosition(pos: MerlinFabPosition): void {
+    if (!this.overlay) return;
+
+    this.fabPosition = {
+      side: pos.side,
+      yPercent: clamp(pos.yPercent, 5, 95),
+    };
+
+    const bounds = this.getFabBounds();
+    const range = bounds.maxY - bounds.minY;
+    const topPx = bounds.minY + range * (this.fabPosition.yPercent / 100);
+
+    this.overlay.style.top = `${topPx}px`;
+    this.overlay.style.bottom = 'auto';
+    this.overlay.classList.toggle('merlin--left', this.fabPosition.side === 'left');
+    this.overlay.classList.toggle('merlin--right', this.fabPosition.side === 'right');
+  }
+
+  private setupFabDrag(panel: HTMLElement): void {
+    let dragging = false;
+    let moved = false;
+    let startX = 0;
+    let startY = 0;
+    let previewSide: MerlinSide = this.fabPosition.side;
+
+    panel.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      previewSide = this.fabPosition.side;
+      panel.setPointerCapture(e.pointerId);
+    });
+
+    panel.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < FAB_DRAG_THRESHOLD_PX) return;
+
+      moved = true;
+      panel.classList.add('merlin__panel--dragging');
+
+      const bounds = this.getFabBounds();
+      const topPx = clamp(e.clientY, bounds.minY, bounds.maxY);
+      this.overlay!.style.top = `${topPx}px`;
+
+      previewSide = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
+      this.overlay!.classList.toggle('merlin--left', previewSide === 'left');
+      this.overlay!.classList.toggle('merlin--right', previewSide === 'right');
+    });
+
+    const finishDrag = (e: PointerEvent): void => {
+      if (!dragging) return;
+      dragging = false;
+      panel.classList.remove('merlin__panel--dragging');
+
+      if (panel.hasPointerCapture(e.pointerId)) {
+        panel.releasePointerCapture(e.pointerId);
+      }
+
+      if (!moved) return;
+
+      const bounds = this.getFabBounds();
+      const topPx = clamp(e.clientY, bounds.minY, bounds.maxY);
+      const range = bounds.maxY - bounds.minY;
+      const yPercent = range > 0 ? ((topPx - bounds.minY) / range) * 100 : 50;
+      const side: MerlinSide = e.clientX < window.innerWidth / 2 ? 'left' : 'right';
+      const next = { side, yPercent: clamp(yPercent, 5, 95) };
+
+      this.applyFabPosition(next);
+      saveMerlinPosition(next);
+      this.suppressNextMicClick = true;
+    };
+
+    panel.addEventListener('pointerup', finishDrag);
+    panel.addEventListener('pointercancel', finishDrag);
+  }
+
   destroy(): void {
+    window.removeEventListener('resize', this.boundResizeHandler);
     void this.stop();
   }
+}
+
+function loadMerlinPosition(): MerlinFabPosition {
+  try {
+    const raw = localStorage.getItem(MERLIN_POS_KEY);
+    if (!raw) return { side: 'right', yPercent: 50 };
+    const parsed = JSON.parse(raw) as Partial<MerlinFabPosition>;
+    if (parsed.side !== 'left' && parsed.side !== 'right') {
+      return { side: 'right', yPercent: 50 };
+    }
+    return {
+      side: parsed.side,
+      yPercent: clamp(Number(parsed.yPercent) || 50, 5, 95),
+    };
+  } catch {
+    return { side: 'right', yPercent: 50 };
+  }
+}
+
+function saveMerlinPosition(pos: MerlinFabPosition): void {
+  localStorage.setItem(MERLIN_POS_KEY, JSON.stringify(pos));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function parseCssLength(raw: string, fallback: number): number {
+  const value = parseFloat(raw);
+  return Number.isFinite(value) ? value : fallback;
 }
