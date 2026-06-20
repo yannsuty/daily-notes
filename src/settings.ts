@@ -152,6 +152,15 @@ export class SettingsPage {
             <input type="checkbox" id="merlin-continuous" ${meta.merlinContinuousListen !== false ? 'checked' : ''} />
             <span>Écoute continue (wake word « Merlin »)</span>
           </label>
+          <label class="settings__label" for="merlin-picovoice-key">Clé Picovoice (wake word basse conso, Android)</label>
+          <input
+            id="merlin-picovoice-key"
+            class="settings__input"
+            type="password"
+            autocomplete="off"
+            placeholder="AccessKey depuis console.picovoice.ai"
+            value="${meta.merlinPicovoiceAccessKey ?? ''}"
+          />
           <label class="settings__toggle">
             <input type="checkbox" id="merlin-tts" ${meta.merlinTtsEnabled !== false ? 'checked' : ''} />
             <span>Réponses vocales (synthèse)</span>
@@ -166,7 +175,7 @@ export class SettingsPage {
             step="0.1"
             value="${meta.merlinTtsRate ?? 1}"
           />
-          <p class="settings__desc">Dites « Merlin » pour discuter, « Merlin journal » pour dicter. Sur Android, l'écoute continue fonctionne en arrière-plan via une notification.</p>
+          <p class="settings__desc">Dites « Merlin » pour discuter, « Merlin journal » pour dicter. Sur Android, l'écoute en arrière-plan utilise Porcupine (basse consommation) si la clé Picovoice et le modèle <code>merlin_fr.ppn</code> sont configurés ; sinon mode classique via reconnaissance vocale continue.</p>
           <p class="settings__status" id="merlin-status"></p>
         </section>
 
@@ -247,6 +256,7 @@ export class SettingsPage {
     const merlinStatusEl = this.container.querySelector<HTMLElement>('#merlin-status')!;
     const merlinToggle = this.container.querySelector<HTMLInputElement>('#merlin-enabled')!;
     const merlinContinuous = this.container.querySelector<HTMLInputElement>('#merlin-continuous')!;
+    const merlinPicovoiceKey = this.container.querySelector<HTMLInputElement>('#merlin-picovoice-key')!;
     const merlinTts = this.container.querySelector<HTMLInputElement>('#merlin-tts')!;
     const merlinTtsRate = this.container.querySelector<HTMLInputElement>('#merlin-tts-rate')!;
     const thoughtsStatusEl = this.container.querySelector<HTMLElement>('#thoughts-status')!;
@@ -351,6 +361,14 @@ export class SettingsPage {
         merlinStatusEl.textContent = merlinContinuous.checked
           ? 'Écoute continue activée.'
           : 'Écoute continue désactivée — utilisez le bouton 🎙.';
+      });
+    });
+
+    merlinPicovoiceKey.addEventListener('change', () => {
+      void saveMeta({ merlinPicovoiceAccessKey: merlinPicovoiceKey.value.trim() }).then(() => {
+        merlinStatusEl.textContent = merlinPicovoiceKey.value.trim()
+          ? 'Clé Picovoice enregistrée (mode basse conso si le modèle est présent).'
+          : 'Clé Picovoice effacée — repli sur le mode classique.';
       });
     });
 

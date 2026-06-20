@@ -80,7 +80,9 @@ public class MerlinBackgroundPlugin extends Plugin {
     }
 
     private void startListenService(PluginCall call) {
+        String accessKey = call.getString("accessKey", "");
         Intent intent = new Intent(getContext(), MerlinListenService.class);
+        intent.putExtra(MerlinListenService.EXTRA_ACCESS_KEY, accessKey);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getContext().startForegroundService(intent);
         } else {
@@ -102,6 +104,7 @@ public class MerlinBackgroundPlugin extends Plugin {
     public void isListening(PluginCall call) {
         JSObject result = new JSObject();
         result.put("active", MerlinListenService.isRunning());
+        result.put("mode", MerlinListenService.getActiveMode());
         call.resolve(result);
     }
 }

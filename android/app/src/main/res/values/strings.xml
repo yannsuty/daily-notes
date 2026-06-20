@@ -8,4 +8,6 @@
     <string name="merlin_listen_channel_desc">Notification pendant l\'écoute du wake word en arrière-plan</string>
     <string name="merlin_listen_title">Merlin</string>
     <string name="merlin_listen_text">À l\'écoute — dites « Merlin »</string>
+    <string name="merlin_listen_text_porcupine">À l\'écoute (basse conso) — dites « Merlin »</string>
+    <string name="merlin_listen_text_legacy">À l\'écoute (mode classique) — dites « Merlin »</string>
 </resources>

@@ -4,9 +4,9 @@ import { logger } from './logger';
 export type MerlinWakeType = 'assistant' | 'journal';
 
 export interface MerlinBackgroundPlugin {
-  startListening(): Promise<{ ok: boolean }>;
+  startListening(options?: { accessKey?: string }): Promise<{ ok: boolean }>;
   stopListening(): Promise<void>;
-  isListening(): Promise<{ active: boolean }>;
+  isListening(): Promise<{ active: boolean; mode?: string }>;
   addListener(
     eventName: 'wakeDetected',
     listenerFunc: (event: { type: MerlinWakeType; query: string }) => void,
@@ -37,10 +37,12 @@ export async function initMerlinBackground(
   });
 }
 
-export async function startBackgroundListening(): Promise<boolean> {
+export async function startBackgroundListening(accessKey?: string): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
   try {
-    const result = await MerlinBackground.startListening();
+    const result = await MerlinBackground.startListening({
+      accessKey: accessKey?.trim() || undefined,
+    });
     return result.ok === true;
   } catch (err) {
     logger.warn('merlin-background', 'startBackgroundListening failed', err);

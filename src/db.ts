@@ -573,6 +573,7 @@ export async function exportPayload(): Promise<SyncPayload> {
       merlinTtsEnabled: meta.merlinTtsEnabled,
       merlinTtsRate: meta.merlinTtsRate,
       merlinContinuousListen: meta.merlinContinuousListen,
+      merlinPicovoiceAccessKey: meta.merlinPicovoiceAccessKey,
     },
     merlin,
   };
