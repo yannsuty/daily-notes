@@ -78,6 +78,9 @@ export async function syncNow(): Promise<{ ok: boolean; error?: string }> {
     await importDays(mergedDays);
     if (mergedMerlin) {
       await importMerlinData(mergedMerlin);
+      void import('./merlin-scheduler').then(({ rescheduleMerlinReminders }) =>
+        rescheduleMerlinReminders(),
+      );
     }
 
     const mergedPayload: SyncPayload = {

@@ -3,7 +3,13 @@ import {
   getStoredPassphrase,
   storePassphrase,
 } from './crypto';
-import { getMeta, saveMeta, clearMerlinConversation, clearMerlinFacts, getMerlinFacts } from './db';
+import { getMeta, saveMeta, clearMerlinConversation, clearMerlinFacts, getMerlinFacts, getMerlinLists, getMerlinReminders, getMerlinShortcuts, getMerlinCustomTools, deleteMerlinList, deleteMerlinReminder, deleteMerlinShortcut, deleteMerlinCustomTool, deleteMerlinEnvVar } from './db';
+import {
+  BUILTIN_MERLIN_ENV_FIELDS,
+  getAllMerlinEnvMap,
+  getCustomMerlinEnvEntries,
+  setMerlinEnv,
+} from './merlin-env';
 import { startSyncLoop, syncNow } from './sync';
 import type { AppMeta } from './types';
 import { todayKey } from './types';
@@ -37,6 +43,34 @@ export class SettingsPage {
 
   private async render(): Promise<void> {
     const meta = await getMeta();
+    const envMap = await getAllMerlinEnvMap();
+    const customEnv = await getCustomMerlinEnvEntries();
+
+    const builtinFieldsHtml = BUILTIN_MERLIN_ENV_FIELDS.map((field) => {
+      const value = envMap[field.key] ?? '';
+      const inputType = field.secret ? 'password' : 'text';
+      const inputTag = field.multiline
+        ? `<textarea id="env-${field.key}" class="settings__input settings__input--area" rows="2" placeholder="${escapeHtml(field.placeholder)}">${escapeHtml(value)}</textarea>`
+        : `<input id="env-${field.key}" class="settings__input" type="${inputType}" autocomplete="off" placeholder="${escapeHtml(field.placeholder)}" value="${escapeHtml(value)}" />`;
+      return `
+        <label class="settings__label" for="env-${field.key}">${escapeHtml(field.label)}</label>
+        ${inputTag}
+        ${field.hint ? `<p class="settings__desc settings__desc--tight">${escapeHtml(field.hint)}</p>` : ''}
+      `;
+    }).join('');
+
+    const customEnvHtml =
+      customEnv.length > 0
+        ? customEnv
+            .map(
+              (e) =>
+                `<div class="settings__memory-item settings__memory-item--row">
+                  <span><code>${escapeHtml(e.key)}</code> = ${fieldPreview(e.value, e.key)}</span>
+                  <button type="button" class="btn btn--ghost btn--sm" data-delete-env="${escapeHtml(e.key)}">Suppr.</button>
+                </div>`,
+            )
+            .join('')
+        : '<p class="settings__desc">Aucune variable personnalisée.</p>';
 
     this.container.innerHTML = `
       <div class="settings-page__scroll">
@@ -56,6 +90,38 @@ export class SettingsPage {
             <button type="button" class="btn btn--ghost" id="clear-memory-facts">Effacer les faits</button>
             <button type="button" class="btn btn--ghost" id="clear-memory-chat">Effacer la conversation</button>
           </div>
+        </section>
+
+        <section class="settings__section">
+          <h3 class="settings__section-title">Listes et rappels</h3>
+          <p class="settings__desc">
+            Gérez vos listes, rappels et routines Merlin. Dites « ajoute du lait à courses » ou « rappelle-moi à midi ».
+            Sur le web, les rappels horaires ne notifient que si l'onglet est ouvert — utilisez l'app Android pour des alertes fiables.
+          </p>
+          <div class="settings__memory-list" id="merlin-actions-list"></div>
+          <p class="settings__status" id="actions-status"></p>
+        </section>
+
+        <section class="settings__section">
+          <h3 class="settings__section-title">Configuration IA</h3>
+          <p class="settings__desc">
+            Variables stockées localement et synchronisées (chiffrées) avec vos notes.
+            Prioritaires sur la configuration serveur — utiles pour les futurs outils Merlin.
+          </p>
+          ${builtinFieldsHtml}
+          <p class="settings__status" id="env-status"></p>
+          <button type="button" class="btn btn--primary" id="save-merlin-env">Enregistrer la configuration IA</button>
+
+          <h4 class="settings__subsection">Variables personnalisées</h4>
+          <p class="settings__desc settings__desc--tight">
+            Clé en MAJUSCULES_SNAKE (ex. <code>WEATHER_API_KEY</code>).
+          </p>
+          <div class="settings__env-add">
+            <input id="custom-env-key" class="settings__input" type="text" placeholder="CLE_API" autocomplete="off" />
+            <input id="custom-env-value" class="settings__input" type="text" placeholder="valeur" autocomplete="off" />
+            <button type="button" class="btn btn--ghost" id="add-custom-env">Ajouter</button>
+          </div>
+          <div class="settings__memory-list" id="custom-env-list">${customEnvHtml}</div>
         </section>
 
         <section class="settings__section">
@@ -138,8 +204,57 @@ export class SettingsPage {
     const reanalyzeBtn = this.container.querySelector<HTMLButtonElement>('#reanalyze-thoughts')!;
     const memoryListEl = this.container.querySelector<HTMLElement>('#merlin-memory-list')!;
     const memoryStatusEl = this.container.querySelector<HTMLElement>('#memory-status')!;
+    const actionsListEl = this.container.querySelector<HTMLElement>('#merlin-actions-list')!;
+    const actionsStatusEl = this.container.querySelector<HTMLElement>('#actions-status')!;
+    const envStatusEl = this.container.querySelector<HTMLElement>('#env-status')!;
 
     void renderMemoryList(memoryListEl);
+    void renderActionsList(actionsListEl, actionsStatusEl);
+
+    this.container.querySelector('#save-merlin-env')!.addEventListener('click', () => {
+      void (async () => {
+        for (const field of BUILTIN_MERLIN_ENV_FIELDS) {
+          const el = this.container.querySelector<HTMLElement>(`#env-${field.key}`)!;
+          const value =
+            el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement
+              ? el.value
+              : '';
+          await setMerlinEnv(field.key, value);
+        }
+        envStatusEl.textContent = 'Configuration IA enregistrée.';
+      })();
+    });
+
+    this.container.querySelector('#add-custom-env')!.addEventListener('click', () => {
+      void (async () => {
+        const keyEl = this.container.querySelector<HTMLInputElement>('#custom-env-key')!;
+        const valEl = this.container.querySelector<HTMLInputElement>('#custom-env-value')!;
+        const key = keyEl.value.trim().toUpperCase().replace(/\s+/g, '_');
+        const value = valEl.value.trim();
+        if (!key || !/^[A-Z][A-Z0-9_]*$/.test(key)) {
+          envStatusEl.textContent = 'Clé invalide (MAJUSCULES_SNAKE uniquement).';
+          return;
+        }
+        if (BUILTIN_MERLIN_ENV_FIELDS.some((f) => f.key === key)) {
+          envStatusEl.textContent = 'Utilisez le champ dédié pour cette clé.';
+          return;
+        }
+        await setMerlinEnv(key, value);
+        keyEl.value = '';
+        valEl.value = '';
+        envStatusEl.textContent = `Variable ${key} enregistrée.`;
+        await this.render();
+      })();
+    });
+
+    this.container.querySelectorAll('[data-delete-env]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        void deleteMerlinEnvVar((btn as HTMLElement).dataset.deleteEnv!).then(async () => {
+          envStatusEl.textContent = 'Variable supprimée.';
+          await this.render();
+        });
+      });
+    });
 
     this.container.querySelector('#clear-memory-facts')!.addEventListener('click', () => {
       void clearMerlinFacts().then(async () => {
@@ -274,10 +389,129 @@ async function renderMemoryList(container: HTMLElement): Promise<void> {
     .join('');
 }
 
+async function renderActionsList(
+  container: HTMLElement,
+  statusEl: HTMLElement,
+): Promise<void> {
+  const [lists, reminders, shortcuts, customTools] = await Promise.all([
+    getMerlinLists(),
+    getMerlinReminders(),
+    getMerlinShortcuts(),
+    getMerlinCustomTools(),
+  ]);
+
+  const parts: string[] = [];
+
+  if (lists.length > 0) {
+    parts.push('<h4 class="settings__subsection">Listes</h4>');
+    for (const list of lists) {
+      const count = list.items.filter((i) => !i.done).length;
+      parts.push(
+        `<div class="settings__memory-item settings__memory-item--row">
+          <span><strong>${escapeHtml(list.title)}</strong> (${count} restant${count !== 1 ? 's' : ''})</span>
+          <button type="button" class="btn btn--ghost btn--sm" data-delete-list="${list.id}">Suppr.</button>
+        </div>`,
+      );
+    }
+  }
+
+  const activeReminders = reminders.filter((r) => r.status === 'active');
+  if (activeReminders.length > 0) {
+    parts.push('<h4 class="settings__subsection">Rappels actifs</h4>');
+    for (const r of activeReminders) {
+      parts.push(
+        `<div class="settings__memory-item settings__memory-item--row">
+          <span>${escapeHtml(r.text)}</span>
+          <button type="button" class="btn btn--ghost btn--sm" data-delete-reminder="${r.id}">Suppr.</button>
+        </div>`,
+      );
+    }
+  }
+
+  if (shortcuts.length > 0) {
+    parts.push('<h4 class="settings__subsection">Raccourcis</h4>');
+    for (const s of shortcuts.slice(0, 8)) {
+      parts.push(
+        `<div class="settings__memory-item settings__memory-item--row">
+          <span>${escapeHtml(s.label)} <em class="settings__hint">(${s.usageCount}×)</em></span>
+          <button type="button" class="btn btn--ghost btn--sm" data-delete-shortcut="${s.id}">Suppr.</button>
+        </div>`,
+      );
+    }
+  }
+
+  if (customTools.length > 0) {
+    parts.push('<h4 class="settings__subsection">Routines</h4>');
+    for (const t of customTools) {
+      parts.push(
+        `<div class="settings__memory-item settings__memory-item--row">
+          <span><code>${escapeHtml(t.name)}</code> — ${escapeHtml(t.description)}</span>
+          <button type="button" class="btn btn--ghost btn--sm" data-delete-tool="${t.id}">Suppr.</button>
+        </div>`,
+      );
+    }
+  }
+
+  if (parts.length === 0) {
+    container.innerHTML = '<p class="settings__desc">Aucune action enregistrée.</p>';
+    return;
+  }
+
+  container.innerHTML = parts.join('');
+
+  container.querySelectorAll('[data-delete-list]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      void deleteMerlinList((btn as HTMLElement).dataset.deleteList!).then(async () => {
+        statusEl.textContent = 'Liste supprimée.';
+        await renderActionsList(container, statusEl);
+      });
+    });
+  });
+
+  container.querySelectorAll('[data-delete-reminder]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      void deleteMerlinReminder((btn as HTMLElement).dataset.deleteReminder!).then(async () => {
+        const { rescheduleMerlinReminders } = await import('./merlin-scheduler');
+        void rescheduleMerlinReminders();
+        statusEl.textContent = 'Rappel supprimé.';
+        await renderActionsList(container, statusEl);
+      });
+    });
+  });
+
+  container.querySelectorAll('[data-delete-shortcut]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      void deleteMerlinShortcut((btn as HTMLElement).dataset.deleteShortcut!).then(async () => {
+        statusEl.textContent = 'Raccourci supprimé.';
+        await renderActionsList(container, statusEl);
+      });
+    });
+  });
+
+  container.querySelectorAll('[data-delete-tool]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      void deleteMerlinCustomTool((btn as HTMLElement).dataset.deleteTool!).then(async () => {
+        const { invalidateCustomToolCache } = await import('./merlin-tool-registry');
+        invalidateCustomToolCache();
+        statusEl.textContent = 'Routine supprimée.';
+        await renderActionsList(container, statusEl);
+      });
+    });
+  });
+}
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function fieldPreview(value: string, key: string): string {
+  if (/KEY|TOKEN|SECRET|PASSWORD/i.test(key)) {
+    return value ? '••••••••' : '(vide)';
+  }
+  const short = value.length > 48 ? `${value.slice(0, 45)}…` : value;
+  return escapeHtml(short || '(vide)');
 }

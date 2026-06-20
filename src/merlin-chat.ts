@@ -1,5 +1,13 @@
-import { getMerlinConversation } from './db';
+import {
+  getActiveLists,
+  getMerlinConversation,
+  getPendingReminders,
+  saveMerlinList,
+  saveMerlinReminder,
+} from './db';
+import { CONTEXT_CHIPS, likelyFastPath } from './merlin-intents';
 import { getWelcomeMessage, handleUserMessage } from './merlin-agent';
+import { getPaletteShortcuts, toggleShortcutPin } from './merlin-shortcuts';
 import { getMerlinTtsPrefs, speakMerlin } from './merlin-tts';
 import type { MerlinMessage } from './types';
 
@@ -14,6 +22,9 @@ export class MerlinChat {
   private onConversationUpdate?: () => void;
   private onVoiceRequest?: () => void;
   private messagesEl: HTMLElement | null = null;
+  private actionsEl: HTMLElement | null = null;
+  private paletteEl: HTMLElement | null = null;
+  private bannerEl: HTMLElement | null = null;
   private inputEl: HTMLTextAreaElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
   private voiceBtn: HTMLButtonElement | null = null;
@@ -30,7 +41,13 @@ export class MerlinChat {
     this.container.innerHTML = '';
     this.container.classList.add('merlin-chat', 'tab-panel');
     this.container.innerHTML = `
+      <div class="merlin-chat__banner" hidden role="status"></div>
+      <details class="merlin-chat__actions-panel" open>
+        <summary class="merlin-chat__actions-title">Mes actions</summary>
+        <div class="merlin-chat__actions-body"></div>
+      </details>
       <div class="merlin-chat__messages" role="log" aria-live="polite" aria-label="Conversation avec Merlin"></div>
+      <div class="merlin-chat__palette" role="toolbar" aria-label="Actions rapides"></div>
       <div class="merlin-chat__status" aria-live="polite"></div>
       <form class="merlin-chat__composer">
         <button type="button" class="merlin-chat__voice" aria-label="Parler à Merlin" title="Parler à Merlin">🎙</button>
@@ -44,7 +61,10 @@ export class MerlinChat {
       </form>
     `;
 
+    this.bannerEl = this.container.querySelector('.merlin-chat__banner');
+    this.actionsEl = this.container.querySelector('.merlin-chat__actions-body');
     this.messagesEl = this.container.querySelector('.merlin-chat__messages');
+    this.paletteEl = this.container.querySelector('.merlin-chat__palette');
     this.inputEl = this.container.querySelector('.merlin-chat__input');
     this.sendBtn = this.container.querySelector('.merlin-chat__send');
     this.voiceBtn = this.container.querySelector('.merlin-chat__voice');
@@ -67,11 +87,163 @@ export class MerlinChat {
       }
     });
 
-    await this.renderMessages();
+    await this.renderAll();
   }
 
   async refresh(): Promise<void> {
-    await this.renderMessages();
+    await this.renderAll();
+  }
+
+  private async renderAll(): Promise<void> {
+    await Promise.all([this.renderMessages(), this.renderActionsPanel(), this.renderPalette()]);
+  }
+
+  private async renderActionsPanel(): Promise<void> {
+    if (!this.actionsEl) return;
+
+    const [lists, reminders] = await Promise.all([getActiveLists(), getPendingReminders()]);
+    const parts: string[] = [];
+
+    if (lists.length > 0) {
+      for (const list of lists) {
+        const pending = list.items.filter((i) => !i.done);
+        if (pending.length === 0) continue;
+        parts.push(`<div class="merlin-actions__group">
+          <h4 class="merlin-actions__heading">${escapeHtml(list.title)}</h4>
+          <ul class="merlin-actions__list">
+            ${pending
+              .map(
+                (item) =>
+                  `<li><button type="button" class="merlin-actions__item" data-action="toggle-item" data-list-id="${list.id}" data-item-id="${item.id}">○ ${escapeHtml(item.text)}</button></li>`,
+              )
+              .join('')}
+          </ul>
+        </div>`);
+      }
+    }
+
+    const timeReminders = reminders.filter((r) => r.trigger.kind === 'time').slice(0, 5);
+    const contextReminders = reminders.filter((r) => r.trigger.kind === 'context').slice(0, 5);
+
+    if (timeReminders.length > 0) {
+      parts.push(`<div class="merlin-actions__group">
+        <h4 class="merlin-actions__heading">Rappels</h4>
+        <ul class="merlin-actions__list">
+          ${timeReminders
+            .map((r) => {
+              const when =
+                r.trigger.kind === 'time'
+                  ? r.trigger.timeOfDay ?? (r.trigger.at ? new Date(r.trigger.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '')
+                  : '';
+              return `<li><button type="button" class="merlin-actions__item" data-action="complete-reminder" data-reminder-id="${r.id}">⏰ ${escapeHtml(r.text)}${when ? ` <span class="merlin-actions__meta">${when}</span>` : ''}</button></li>`;
+            })
+            .join('')}
+        </ul>
+      </div>`);
+    }
+
+    if (contextReminders.length > 0) {
+      parts.push(`<div class="merlin-actions__group">
+        <h4 class="merlin-actions__heading">Rappels contextuels</h4>
+        <ul class="merlin-actions__list">
+          ${contextReminders
+            .map(
+              (r) =>
+                `<li><span class="merlin-actions__item merlin-actions__item--static">📍 ${escapeHtml(r.text)} <span class="merlin-actions__meta">${r.trigger.kind === 'context' ? r.trigger.tags.join(', ') : ''}</span></span></li>`,
+            )
+            .join('')}
+        </ul>
+      </div>`);
+    }
+
+    if (parts.length === 0) {
+      this.actionsEl.innerHTML =
+        '<p class="merlin-actions__empty">Aucune liste ni rappel actif. Dites par ex. « ajoute du lait à courses » ou « rappelle-moi à midi ».</p>';
+    } else {
+      this.actionsEl.innerHTML = parts.join('');
+    }
+
+    this.actionsEl.querySelectorAll('[data-action="toggle-item"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        void this.handleToggleItem(
+          (btn as HTMLElement).dataset.listId!,
+          (btn as HTMLElement).dataset.itemId!,
+        );
+      });
+    });
+
+    this.actionsEl.querySelectorAll('[data-action="complete-reminder"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        void this.handleCompleteReminder((btn as HTMLElement).dataset.reminderId!);
+      });
+    });
+  }
+
+  private async handleToggleItem(listId: string, itemId: string): Promise<void> {
+    const { getMerlinList } = await import('./db');
+    const list = await getMerlinList(listId);
+    if (!list) return;
+    const item = list.items.find((i) => i.id === itemId);
+    if (!item) return;
+    item.done = !item.done;
+    item.updatedAt = Date.now();
+    await saveMerlinList(list);
+    await this.renderActionsPanel();
+    this.onConversationUpdate?.();
+  }
+
+  private async handleCompleteReminder(reminderId: string): Promise<void> {
+    const { getMerlinReminder } = await import('./db');
+    const reminder = await getMerlinReminder(reminderId);
+    if (!reminder) return;
+    reminder.status = 'done';
+    reminder.updatedAt = Date.now();
+    await saveMerlinReminder(reminder);
+    const { rescheduleMerlinReminders } = await import('./merlin-scheduler');
+    void rescheduleMerlinReminders();
+    await this.renderActionsPanel();
+    this.onConversationUpdate?.();
+  }
+
+  private async renderPalette(): Promise<void> {
+    if (!this.paletteEl) return;
+    this.paletteEl.innerHTML = '';
+
+    for (const chip of CONTEXT_CHIPS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'merlin-chat__chip merlin-chat__chip--context';
+      btn.textContent = chip.label;
+      btn.addEventListener('click', () => {
+        void this.submitMessage(`je suis ${chip.tags === 'travail' ? 'au travail' : chip.tags === 'maison' ? 'à la maison' : 'aux courses'}`);
+      });
+      this.paletteEl.appendChild(btn);
+    }
+
+    const shortcuts = await getPaletteShortcuts(5);
+    for (const shortcut of shortcuts) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'merlin-chat__chip';
+      btn.textContent = shortcut.pinned ? `📌 ${shortcut.label}` : shortcut.label;
+      btn.title = `${shortcut.prompt}${shortcut.pinned ? ' (épinglé)' : ' — appui long pour épingler'}`;
+      btn.addEventListener('click', () => {
+        void this.submitMessage(shortcut.prompt);
+      });
+      let pressTimer: ReturnType<typeof setTimeout> | null = null;
+      btn.addEventListener('pointerdown', () => {
+        pressTimer = setTimeout(() => {
+          void toggleShortcutPin(shortcut.id).then(() => this.renderPalette());
+        }, 600);
+      });
+      btn.addEventListener('pointerup', () => {
+        if (pressTimer) clearTimeout(pressTimer);
+      });
+      btn.addEventListener('pointerleave', () => {
+        if (pressTimer) clearTimeout(pressTimer);
+      });
+      this.paletteEl.appendChild(btn);
+    }
   }
 
   private async renderMessages(): Promise<void> {
@@ -123,6 +295,17 @@ export class MerlinChat {
     }
   }
 
+  private setAiBanner(show: boolean): void {
+    if (!this.bannerEl) return;
+    if (show) {
+      this.bannerEl.textContent =
+        'Merlin IA indisponible — vos listes et rappels fonctionnent toujours.';
+      this.bannerEl.hidden = false;
+    } else {
+      this.bannerEl.hidden = true;
+    }
+  }
+
   private async send(): Promise<void> {
     if (this.thinking || !this.inputEl) return;
 
@@ -141,7 +324,7 @@ export class MerlinChat {
 
     this.appendBubble('user', trimmed, `pending-${Date.now()}`);
     this.scrollToBottom();
-    this.setThinking(true, 'Merlin réfléchit…');
+    this.setThinking(true, likelyFastPath(trimmed) ? 'Merlin agit…' : 'Merlin réfléchit…');
 
     const result = await handleUserMessage(trimmed);
 
@@ -150,6 +333,7 @@ export class MerlinChat {
     if (!result.ok) {
       const errMsg = result.error ?? 'Erreur inconnue';
       const offline = !navigator.onLine;
+      this.setAiBanner(!!result.aiUnavailable);
       this.showError(
         offline
           ? 'Hors ligne — connectez-vous pour discuter avec Merlin.'
@@ -159,13 +343,14 @@ export class MerlinChat {
       return;
     }
 
-    await this.renderMessages();
+    this.setAiBanner(false);
+    await this.renderAll();
     this.onConversationUpdate?.();
 
     if (result.content) {
       const prefs = await getMerlinTtsPrefs();
       if (prefs.enabled) {
-        this.setThinking(true, 'Merlin parle…');
+        this.setThinking(true, result.fastPath ? 'Merlin parle…' : 'Merlin parle…');
         await speakMerlin(result.content);
         this.setThinking(false);
       }
@@ -187,4 +372,12 @@ export class MerlinChat {
       this.messagesEl!.scrollTop = this.messagesEl!.scrollHeight;
     });
   }
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

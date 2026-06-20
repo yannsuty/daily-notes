@@ -2,6 +2,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import {
+  callOpenRouterWithFallback,
+  OPENROUTER_FREE_ROUTER,
+  type OpenRouterBody,
+} from './lib/openrouter-fallback';
 
 const appVersion = (JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string }).version;
 
@@ -14,7 +19,11 @@ function readRequestBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-function createOpenRouterDevProxy(apiKey: string) {
+interface AiProxyBody extends OpenRouterBody {
+  config?: { apiKey?: string; modelChain?: string };
+}
+
+function createOpenRouterDevProxy(fallbackApiKey: string) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     if (!req.url?.startsWith('/api/ai')) {
       next();
@@ -36,40 +45,69 @@ function createOpenRouterDevProxy(apiKey: string) {
       return;
     }
 
-    if (!apiKey) {
-      res.statusCode = 503;
-      res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: 'OPENROUTER_API_KEY not configured in .env' }));
-      return;
+    if (!fallbackApiKey) {
+      // Pas de clé .env — l'app peut en fournir une via Réglages (body.config.apiKey)
     }
 
     try {
       const rawBody = await readRequestBody(req);
-      const parsed = JSON.parse(rawBody) as { model?: string };
-      const freeRouter = 'openrouter/free';
+      const parsed = JSON.parse(rawBody) as AiProxyBody;
+      const apiKey = parsed.config?.apiKey?.trim() || fallbackApiKey;
 
-      const call = (body: string) =>
-        fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${apiKey}`,
-            'HTTP-Referer': 'http://localhost:5173',
-            'X-Title': 'Merlin',
-          },
-          body,
-        });
-
-      let upstream = await call(rawBody);
-      if (upstream.status === 404 && parsed.model && parsed.model !== freeRouter) {
-        parsed.model = freeRouter;
-        upstream = await call(JSON.stringify(parsed));
+      if (!apiKey) {
+        res.statusCode = 503;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(
+          JSON.stringify({
+            error: 'OPENROUTER_API_KEY non configurée (.env ou Réglages Merlin)',
+            retryable: false,
+          }),
+        );
+        return;
       }
 
-      const payload = await upstream.text();
-      res.statusCode = upstream.status;
+      const envChain =
+        parsed.config?.modelChain?.trim() || process.env.OPENROUTER_MODEL_CHAIN;
+
+      const result = await callOpenRouterWithFallback(
+        apiKey,
+        {
+          model: parsed.model || OPENROUTER_FREE_ROUTER,
+          messages: parsed.messages,
+          temperature: parsed.temperature,
+          response_format: parsed.response_format,
+        },
+        {
+          referer: 'http://localhost:5173',
+          envChain,
+        },
+      );
+
+      if (result.ok && result.modelUsed) {
+        res.setHeader('X-Merlin-Model-Used', result.modelUsed);
+      }
+
+      res.statusCode = result.status;
       res.setHeader('Content-Type', 'application/json');
-      res.end(payload);
+      if (!result.ok) {
+        let detail = result.payload.slice(0, 300);
+        try {
+          const errParsed = JSON.parse(result.payload) as { error?: { message?: string } };
+          if (errParsed.error?.message) detail = errParsed.error.message;
+        } catch {
+          // keep raw
+        }
+        res.end(
+          JSON.stringify({
+            error: { message: detail },
+            triedModels: result.triedModels,
+            retryable: result.retryable ?? false,
+          }),
+        );
+        return;
+      }
+
+      res.end(result.payload);
     } catch (err) {
       res.statusCode = 500;
       res.setHeader('Content-Type', 'application/json');

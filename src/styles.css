@@ -890,6 +890,174 @@ body {
   background: var(--bg);
 }
 
+.merlin-chat__banner {
+  flex-shrink: 0;
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  border-bottom: 1px solid var(--border);
+}
+
+.merlin-chat__banner[hidden] {
+  display: none;
+}
+
+.merlin-chat__actions-panel {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.merlin-chat__actions-title {
+  padding: 0.5rem 1rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.merlin-chat__actions-title::-webkit-details-marker {
+  display: none;
+}
+
+.merlin-chat__actions-body {
+  padding: 0 1rem 0.75rem;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.merlin-actions__group {
+  margin-bottom: 0.5rem;
+}
+
+.merlin-actions__heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin: 0 0 0.25rem;
+}
+
+.merlin-actions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.merlin-actions__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0;
+  font-size: 0.875rem;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.merlin-actions__item:hover {
+  color: var(--accent);
+}
+
+.merlin-actions__item--static {
+  cursor: default;
+}
+
+.merlin-actions__item--static:hover {
+  color: inherit;
+}
+
+.merlin-actions__meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.merlin-actions__empty {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.merlin-chat__palette {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem 0;
+  overflow-x: auto;
+}
+
+.merlin-chat__chip {
+  flex-shrink: 0;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.8125rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+}
+
+.merlin-chat__chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.merlin-chat__chip--context {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.settings__subsection {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0.35rem;
+  color: var(--muted);
+}
+
+.settings__memory-item--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.settings__hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: normal;
+}
+
+.btn--sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.settings__desc--tight {
+  margin-top: 0.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.settings__input--area {
+  min-height: 3.5rem;
+  resize: vertical;
+}
+
+.settings__env-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.settings__env-add .settings__input {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
 .merlin-chat__messages {
   flex: 1;
   min-height: 0;

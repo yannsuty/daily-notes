@@ -1,20 +1,45 @@
 import { apiUrl } from './api-base';
+import { getAiClientConfig } from './merlin-env';
+import { OPENROUTER_FREE_ROUTER } from '../lib/openrouter-fallback';
 
-export const OPENROUTER_FREE_ROUTER = 'openrouter/free';
+export { OPENROUTER_FREE_ROUTER };
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
+export interface AiClientConfigPayload {
+  apiKey?: string;
+  modelChain?: string;
+}
+
 export interface AiResult {
   ok: boolean;
   text?: string;
   error?: string;
+  modelUsed?: string;
+  degraded?: boolean;
+  retryable?: boolean;
 }
 
-async function formatAiError(response: Response, model: string): Promise<string> {
-  const errBody = await response.text();
+export const LLM_UNAVAILABLE_MSG =
+  "Je n'arrive pas à répondre pour l'instant. Tes listes et rappels fonctionnent toujours.";
+
+async function formatAiError(response: Response, model: string, body?: unknown): Promise<string> {
+  let errBody = '';
+  try {
+    errBody = await response.text();
+  } catch {
+    errBody = '';
+  }
+
+  if (body && typeof body === 'object' && body !== null && 'error' in body) {
+    const err = (body as { error?: { message?: string } | string }).error;
+    if (typeof err === 'string') return err;
+    if (err?.message) return err.message;
+  }
+
   let detail = errBody.slice(0, 160);
   try {
     const parsed = JSON.parse(errBody) as { error?: { message?: string } | string };
@@ -27,20 +52,50 @@ async function formatAiError(response: Response, model: string): Promise<string>
     detail = `Modèle introuvable (${model}).`;
   }
   if (response.status === 503) {
-    detail = 'OPENROUTER_API_KEY non configurée sur le serveur.';
+    detail = 'Service IA indisponible.';
   }
   return `API erreur ${response.status}: ${detail}`;
 }
 
+async function fetchCompletion(
+  body: Record<string, unknown>,
+): Promise<{ response: Response; data?: unknown }> {
+  const response = await fetch(apiUrl('/api/ai'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  let data: unknown;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    try {
+      data = await response.json();
+    } catch {
+      data = undefined;
+    }
+  }
+
+  return { response, data };
+}
+
 export async function chatCompletion(
   messages: ChatMessage[],
-  options?: { temperature?: number; jsonMode?: boolean },
+  options?: { temperature?: number; jsonMode?: boolean; model?: string },
 ): Promise<AiResult> {
-  const model = OPENROUTER_FREE_ROUTER;
+  const clientConfig = await getAiClientConfig();
+  const model =
+    options?.model ?? clientConfig.model ?? OPENROUTER_FREE_ROUTER;
+
+  const configPayload: AiClientConfigPayload = {};
+  if (clientConfig.apiKey) configPayload.apiKey = clientConfig.apiKey;
+  if (clientConfig.modelChain) configPayload.modelChain = clientConfig.modelChain;
+
   const body: Record<string, unknown> = {
     model,
     temperature: options?.temperature ?? 0.4,
     messages,
+    ...(Object.keys(configPayload).length > 0 ? { config: configPayload } : {}),
   };
 
   if (options?.jsonMode) {
@@ -48,27 +103,54 @@ export async function chatCompletion(
   }
 
   try {
-    const response = await fetch(apiUrl('/api/ai'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    let { response, data } = await fetchCompletion(body);
 
     if (!response.ok) {
-      return { ok: false, error: await formatAiError(response, model) };
+      const errData = data as { retryable?: boolean } | undefined;
+      if (response.status === 503 && errData?.retryable) {
+        await new Promise((r) => setTimeout(r, 2000));
+        ({ response, data } = await fetchCompletion(body));
+      }
+
+      if (!response.ok) {
+        const retryable =
+          response.status === 503 ||
+          (data as { retryable?: boolean } | undefined)?.retryable === true;
+        return {
+          ok: false,
+          error: await formatAiError(response, model, data),
+          retryable,
+        };
+      }
     }
 
-    const data = (await response.json()) as {
+    const modelUsed = response.headers.get('X-Merlin-Model-Used') ?? undefined;
+    const payload = data as {
       choices?: { message?: { content?: string } }[];
     };
-    const text = data.choices?.[0]?.message?.content?.trim();
+    const text = payload?.choices?.[0]?.message?.content?.trim();
     if (!text) {
-      return { ok: false, error: 'Réponse vide de l\'API.' };
+      return { ok: false, error: 'Réponse vide de l\'API.', retryable: true };
     }
-    return { ok: true, text };
+    return { ok: true, text, modelUsed };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : 'Erreur réseau' };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Erreur réseau',
+      retryable: true,
+    };
   }
+}
+
+export async function withAiFallback<T>(
+  task: () => Promise<AiResult>,
+  degrade: () => T,
+): Promise<{ ok: true; value: string } | { ok: false; degraded: T; error?: string }> {
+  const result = await task();
+  if (result.ok && result.text) {
+    return { ok: true, value: result.text };
+  }
+  return { ok: false, degraded: degrade(), error: result.error };
 }
 
 export function parseJsonFromAi<T>(raw: string): T | null {

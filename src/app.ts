@@ -80,6 +80,9 @@ export async function initApp(root: HTMLElement): Promise<void> {
     },
     onMerlinChange: (enabled: boolean, fromUserGesture?: boolean) => {
       merlin?.setEnabled(enabled);
+      if (enabled) {
+        void import('./merlin-scheduler').then(({ initMerlinScheduler }) => initMerlinScheduler());
+      }
       if (enabled && fromUserGesture) {
         void merlin?.beginListening().then((ok) => {
           if (ok) {
@@ -159,6 +162,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
   });
   if (meta.merlinEnabled) {
     merlin.setEnabled(true);
+    void import('./merlin-scheduler').then(({ initMerlinScheduler }) => initMerlinScheduler());
   }
 
   tabBar.syncPanels();

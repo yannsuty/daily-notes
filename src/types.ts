@@ -42,9 +42,86 @@ export interface MerlinConversation {
   updatedAt: number;
 }
 
+export interface MerlinListItem {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MerlinList {
+  id: string;
+  title: string;
+  items: MerlinListItem[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type MerlinReminderRecurrence = 'once' | 'daily' | 'weekly';
+
+export type MerlinReminderTrigger =
+  | { kind: 'time'; at?: number; timeOfDay?: string; recurrence?: MerlinReminderRecurrence }
+  | { kind: 'context'; tags: string[] };
+
+export type MerlinReminderStatus = 'active' | 'done' | 'snoozed';
+
+export interface MerlinReminder {
+  id: string;
+  text: string;
+  trigger: MerlinReminderTrigger;
+  status: MerlinReminderStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MerlinShortcut {
+  id: string;
+  label: string;
+  prompt: string;
+  pinned: boolean;
+  usageCount: number;
+  source: 'auto' | 'user';
+  lastUsedAt: number;
+  createdAt: number;
+}
+
+export interface MerlinToolStep {
+  tool: string;
+  args: Record<string, string>;
+}
+
+export interface MerlinCustomToolParam {
+  name: string;
+  description: string;
+}
+
+export interface MerlinCustomTool {
+  id: string;
+  name: string;
+  description: string;
+  steps: MerlinToolStep[];
+  params?: MerlinCustomToolParam[];
+  source: 'auto' | 'user';
+  usageCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MerlinEnvVar {
+  key: string;
+  value: string;
+  updatedAt: number;
+}
+
 export interface MerlinSyncData {
   conversation: MerlinConversation;
   facts: MerlinFact[];
+  lists?: MerlinList[];
+  reminders?: MerlinReminder[];
+  shortcuts?: MerlinShortcut[];
+  customTools?: MerlinCustomTool[];
+  env?: MerlinEnvVar[];
   updatedAt: number;
 }
 

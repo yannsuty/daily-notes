@@ -41,7 +41,7 @@ export async function correctDictationText(
     ? `\nContexte déjà dicté plus tôt dans la session :\n${priorContext.slice(-600)}`
     : '';
 
-  return chatCompletion(
+  const result = await chatCompletion(
     [
       {
         role: 'system',
@@ -60,6 +60,11 @@ Règles strictes :
     ],
     { temperature: 0.2 },
   );
+
+  if (!result.ok || !result.text) {
+    return { ok: true, text: rawText };
+  }
+  return { ok: true, text: result.text };
 }
 
 export async function structureJournalText(rawText: string): Promise<StructureResult> {
@@ -67,7 +72,7 @@ export async function structureJournalText(rawText: string): Promise<StructureRe
     return { ok: false, error: 'Aucun texte à structurer.' };
   }
 
-  return chatCompletion(
+  const result = await chatCompletion(
     [
       {
         role: 'system',
@@ -88,6 +93,11 @@ Règles :
     ],
     { temperature: 0.4 },
   );
+
+  if (!result.ok || !result.text) {
+    return { ok: true, text: rawText };
+  }
+  return { ok: true, text: result.text };
 }
 
 export async function extractThoughtsWithAI(
@@ -128,6 +138,8 @@ Réponds UNIQUEMENT en JSON valide :
   );
 
   if (!result.ok || !result.text) {
+    const cached = getCachedAiThoughts(fingerprintFromDays(days, today));
+    if (cached) return { ok: true, graph: cached };
     return { ok: false, error: result.error ?? 'Analyse impossible.' };
   }
 
@@ -172,6 +184,14 @@ export function clearAiThoughtsCache(): void {
   } catch {
     // ignore
   }
+}
+
+function fingerprintFromDays(
+  days: Record<string, { content: string }>,
+  today: string,
+): string {
+  const keys = Object.keys(days).filter((k) => k <= today).sort().slice(-5);
+  return keys.map((k) => `${k}:${days[k].content.length}`).join('|');
 }
 
 function prepareJournalExcerpt(

@@ -1,4 +1,9 @@
-import { chatCompletion, parseJsonFromAi, type ChatMessage } from './ai-provider';
+import {
+  chatCompletion,
+  LLM_UNAVAILABLE_MSG,
+  parseJsonFromAi,
+  type ChatMessage,
+} from './ai-provider';
 import {
   appendMerlinMessage,
   getMerlinConversation,
@@ -7,6 +12,15 @@ import {
   saveMerlinFacts,
   updateMerlinConversationSummary,
 } from './db';
+import { tryFastIntent } from './merlin-intents';
+import { getCustomToolsPromptBlock } from './merlin-tool-registry';
+import { recordShortcutUsage, recordToolAsShortcut } from './merlin-shortcuts';
+import {
+  executeMerlinTool,
+  isMutationTool,
+  templateReplyForTool,
+  TOOL_DOCS,
+} from './merlin-tools';
 import type { MerlinFact, MerlinMessage } from './types';
 
 const MAX_CONTEXT_MESSAGES = 24;
@@ -14,13 +28,15 @@ const COMPRESS_THRESHOLD = 40;
 const MESSAGES_TO_COMPRESS = 16;
 const FACT_EXTRACTION_INTERVAL = 4;
 
+const READ_TOOLS = new Set(['read_journal', 'search_journal', 'summarize_period', 'show_lists', 'list_reminders']);
+
 const MERLIN_PERSONA = `Tu es Merlin, l'assistant personnel de l'utilisateur.
 Inspiré de l'intelligence et de la discrétion de Jarvis, tu es :
 - Concis et naturel en français
 - Tu tutoies l'utilisateur sauf indication contraire dans tes faits mémorisés
 - Tu exécutes des actions via tes outils plutôt que d'inventer du contenu du journal
 - Si tu n'as pas l'information, dis-le honnêtement
-- Tu peux aider avec le journal, les pensées, et la conversation générale`;
+- Tu peux aider avec le journal, les listes, les rappels, et la conversation générale`;
 
 let messagesSinceFactExtraction = 0;
 
@@ -31,13 +47,12 @@ export function createMessageId(): string {
 export async function buildSystemPrompt(): Promise<string> {
   const facts = await getMerlinFacts();
   const conv = await getMerlinConversation();
+  const customTools = await getCustomToolsPromptBlock();
 
   let prompt = MERLIN_PERSONA;
 
   if (facts.length > 0) {
-    const factsBlock = facts
-      .map((f) => `- ${f.key} : ${f.value}`)
-      .join('\n');
+    const factsBlock = facts.map((f) => `- ${f.key} : ${f.value}`).join('\n');
     prompt += `\n\nFaits mémorisés sur l'utilisateur :\n${factsBlock}`;
   }
 
@@ -45,10 +60,7 @@ export async function buildSystemPrompt(): Promise<string> {
     prompt += `\n\nRésumé des échanges précédents :\n${conv.summary.trim()}`;
   }
 
-  prompt += `\n\nOutils disponibles (utilise-les quand l'utilisateur demande des infos sur son journal) :
-- read_journal(date) — lire la note d'un jour (format AAAA-MM-JJ)
-- search_journal(query) — chercher dans toutes les notes
-- summarize_period(from, to) — lister les notes d'une période
+  prompt += `\n\nOutils disponibles :\n${TOOL_DOCS}${customTools}
 
 Pour utiliser un outil, réponds UNIQUEMENT avec ce JSON :
 {"action":"tool","name":"nom_outil","args":{"clé":"valeur"}}
@@ -105,6 +117,18 @@ function parseToolCall(text: string): ToolCallPayload | null {
   const parsed = parseJsonFromAi<ToolCallPayload>(text);
   if (parsed?.action === 'tool' && parsed.name) {
     return parsed;
+  }
+  return null;
+}
+
+function tryExplicitFactWithoutLlm(factText: string): { key: string; value: string } | null {
+  const m = factText.match(/^(.+?)\s+(?:s'appelle|s appelle|est|c'est|c est)\s+(.+)$/i);
+  if (m) {
+    const key = m[1].trim().toLowerCase().replace(/\s+/g, '_').slice(0, 32);
+    return { key, value: m[2].trim() };
+  }
+  if (factText.length < 80) {
+    return { key: 'note', value: factText };
   }
   return null;
 }
@@ -191,10 +215,68 @@ export async function rememberExplicitFact(key: string, value: string): Promise<
   });
 }
 
+export type AgentSideEffect = 'list_updated' | 'reminder_created' | 'reminder_completed';
+
 export interface AgentReply {
   ok: boolean;
   content?: string;
   error?: string;
+  sideEffects?: AgentSideEffect;
+  fastPath?: boolean;
+  aiUnavailable?: boolean;
+}
+
+async function appendExchange(userText: string, reply: string): Promise<void> {
+  const assistantMsg: MerlinMessage = {
+    id: createMessageId(),
+    role: 'assistant',
+    content: reply,
+    createdAt: Date.now(),
+  };
+  await appendMerlinMessage(assistantMsg);
+
+  messagesSinceFactExtraction += 1;
+  if (messagesSinceFactExtraction >= FACT_EXTRACTION_INTERVAL) {
+    messagesSinceFactExtraction = 0;
+    void extractFactsFromExchange(userText, reply);
+  }
+}
+
+async function executeToolAndReply(
+  toolCall: ToolCallPayload,
+  messages: ChatMessage[],
+  llmRawText: string,
+): Promise<{ reply: string; sideEffects?: AgentSideEffect }> {
+  const toolResult = await executeMerlinTool(toolCall.name, toolCall.args ?? {});
+
+  void recordToolAsShortcut(toolCall.name, toolCall.args ?? {});
+
+  const template = templateReplyForTool(toolCall.name, toolResult);
+  if (template) {
+    return { reply: template, sideEffects: toolResult.mutation };
+  }
+
+  if (isMutationTool(toolCall.name)) {
+    return { reply: toolResult.content, sideEffects: toolResult.mutation };
+  }
+
+  if (!READ_TOOLS.has(toolCall.name)) {
+    return { reply: toolResult.content, sideEffects: toolResult.mutation };
+  }
+
+  const toolMessages: ChatMessage[] = [
+    ...messages,
+    { role: 'assistant', content: llmRawText },
+    {
+      role: 'user',
+      content: `Résultat de l'outil ${toolCall.name} :\n${toolResult.content}\n\nFormule une réponse naturelle pour l'utilisateur.`,
+    },
+  ];
+  const followUp = await chatCompletion(toolMessages, { temperature: 0.5 });
+  if (!followUp.ok || !followUp.text) {
+    return { reply: toolResult.content, sideEffects: toolResult.mutation };
+  }
+  return { reply: followUp.text, sideEffects: toolResult.mutation };
 }
 
 export async function handleUserMessage(userText: string): Promise<AgentReply> {
@@ -216,34 +298,58 @@ export async function handleUserMessage(userText: string): Promise<AgentReply> {
     };
     await appendMerlinMessage(userMsg);
 
-    const factResult = await chatCompletion(
-      [
-        {
-          role: 'system',
-          content: `Extrais un fait à mémoriser. Réponds en JSON : {"key":"snake_case","value":"texte court"}`,
-        },
-        { role: 'user', content: factText },
-      ],
-      { temperature: 0.2, jsonMode: true },
-    );
-
     let reply = "C'est noté, je m'en souviendrai.";
-    if (factResult.ok && factResult.text) {
-      const parsed = parseJsonFromAi<{ key?: string; value?: string }>(factResult.text);
-      if (parsed?.key && parsed?.value) {
-        await rememberExplicitFact(parsed.key, parsed.value);
-        reply = `C'est noté — je retiendrai que ${parsed.value}.`;
+
+    const localFact = tryExplicitFactWithoutLlm(factText);
+    if (localFact) {
+      await rememberExplicitFact(localFact.key, localFact.value);
+      reply = `C'est noté — je retiendrai que ${localFact.value}.`;
+    } else {
+      const factResult = await chatCompletion(
+        [
+          {
+            role: 'system',
+            content: `Extrais un fait à mémoriser. Réponds en JSON : {"key":"snake_case","value":"texte court"}`,
+          },
+          { role: 'user', content: factText },
+        ],
+        { temperature: 0.2, jsonMode: true },
+      );
+
+      if (factResult.ok && factResult.text) {
+        const parsed = parseJsonFromAi<{ key?: string; value?: string }>(factResult.text);
+        if (parsed?.key && parsed?.value) {
+          await rememberExplicitFact(parsed.key, parsed.value);
+          reply = `C'est noté — je retiendrai que ${parsed.value}.`;
+        }
+      } else if (!factResult.ok) {
+        await rememberExplicitFact('note', factText);
+        reply = "C'est noté, je m'en souviendrai.";
       }
     }
 
-    const assistantMsg: MerlinMessage = {
+    await appendExchange(trimmed, reply);
+    return { ok: true, content: reply };
+  }
+
+  const fast = await tryFastIntent(trimmed);
+  if (fast.handled && fast.reply) {
+    const userMsg: MerlinMessage = {
       id: createMessageId(),
-      role: 'assistant',
-      content: reply,
+      role: 'user',
+      content: trimmed,
       createdAt: Date.now(),
     };
-    await appendMerlinMessage(assistantMsg);
-    return { ok: true, content: reply };
+    await appendMerlinMessage(userMsg);
+    await appendExchange(trimmed, fast.reply);
+    void recordShortcutUsage(trimmed);
+    void import('./sync').then(({ syncNow }) => syncNow());
+    return {
+      ok: true,
+      content: fast.reply,
+      sideEffects: fast.sideEffects,
+      fastPath: true,
+    };
   }
 
   const userMsg: MerlinMessage = {
@@ -254,7 +360,7 @@ export async function handleUserMessage(userText: string): Promise<AgentReply> {
   };
   await appendMerlinMessage(userMsg);
 
-  await maybeCompressConversation();
+  void maybeCompressConversation();
 
   const systemPrompt = await buildSystemPrompt();
   const conv = await getMerlinConversation();
@@ -268,48 +374,30 @@ export async function handleUserMessage(userText: string): Promise<AgentReply> {
     })),
   ];
 
-  const { executeMerlinTool } = await import('./merlin-tools');
-
   let result = await chatCompletion(messages, { temperature: 0.5 });
   if (!result.ok || !result.text) {
-    return { ok: false, error: result.error ?? 'Réponse impossible.' };
+    return {
+      ok: false,
+      error: result.error ?? LLM_UNAVAILABLE_MSG,
+      aiUnavailable: true,
+    };
   }
 
   let replyText = result.text;
+  let sideEffects: AgentSideEffect | undefined;
   const toolCall = parseToolCall(result.text);
 
   if (toolCall) {
-    const toolResult = await executeMerlinTool(toolCall.name, toolCall.args ?? {});
-    const toolMessages: ChatMessage[] = [
-      ...messages,
-      { role: 'assistant', content: result.text },
-      {
-        role: 'user',
-        content: `Résultat de l'outil ${toolCall.name} :\n${toolResult.content}\n\nFormule une réponse naturelle pour l'utilisateur.`,
-      },
-    ];
-    const followUp = await chatCompletion(toolMessages, { temperature: 0.5 });
-    if (!followUp.ok || !followUp.text) {
-      return { ok: false, error: followUp.error ?? 'Réponse impossible après outil.' };
-    }
-    replyText = followUp.text;
+    const toolReply = await executeToolAndReply(toolCall, messages, result.text);
+    replyText = toolReply.reply;
+    sideEffects = toolReply.sideEffects;
+    void import('./sync').then(({ syncNow }) => syncNow());
   }
 
-  const assistantMsg: MerlinMessage = {
-    id: createMessageId(),
-    role: 'assistant',
-    content: replyText,
-    createdAt: Date.now(),
-  };
-  await appendMerlinMessage(assistantMsg);
+  await appendExchange(trimmed, replyText);
+  void recordShortcutUsage(trimmed);
 
-  messagesSinceFactExtraction += 1;
-  if (messagesSinceFactExtraction >= FACT_EXTRACTION_INTERVAL) {
-    messagesSinceFactExtraction = 0;
-    void extractFactsFromExchange(trimmed, replyText);
-  }
-
-  return { ok: true, content: replyText };
+  return { ok: true, content: replyText, sideEffects };
 }
 
 export async function getWelcomeMessage(): Promise<string> {

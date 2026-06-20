@@ -4,6 +4,7 @@ import {
   structureJournalText,
 } from './merlin-ai';
 import { handleUserMessage } from './merlin-agent';
+import { likelyFastPath } from './merlin-intents';
 import type { MerlinChat } from './merlin-chat';
 import type { Journal } from './journal';
 import { getMeta } from './db';
@@ -455,7 +456,7 @@ export class Merlin {
     this.state = 'processing';
     this.clearSilenceTimer();
     this.showOverlay('processing');
-    this.setStatusHint('Merlin réfléchit…');
+    this.setStatusHint(likelyFastPath(text) ? 'Merlin agit…' : 'Merlin réfléchit…');
     await this.pauseListening();
 
     const result = await handleUserMessage(text);
