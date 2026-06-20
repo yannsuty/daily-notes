@@ -18,6 +18,7 @@ export interface UpdateCheckResult {
   available: boolean;
   currentVersion: string;
   currentVersionCode: number;
+  currentReleaseLabel: string;
   latestVersion: string;
   latestVersionCode?: number;
   apkUrl?: string;
@@ -25,10 +26,17 @@ export interface UpdateCheckResult {
   error?: string;
 }
 
+interface GitHubAsset {
+  id: number;
+  name: string;
+  url: string;
+  browser_download_url: string;
+}
+
 interface GitHubRelease {
   tag_name: string;
   body: string | null;
-  assets: Array<{ name: string; browser_download_url: string }>;
+  assets: GitHubAsset[];
 }
 
 interface VersionManifest {
@@ -36,6 +44,14 @@ interface VersionManifest {
   versionName: string;
   tag?: string;
 }
+
+interface ReleaseIndexEntry {
+  tag: string;
+  versionCode: number;
+  versionName: string;
+}
+
+let releaseIndexCache: { expiresAt: number; entries: ReleaseIndexEntry[] } | null = null;
 
 function parseVersion(version: string): number[] {
   return version
@@ -57,6 +73,21 @@ export function compareVersions(a: string, b: string): number {
   }
 
   return 0;
+}
+
+function githubHeaders(accept: string): HeadersInit {
+  return {
+    Accept: accept,
+    'User-Agent': 'Merlin-Android-App',
+  };
+}
+
+function normalizeTag(tag: string): string {
+  return tag.replace(/^v/i, '');
+}
+
+function formatReleaseLabel(tag: string, versionCode: number): string {
+  return `v${normalizeTag(tag)} · build ${versionCode}`;
 }
 
 export function isNativeAndroid(): boolean {
@@ -83,14 +114,26 @@ export async function getInstalledAppVersion(): Promise<string | null> {
   return info?.versionName ?? null;
 }
 
+async function fetchRecentReleases(): Promise<GitHubRelease[]> {
+  const response = await fetch(
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=20`,
+    {
+      headers: githubHeaders('application/vnd.github+json'),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`GitHub a répondu ${response.status}.`);
+  }
+
+  return (await response.json()) as GitHubRelease[];
+}
+
 async function fetchLatestRelease(): Promise<GitHubRelease> {
   const response = await fetch(
     `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
     {
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'Merlin-Android-App',
-      },
+      headers: githubHeaders('application/vnd.github+json'),
     },
   );
 
@@ -109,11 +152,8 @@ async function fetchVersionManifest(
     return null;
   }
 
-  const response = await fetch(asset.browser_download_url, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'Merlin-Android-App',
-    },
+  const response = await fetch(asset.url, {
+    headers: githubHeaders('application/octet-stream'),
   });
 
   if (!response.ok) {
@@ -128,12 +168,68 @@ async function fetchVersionManifest(
   return manifest;
 }
 
+async function getReleaseIndex(): Promise<ReleaseIndexEntry[]> {
+  const now = Date.now();
+  if (releaseIndexCache && releaseIndexCache.expiresAt > now) {
+    return releaseIndexCache.entries;
+  }
+
+  const releases = await fetchRecentReleases();
+  const entries: ReleaseIndexEntry[] = [];
+
+  for (const release of releases) {
+    const manifest = await fetchVersionManifest(release);
+    if (!manifest) {
+      continue;
+    }
+
+    entries.push({
+      tag: manifest.tag ?? release.tag_name,
+      versionCode: manifest.versionCode,
+      versionName: manifest.versionName,
+    });
+  }
+
+  releaseIndexCache = {
+    entries,
+    expiresAt: now + 5 * 60_000,
+  };
+
+  return entries;
+}
+
+export async function resolveInstalledReleaseLabel(
+  versionCode: number,
+  versionName?: string,
+): Promise<string> {
+  try {
+    const entries = await getReleaseIndex();
+    const match = entries.find((entry) => entry.versionCode === versionCode);
+    if (match) {
+      return formatReleaseLabel(match.tag, versionCode);
+    }
+  } catch {
+    // ignore and fall back below
+  }
+
+  if (versionName) {
+    return `v${normalizeTag(versionName)} · build ${versionCode}`;
+  }
+
+  return `build ${versionCode}`;
+}
+
+function getApkDownloadUrl(asset: GitHubAsset): string {
+  return asset.url;
+}
+
 export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
   if (!isNativeAndroid()) {
     return {
       available: false,
       currentVersion: '',
       currentVersionCode: 0,
+      currentReleaseLabel: '',
       latestVersion: '',
       error: 'Disponible uniquement sur l’app Android.',
     };
@@ -145,10 +241,16 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
       available: false,
       currentVersion: '',
       currentVersionCode: 0,
+      currentReleaseLabel: '',
       latestVersion: '',
       error: 'Impossible de lire la version installée.',
     };
   }
+
+  const currentReleaseLabel = await resolveInstalledReleaseLabel(
+    installed.versionCode,
+    installed.versionName,
+  );
 
   try {
     const release = await fetchLatestRelease();
@@ -165,6 +267,7 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
         available: false,
         currentVersion: installed.versionName,
         currentVersionCode: installed.versionCode,
+        currentReleaseLabel,
         latestVersion,
         error: `Asset ${APK_ASSET_NAME} introuvable dans la dernière release.`,
       };
@@ -180,9 +283,10 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
       available,
       currentVersion: installed.versionName,
       currentVersionCode: installed.versionCode,
+      currentReleaseLabel,
       latestVersion,
       latestVersionCode,
-      apkUrl: apkAsset.browser_download_url,
+      apkUrl: getApkDownloadUrl(apkAsset),
       releaseNotes: release.body?.trim() || undefined,
     };
   } catch (error) {
@@ -190,6 +294,7 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
       available: false,
       currentVersion: installed.versionName,
       currentVersionCode: installed.versionCode,
+      currentReleaseLabel,
       latestVersion: '',
       error: error instanceof Error ? error.message : 'Impossible de contacter GitHub.',
     };

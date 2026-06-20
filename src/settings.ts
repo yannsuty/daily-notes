@@ -1,4 +1,4 @@
-import { checkForAppUpdate, downloadAndInstallUpdate, getInstalledAppInfo, isNativeAndroid } from './app-update';
+import { checkForAppUpdate, downloadAndInstallUpdate, getInstalledAppInfo, isNativeAndroid, resolveInstalledReleaseLabel } from './app-update';
 import {
   clearStoredPassphrase,
   getStoredPassphrase,
@@ -75,8 +75,8 @@ export class SettingsPage {
 
     const installedInfo = isNativeAndroid() ? await getInstalledAppInfo() : null;
     const versionLabel = installedInfo
-      ? `${installedInfo.versionName} (build ${installedInfo.versionCode})`
-      : APP_VERSION;
+      ? await resolveInstalledReleaseLabel(installedInfo.versionCode, installedInfo.versionName)
+      : `v${APP_VERSION}`;
 
     this.container.innerHTML = `
       <div class="settings-page__scroll">
@@ -192,7 +192,7 @@ export class SettingsPage {
         <section class="settings__section" id="app-update-section">
           <h3 class="settings__section-title">Mise à jour de l'app</h3>
           <p class="settings__desc">
-            Version installée : <strong>v${escapeHtml(versionLabel)}</strong>.
+            Version installée : <strong>${escapeHtml(versionLabel)}</strong>.
             ${
               isNativeAndroid()
                 ? 'Les mises à jour sont téléchargées depuis GitHub Releases.'
@@ -212,7 +212,7 @@ export class SettingsPage {
       </div>
 
       <footer class="settings-page__footer">
-        <span>Merlin v${escapeHtml(versionLabel)}</span>
+        <span>Merlin ${escapeHtml(versionLabel)}</span>
       </footer>
     `;
 
@@ -381,6 +381,20 @@ export class SettingsPage {
       });
     });
 
+    if (isNativeAndroid()) {
+      void checkForAppUpdate().then((update) => {
+        if (update.error) {
+          appUpdateStatusEl.textContent = update.error;
+          return;
+        }
+        if (update.available && update.latestVersionCode != null) {
+          appUpdateStatusEl.textContent = `Mise à jour disponible : v${update.latestVersion} · build ${update.latestVersionCode}.`;
+          return;
+        }
+        appUpdateStatusEl.textContent = `${update.currentReleaseLabel} — vous êtes à jour.`;
+      });
+    }
+
     appUpdateBtn.addEventListener('click', () => {
       if (!isNativeAndroid()) {
         appUpdateStatusEl.textContent = 'Disponible uniquement sur l’app Android.';
@@ -401,15 +415,15 @@ export class SettingsPage {
           if (!update.available || !update.apkUrl) {
             const latestLabel =
               update.latestVersionCode != null
-                ? `v${update.latestVersion} (build ${update.latestVersionCode})`
+                ? `v${update.latestVersion} · build ${update.latestVersionCode}`
                 : `v${update.latestVersion}`;
-            appUpdateStatusEl.textContent = `Vous êtes à jour (build ${update.currentVersionCode}, dernière release ${latestLabel}).`;
+            appUpdateStatusEl.textContent = `${update.currentReleaseLabel} — à jour (dernière release ${latestLabel}).`;
             return;
           }
 
           const latestLabel =
             update.latestVersionCode != null
-              ? `v${update.latestVersion} (build ${update.latestVersionCode})`
+              ? `v${update.latestVersion} · build ${update.latestVersionCode}`
               : `v${update.latestVersion}`;
           appUpdateStatusEl.textContent = `Mise à jour ${latestLabel} trouvée. Téléchargement…`;
           await downloadAndInstallUpdate(update.apkUrl);
