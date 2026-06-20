@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+import { logger } from './logger';
 
 export type MerlinWakeType = 'assistant' | 'journal';
 
@@ -41,7 +42,8 @@ export async function startBackgroundListening(): Promise<boolean> {
   try {
     const result = await MerlinBackground.startListening();
     return result.ok === true;
-  } catch {
+  } catch (err) {
+    logger.warn('merlin-background', 'startBackgroundListening failed', err);
     return false;
   }
 }
@@ -50,8 +52,8 @@ export async function stopBackgroundListening(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   try {
     await MerlinBackground.stopListening();
-  } catch {
-    // ignore
+  } catch (err) {
+    logger.warn('merlin-background', 'stopBackgroundListening failed', err);
   }
 }
 
@@ -60,7 +62,8 @@ export async function isBackgroundListening(): Promise<boolean> {
   try {
     const result = await MerlinBackground.isListening();
     return result.active === true;
-  } catch {
+  } catch (err) {
+    logger.warn('merlin-background', 'isBackgroundListening failed', err);
     return false;
   }
 }
