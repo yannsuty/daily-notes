@@ -1,6 +1,7 @@
 import { apiUrl } from './api-base';
 import { getAiClientConfig } from './merlin-env';
 import { OPENROUTER_FREE_ROUTER } from '../lib/openrouter-fallback';
+import { backoffMs, sleep, waitForOnline } from '../lib/retry-backoff';
 
 export { OPENROUTER_FREE_ROUTER };
 
@@ -25,6 +26,22 @@ export interface AiResult {
 
 export const LLM_UNAVAILABLE_MSG =
   "Je n'arrive pas à répondre pour l'instant. Tes listes et rappels fonctionnent toujours.";
+
+export const LLM_DEFERRED_MSG =
+  "Merlin n'est pas disponible, votre réponse arrive.";
+
+/** Tentatives côté client avant le message différé (backoff 2+2×n s). */
+const CLIENT_MAX_RETRIES = 4;
+
+function isRetryableFailure(status: number, data?: unknown): boolean {
+  return (
+    status === 408 ||
+    status === 429 ||
+    status === 502 ||
+    status === 503 ||
+    (data as { retryable?: boolean } | undefined)?.retryable === true
+  );
+}
 
 async function formatAiError(response: Response, model: string, body?: unknown): Promise<string> {
   let errBody = '';
@@ -81,7 +98,13 @@ async function fetchCompletion(
 
 export async function chatCompletion(
   messages: ChatMessage[],
-  options?: { temperature?: number; jsonMode?: boolean; model?: string },
+  options?: {
+    temperature?: number;
+    jsonMode?: boolean;
+    model?: string;
+    /** Nombre max de nouvelles tentatives après la 1re (Infinity = sans limite). */
+    maxRetries?: number;
+  },
 ): Promise<AiResult> {
   const clientConfig = await getAiClientConfig();
   const model =
@@ -102,43 +125,71 @@ export async function chatCompletion(
     body.response_format = { type: 'json_object' };
   }
 
-  try {
-    let { response, data } = await fetchCompletion(body);
+  const maxRetries = options?.maxRetries ?? CLIENT_MAX_RETRIES;
+  let attempt = 0;
 
-    if (!response.ok) {
-      const errData = data as { retryable?: boolean } | undefined;
-      if (response.status === 503 && errData?.retryable) {
-        await new Promise((r) => setTimeout(r, 2000));
-        ({ response, data } = await fetchCompletion(body));
+  while (true) {
+    if (!navigator.onLine) {
+      await waitForOnline();
+    }
+
+    try {
+      const { response, data } = await fetchCompletion(body);
+
+      if (response.ok) {
+        const modelUsed = response.headers.get('X-Merlin-Model-Used') ?? undefined;
+        const payload = data as {
+          choices?: { message?: { content?: string } }[];
+        };
+        const text = payload?.choices?.[0]?.message?.content?.trim();
+        if (text) {
+          return { ok: true, text, modelUsed };
+        }
+
+        const emptyResult: AiResult = {
+          ok: false,
+          error: 'Réponse vide de l\'API.',
+          retryable: true,
+        };
+        if (attempt >= maxRetries) return emptyResult;
+        await sleep(backoffMs(attempt));
+        attempt += 1;
+        continue;
       }
 
-      if (!response.ok) {
-        const retryable =
-          response.status === 503 ||
-          (data as { retryable?: boolean } | undefined)?.retryable === true;
+      const retryable = isRetryableFailure(response.status, data);
+      if (!retryable) {
         return {
           ok: false,
           error: await formatAiError(response, model, data),
-          retryable,
+          retryable: false,
         };
       }
-    }
 
-    const modelUsed = response.headers.get('X-Merlin-Model-Used') ?? undefined;
-    const payload = data as {
-      choices?: { message?: { content?: string } }[];
-    };
-    const text = payload?.choices?.[0]?.message?.content?.trim();
-    if (!text) {
-      return { ok: false, error: 'Réponse vide de l\'API.', retryable: true };
+      const failResult: AiResult = {
+        ok: false,
+        error: await formatAiError(response, model, data),
+        retryable: true,
+      };
+      if (attempt >= maxRetries) return failResult;
+
+      await sleep(backoffMs(attempt));
+      attempt += 1;
+    } catch (err) {
+      const failResult: AiResult = {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Erreur réseau',
+        retryable: true,
+      };
+      if (attempt >= maxRetries) return failResult;
+
+      if (!navigator.onLine) {
+        await waitForOnline();
+      } else {
+        await sleep(backoffMs(attempt));
+      }
+      attempt += 1;
     }
-    return { ok: true, text, modelUsed };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'Erreur réseau',
-      retryable: true,
-    };
   }
 }
 

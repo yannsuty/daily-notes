@@ -2,6 +2,7 @@ import { Journal, resetSessionScroll } from './journal';
 import { MindMap } from './mindmap';
 import { Merlin } from './merlin';
 import { MerlinChat } from './merlin-chat';
+import { setDeferredReplyHandler } from './merlin-pending';
 import { getMeta, saveMeta } from './db';
 import {
   SettingsPage,
@@ -160,6 +161,13 @@ export async function initApp(root: HTMLElement): Promise<void> {
       void syncNow().then(() => updateSyncIndicator(syncIndicator));
     },
   });
+
+  setDeferredReplyHandler((info) => {
+    void merlinChat?.refresh();
+    void merlin?.onDeferredReply(info.reply);
+    void syncNow().then(() => updateSyncIndicator(syncIndicator));
+  });
+
   if (meta.merlinEnabled) {
     merlin.setEnabled(true);
     void import('./merlin-scheduler').then(({ initMerlinScheduler }) => initMerlinScheduler());
