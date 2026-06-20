@@ -1,5 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import { getMeta } from './db';
+import { stripMarkdown } from './markdown';
 
 export interface MerlinTtsOptions {
   rate?: number;
@@ -51,7 +52,7 @@ export async function speakMerlin(
   const supported = await engine.isSupported();
   if (!supported) return false;
 
-  const spoken = truncateForSpeech(trimmed);
+  const spoken = truncateForSpeech(stripMarkdown(trimmed));
   await engine.speak(spoken, {
     rate: options?.rate ?? prefs.rate,
     lang: options?.lang ?? 'fr-FR',
