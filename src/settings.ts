@@ -11,6 +11,7 @@ import {
   onDownloadProgress,
   resolveInstalledReleaseLabel,
 } from './app-update';
+import { exportLogs } from './logger';
 import {
   clearStoredPassphrase,
   getStoredPassphrase,
@@ -231,6 +232,20 @@ export class SettingsPage {
             </button>
           </div>
         </section>
+
+        <section class="settings__section" id="debug-logs-section">
+          <h3 class="settings__section-title">Diagnostic</h3>
+          <p class="settings__desc">
+            Exportez les logs locaux pour analyser un plantage ou un dysfonctionnement.
+            Sur Android, les logs sont aussi visibles via <code>adb logcat</code> (tag <code>Merlin</code>).
+          </p>
+          <p class="settings__status" id="debug-logs-status"></p>
+          <div class="settings__actions">
+            <button type="button" class="btn btn--ghost" id="export-debug-logs">
+              Exporter les logs
+            </button>
+          </div>
+        </section>
       </div>
 
       <footer class="settings-page__footer">
@@ -259,6 +274,8 @@ export class SettingsPage {
     const appUpdateStatusEl = this.container.querySelector<HTMLElement>('#app-update-status')!;
     const appUpdateBtn = this.container.querySelector<HTMLButtonElement>('#check-app-update')!;
     const clearAppDownloadBtn = this.container.querySelector<HTMLButtonElement>('#clear-app-download')!;
+    const debugLogsStatusEl = this.container.querySelector<HTMLElement>('#debug-logs-status')!;
+    const exportDebugLogsBtn = this.container.querySelector<HTMLButtonElement>('#export-debug-logs')!;
 
     const showDownloadProgress = (percent?: number): void => {
       if (percent != null && percent > 0) {
@@ -437,6 +454,23 @@ export class SettingsPage {
       void clearPendingDownload().then(() => {
         appUpdateStatusEl.textContent = 'Téléchargement effacé.';
       });
+    });
+
+    exportDebugLogsBtn.addEventListener('click', () => {
+      exportDebugLogsBtn.disabled = true;
+      debugLogsStatusEl.textContent = 'Préparation des logs…';
+      void exportLogs()
+        .then(() => {
+          debugLogsStatusEl.textContent = isNativeAndroid()
+            ? 'Partage des logs ouvert — envoyez-les par mail ou Drive.'
+            : 'Fichier de logs téléchargé.';
+        })
+        .catch((err: unknown) => {
+          debugLogsStatusEl.textContent = `Erreur export : ${err instanceof Error ? err.message : String(err)}`;
+        })
+        .finally(() => {
+          exportDebugLogsBtn.disabled = false;
+        });
     });
 
     appUpdateBtn.addEventListener('click', () => {

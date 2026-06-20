@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(MerlinBackgroundPlugin.class);
         registerPlugin(AppUpdatePlugin.class);
+        registerPlugin(MerlinLogPlugin.class);
         super.onCreate(savedInstanceState);
         handleMerlinWakeIntent(getIntent());
     }
