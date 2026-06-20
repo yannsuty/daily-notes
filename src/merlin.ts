@@ -259,7 +259,7 @@ export class Merlin {
     if (shouldRunInBackground) {
       if (!this.backgroundActive) {
         await this.pauseListening();
-        const started = await startBackgroundListening();
+        const started = await startBackgroundListening(meta.merlinPicovoiceAccessKey);
         this.backgroundActive = started;
       }
     } else if (this.backgroundActive) {

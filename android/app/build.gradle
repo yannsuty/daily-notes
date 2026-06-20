@@ -9,12 +9,20 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 14
         versionName "3.3.8"
+        def picovoiceAccessKey = ""
+        if (project.hasProperty("PICOVOICE_ACCESS_KEY")) {
+            picovoiceAccessKey = project.property("PICOVOICE_ACCESS_KEY")
+        }
+        buildConfigField "String", "PICOVOICE_ACCESS_KEY", "\"${picovoiceAccessKey}\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
+    }
+    buildFeatures {
+        buildConfig = true
     }
     signingConfigs {
         release {
@@ -56,6 +64,7 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    implementation 'ai.picovoice:porcupine-android:4.0.0'
 }
 
 apply from: 'capacitor.build.gradle'

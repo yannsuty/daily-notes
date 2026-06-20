@@ -17,6 +17,7 @@ export interface AppMeta {
   merlinTtsEnabled?: boolean;
   merlinTtsRate?: number;
   merlinContinuousListen?: boolean;
+  merlinPicovoiceAccessKey?: string;
 }
 
 export interface MerlinMessage {
