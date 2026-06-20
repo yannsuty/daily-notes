@@ -122,6 +122,27 @@ Le workflow `.github/workflows/android-release.yml` build l'APK signé et crée 
 5. Activer la vérification des mises à jour
 6. Installer
 
+### Monitoring des crashs (Sentry)
+
+L'app Android envoie les erreurs JS et les crashs natifs vers [Sentry](https://sentry.io) si un DSN est configuré.
+
+1. Créer un projet Sentry (plateforme **Capacitor**)
+2. Copier le DSN
+3. Ajouter le secret GitHub `VITE_SENTRY_DSN` (pour les builds release CI)
+4. En local, créer `.env.production` :
+
+```bash
+VITE_SENTRY_DSN=https://<key>@o<org>.ingest.sentry.io/<project>
+```
+
+Sans DSN, Sentry reste désactivé — l'app fonctionne normalement.
+
+Pour des stack traces lisibles en production, uploader les source maps :
+
+```bash
+npx @sentry/wizard@latest -i sourcemaps
+```
+
 ### Build local (développement)
 
 ```bash
