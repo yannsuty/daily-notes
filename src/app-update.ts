@@ -3,6 +3,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 const GITHUB_OWNER = 'yannsuty';
 const GITHUB_REPO = 'daily-notes';
 const APK_ASSET_NAME = 'app-release.apk';
+const VERSION_ASSET_NAME = 'app-version.json';
 
 export interface AppUpdatePlugin {
   getAppInfo(): Promise<{ versionName: string; versionCode: number }>;
@@ -16,7 +17,9 @@ const AppUpdate = registerPlugin<AppUpdatePlugin>('AppUpdate');
 export interface UpdateCheckResult {
   available: boolean;
   currentVersion: string;
+  currentVersionCode: number;
   latestVersion: string;
+  latestVersionCode?: number;
   apkUrl?: string;
   releaseNotes?: string;
   error?: string;
@@ -26,6 +29,12 @@ interface GitHubRelease {
   tag_name: string;
   body: string | null;
   assets: Array<{ name: string; browser_download_url: string }>;
+}
+
+interface VersionManifest {
+  versionCode: number;
+  versionName: string;
+  tag?: string;
 }
 
 function parseVersion(version: string): number[] {
@@ -54,17 +63,69 @@ export function isNativeAndroid(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
 }
 
-export async function getInstalledAppVersion(): Promise<string | null> {
+export async function getInstalledAppInfo(): Promise<{
+  versionName: string;
+  versionCode: number;
+} | null> {
   if (!isNativeAndroid()) {
     return null;
   }
 
   try {
-    const info = await AppUpdate.getAppInfo();
-    return info.versionName;
+    return await AppUpdate.getAppInfo();
   } catch {
     return null;
   }
+}
+
+export async function getInstalledAppVersion(): Promise<string | null> {
+  const info = await getInstalledAppInfo();
+  return info?.versionName ?? null;
+}
+
+async function fetchLatestRelease(): Promise<GitHubRelease> {
+  const response = await fetch(
+    `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
+    {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': 'Merlin-Android-App',
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`GitHub a répondu ${response.status}.`);
+  }
+
+  return (await response.json()) as GitHubRelease;
+}
+
+async function fetchVersionManifest(
+  release: GitHubRelease,
+): Promise<VersionManifest | null> {
+  const asset = release.assets.find((item) => item.name === VERSION_ASSET_NAME);
+  if (!asset) {
+    return null;
+  }
+
+  const response = await fetch(asset.browser_download_url, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'Merlin-Android-App',
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const manifest = (await response.json()) as VersionManifest;
+  if (typeof manifest.versionCode !== 'number') {
+    return null;
+  }
+
+  return manifest;
 }
 
 export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
@@ -72,66 +133,65 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
     return {
       available: false,
       currentVersion: '',
+      currentVersionCode: 0,
       latestVersion: '',
       error: 'Disponible uniquement sur l’app Android.',
     };
   }
 
-  const currentVersion = (await getInstalledAppVersion()) ?? '';
-  if (!currentVersion) {
+  const installed = await getInstalledAppInfo();
+  if (!installed) {
     return {
       available: false,
       currentVersion: '',
+      currentVersionCode: 0,
       latestVersion: '',
       error: 'Impossible de lire la version installée.',
     };
   }
 
   try {
-    const response = await fetch(
-      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`,
-      {
-        headers: {
-          Accept: 'application/vnd.github+json',
-        },
-      },
-    );
-
-    if (!response.ok) {
-      return {
-        available: false,
-        currentVersion,
-        latestVersion: '',
-        error: `GitHub a répondu ${response.status}.`,
-      };
-    }
-
-    const release = (await response.json()) as GitHubRelease;
-    const latestVersion = release.tag_name.replace(/^v/i, '');
+    const release = await fetchLatestRelease();
+    const manifest = await fetchVersionManifest(release);
     const apkAsset = release.assets.find((asset) => asset.name === APK_ASSET_NAME);
+
+    const latestVersion =
+      manifest?.tag?.replace(/^v/i, '') ??
+      manifest?.versionName ??
+      release.tag_name.replace(/^v/i, '');
 
     if (!apkAsset) {
       return {
         available: false,
-        currentVersion,
+        currentVersion: installed.versionName,
+        currentVersionCode: installed.versionCode,
         latestVersion,
         error: `Asset ${APK_ASSET_NAME} introuvable dans la dernière release.`,
       };
     }
 
+    const latestVersionCode = manifest?.versionCode;
+    const available =
+      latestVersionCode != null
+        ? latestVersionCode > installed.versionCode
+        : compareVersions(latestVersion, installed.versionName) > 0;
+
     return {
-      available: compareVersions(latestVersion, currentVersion) > 0,
-      currentVersion,
+      available,
+      currentVersion: installed.versionName,
+      currentVersionCode: installed.versionCode,
       latestVersion,
+      latestVersionCode,
       apkUrl: apkAsset.browser_download_url,
       releaseNotes: release.body?.trim() || undefined,
     };
-  } catch {
+  } catch (error) {
     return {
       available: false,
-      currentVersion,
+      currentVersion: installed.versionName,
+      currentVersionCode: installed.versionCode,
       latestVersion: '',
-      error: 'Impossible de contacter GitHub.',
+      error: error instanceof Error ? error.message : 'Impossible de contacter GitHub.',
     };
   }
 }

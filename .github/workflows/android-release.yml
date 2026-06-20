@@ -60,6 +60,16 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
+      - name: Generate version manifest
+        run: |
+          VERSION_CODE=$(grep 'versionCode' android/app/build.gradle | head -1 | sed 's/.*versionCode //')
+          VERSION_NAME=$(grep 'versionName' android/app/build.gradle | head -1 | sed 's/.*versionName "//;s/".*//')
+          TAG="${GITHUB_REF#refs/tags/}"
+          printf '{"versionCode":%s,"versionName":"%s","tag":"%s"}\n' "$VERSION_CODE" "$VERSION_NAME" "$TAG" > app-version.json
+          cat app-version.json
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/release/app-release.apk
+          files: |
+            android/app/build/outputs/apk/release/app-release.apk
+            app-version.json

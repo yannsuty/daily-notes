@@ -1,4 +1,4 @@
-import { checkForAppUpdate, downloadAndInstallUpdate, getInstalledAppVersion, isNativeAndroid } from './app-update';
+import { checkForAppUpdate, downloadAndInstallUpdate, getInstalledAppInfo, isNativeAndroid } from './app-update';
 import {
   clearStoredPassphrase,
   getStoredPassphrase,
@@ -73,8 +73,10 @@ export class SettingsPage {
             .join('')
         : '<p class="settings__desc">Aucune variable personnalisée.</p>';
 
-    const installedVersion = isNativeAndroid() ? await getInstalledAppVersion() : null;
-    const versionLabel = installedVersion ?? APP_VERSION;
+    const installedInfo = isNativeAndroid() ? await getInstalledAppInfo() : null;
+    const versionLabel = installedInfo
+      ? `${installedInfo.versionName} (build ${installedInfo.versionCode})`
+      : APP_VERSION;
 
     this.container.innerHTML = `
       <div class="settings-page__scroll">
@@ -397,13 +399,21 @@ export class SettingsPage {
           }
 
           if (!update.available || !update.apkUrl) {
-            appUpdateStatusEl.textContent = `Vous êtes à jour (v${update.currentVersion}).`;
+            const latestLabel =
+              update.latestVersionCode != null
+                ? `v${update.latestVersion} (build ${update.latestVersionCode})`
+                : `v${update.latestVersion}`;
+            appUpdateStatusEl.textContent = `Vous êtes à jour (build ${update.currentVersionCode}, dernière release ${latestLabel}).`;
             return;
           }
 
-          appUpdateStatusEl.textContent = `Mise à jour v${update.latestVersion} trouvée. Téléchargement…`;
+          const latestLabel =
+            update.latestVersionCode != null
+              ? `v${update.latestVersion} (build ${update.latestVersionCode})`
+              : `v${update.latestVersion}`;
+          appUpdateStatusEl.textContent = `Mise à jour ${latestLabel} trouvée. Téléchargement…`;
           await downloadAndInstallUpdate(update.apkUrl);
-          appUpdateStatusEl.textContent = `Installation de la v${update.latestVersion} — confirmez dans Android.`;
+          appUpdateStatusEl.textContent = `Installation de ${latestLabel} — confirmez dans Android.`;
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Mise à jour impossible.';
           appUpdateStatusEl.textContent = message;

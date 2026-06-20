@@ -121,6 +121,7 @@ public class AppUpdatePlugin extends Plugin {
         HttpURLConnection connection = (HttpURLConnection) new URL(urlString).openConnection();
         connection.setInstanceFollowRedirects(true);
         connection.setRequestProperty("Accept", "application/octet-stream");
+        connection.setRequestProperty("User-Agent", "Merlin-Android-App");
         connection.setConnectTimeout(30_000);
         connection.setReadTimeout(120_000);
         connection.connect();
