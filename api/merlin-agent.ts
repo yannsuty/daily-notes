@@ -4,7 +4,7 @@ import {
   type AgentRequestBody,
   type AgentRunResult,
   type AgentStep,
-} from '../lib/merlin-agent/index.js';
+} from './lib/merlin-agent/index.js';
 
 function cors(res: VercelResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');

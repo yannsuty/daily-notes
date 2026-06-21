@@ -69,7 +69,7 @@ export async function runServerAgent(
   const clientConfig = await getAiClientConfig();
   const stream = options?.stream ?? !!options?.onStep;
 
-  const response = await fetch(apiUrl('/api/merlin/agent'), {
+  const response = await fetch(apiUrl('/api/merlin-agent'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

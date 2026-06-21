@@ -1,12 +1,12 @@
-import { assessQueryDepth, extractMemoryQueries } from './complexity.js';
-import { callMerlinLlm } from './llm.js';
-import { gatherMemory } from './memory.js';
-import { parseJsonFromAi, parseToolCall } from './parse.js';
+import { assessQueryDepth, extractMemoryQueries } from '../../../lib/merlin-agent/complexity.js';
+import { gatherMemory } from '../../../lib/merlin-agent/memory.js';
+import { parseJsonFromAi, parseToolCall } from '../../../lib/merlin-agent/parse.js';
 import {
   buildSystemPrompt,
   PLANNER_PROMPT,
   SYNTHESIS_PROMPT,
-} from './prompts.js';
+} from '../../../lib/merlin-agent/prompts.js';
+import { callMerlinLlm } from './llm.js';
 import { AgentStore, isMutationTool, templateReplyForTool } from './tools.js';
 import type {
   AgentClientConfig,
@@ -15,8 +15,7 @@ import type {
   AgentSideEffect,
   AgentStep,
   ChatMessage,
-  QueryDepth,
-} from './types.js';
+} from '../../../lib/merlin-agent/types.js';
 
 const MAX_CONTEXT_MESSAGES = 24;
 const READ_TOOLS = new Set([

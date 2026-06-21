@@ -25,14 +25,14 @@ interface AiProxyBody extends OpenRouterBody {
 
 interface AgentProxyBody {
   message: string;
-  context: import('./api/lib/merlin-agent/types').AgentContext;
+  context: import('./lib/merlin-agent/types').AgentContext;
   stream?: boolean;
   config?: { apiKey?: string; modelChain?: string; model?: string };
 }
 
 function createMerlinAgentDevProxy(fallbackApiKey: string) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
-    if (!req.url?.startsWith('/api/merlin/agent')) {
+    if (!req.url?.startsWith('/api/merlin-agent')) {
       next();
       return;
     }

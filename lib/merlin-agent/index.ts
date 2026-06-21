@@ -8,6 +8,14 @@ export type {
   AgentStep,
   AgentStepPhase,
   QueryDepth,
-} from '../../api/lib/merlin-agent/types.js';
+  ChatMessage,
+  ToolResult,
+  DayEntry,
+  MerlinMessage,
+  MerlinFact,
+  MerlinList,
+  MerlinReminder,
+  MerlinCustomTool,
+} from './types.js';
 
-export { assessQueryDepth } from '../../api/lib/merlin-agent/complexity.js';
+export { assessQueryDepth, extractMemoryQueries } from './complexity.js';
