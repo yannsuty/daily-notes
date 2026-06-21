@@ -136,6 +136,32 @@ export interface AgentRequestBody {
   context: AgentContext;
   config?: AgentClientConfig;
   stream?: boolean;
+  /** Lance le traitement en arrière-plan côté serveur (survit à la fermeture de l'app). */
+  background?: boolean;
+  jobId?: string;
+}
+
+export type AgentJobStatus = 'pending' | 'running' | 'done' | 'error';
+
+export interface AgentJobRecord {
+  status: AgentJobStatus;
+  steps: AgentStep[];
+  result?: AgentRunResult;
+  error?: string;
+  updatedAt: number;
+}
+
+export interface AgentJobStartResponse {
+  jobId: string;
+  status: AgentJobStatus;
+}
+
+export interface AgentJobPollResponse {
+  jobId: string;
+  status: AgentJobStatus;
+  steps: AgentStep[];
+  result?: AgentRunResult;
+  error?: string;
 }
 
 export interface ToolResult {

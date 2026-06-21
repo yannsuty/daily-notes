@@ -8,4 +8,11 @@
     <string name="merlin_listen_channel_desc">Notification pendant l\'écoute du wake word en arrière-plan</string>
     <string name="merlin_listen_title">Merlin</string>
     <string name="merlin_listen_text">À l\'écoute — dites « Merlin »</string>
+    <string name="merlin_agent_job_channel">Merlin réfléchit</string>
+    <string name="merlin_agent_job_channel_desc">Notification discrète pendant qu\'un message est traité en arrière-plan</string>
+    <string name="merlin_agent_job_title">Merlin</string>
+    <string name="merlin_agent_job_text">Réflexion en cours…</string>
+    <string name="merlin_agent_reply_channel">Réponses Merlin</string>
+    <string name="merlin_agent_reply_channel_desc">Notification quand Merlin a terminé sa réponse</string>
+    <string name="merlin_agent_reply_title">Merlin a répondu</string>
 </resources>

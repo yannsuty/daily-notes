@@ -13,7 +13,13 @@ import {
 } from './db';
 import { tryFastIntent } from './merlin-intents';
 import { applyAgentMutations, buildAgentContext } from './merlin-agent-context';
-import { runServerAgent } from './merlin-agent-client';
+import { runServerAgent, startBackgroundAgentJob } from './merlin-agent-client';
+import {
+  MERLIN_THINKING_PLACEHOLDER,
+  savePendingAgentJob,
+  shouldUseBackgroundAgent,
+} from './merlin-agent-jobs';
+import { pollPendingJobUntilDone } from './merlin-agent-resume';
 import { recordShortcutUsage } from './merlin-shortcuts';
 import type { AgentStep } from '../lib/merlin-agent';
 import type { MerlinFact, MerlinMessage } from './types';
@@ -171,6 +177,8 @@ export interface AgentReply {
   aiUnavailable?: boolean;
   steps?: AgentStep[];
   depth?: 'standard' | 'deep';
+  /** Réflexion continue côté serveur pendant que l'app est en arrière-plan. */
+  backgroundPending?: boolean;
 }
 
 export interface HandleUserMessageOptions {
@@ -186,6 +194,10 @@ async function appendExchange(userText: string, reply: string): Promise<void> {
   };
   await appendMerlinMessage(assistantMsg);
 
+  await noteAgentReplyForFacts(userText, reply);
+}
+
+export async function noteAgentReplyForFacts(userText: string, reply: string): Promise<void> {
   messagesSinceFactExtraction += 1;
   if (messagesSinceFactExtraction >= FACT_EXTRACTION_INTERVAL) {
     messagesSinceFactExtraction = 0;
@@ -278,6 +290,41 @@ export async function handleUserMessage(
   await appendMerlinMessage(userMsg);
 
   void maybeCompressConversation();
+
+  if (shouldUseBackgroundAgent()) {
+    const placeholderId = createMessageId();
+    await appendMerlinMessage({
+      id: placeholderId,
+      role: 'assistant',
+      content: MERLIN_THINKING_PLACEHOLDER,
+      createdAt: Date.now(),
+    });
+
+    const context = await buildAgentContext();
+    const started = await startBackgroundAgentJob(trimmed, context);
+    savePendingAgentJob({
+      jobId: started.jobId,
+      userText: trimmed,
+      placeholderId,
+      startedAt: Date.now(),
+    });
+
+    const polled = await pollPendingJobUntilDone(
+      {
+        jobId: started.jobId,
+        userText: trimmed,
+        placeholderId,
+        startedAt: Date.now(),
+      },
+      { onStep: options?.onAgentStep },
+    );
+
+    if ('backgroundPending' in polled && polled.backgroundPending) {
+      return { ok: true, content: MERLIN_THINKING_PLACEHOLDER, backgroundPending: true };
+    }
+
+    return polled as AgentReply;
+  }
 
   const context = await buildAgentContext();
   const agentResult = await runServerAgent(trimmed, context, {

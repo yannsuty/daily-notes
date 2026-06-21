@@ -104,4 +104,54 @@ public class MerlinBackgroundPlugin extends Plugin {
         result.put("active", MerlinListenService.isRunning());
         call.resolve(result);
     }
+
+    @PluginMethod
+    public void watchAgentJob(PluginCall call) {
+        String jobId = call.getString("jobId");
+        String pollUrl = call.getString("pollUrl");
+        if (jobId == null || jobId.isEmpty() || pollUrl == null || pollUrl.isEmpty()) {
+            call.reject("Missing jobId or pollUrl");
+            return;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS)
+                        != PackageManager.PERMISSION_GRANTED) {
+            requestPermissionForAlias("notifications", call, "agentWatchNotificationCallback");
+            return;
+        }
+        startAgentJobWatch(call, jobId, pollUrl);
+    }
+
+    @PermissionCallback
+    private void agentWatchNotificationCallback(PluginCall call) {
+        String jobId = call.getString("jobId");
+        String pollUrl = call.getString("pollUrl");
+        if (jobId == null || jobId.isEmpty() || pollUrl == null || pollUrl.isEmpty()) {
+            call.reject("Missing jobId or pollUrl");
+            return;
+        }
+        startAgentJobWatch(call, jobId, pollUrl);
+    }
+
+    private void startAgentJobWatch(PluginCall call, String jobId, String pollUrl) {
+        Intent intent = new Intent(getContext(), MerlinAgentJobService.class);
+        intent.putExtra(MerlinAgentJobService.EXTRA_JOB_ID, jobId);
+        intent.putExtra(MerlinAgentJobService.EXTRA_POLL_URL, pollUrl);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getContext().startForegroundService(intent);
+        } else {
+            getContext().startService(intent);
+        }
+        JSObject result = new JSObject();
+        result.put("ok", true);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void stopAgentJobWatch(PluginCall call) {
+        Intent intent = new Intent(getContext(), MerlinAgentJobService.class);
+        getContext().stopService(intent);
+        call.resolve();
+    }
 }
