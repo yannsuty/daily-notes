@@ -27,12 +27,10 @@ export class TabBar {
     const merlinBtn = this.createTabButton('merlin');
     const journalBtn = this.createTabButton('journal');
     const galleryBtn = this.createTabButton('gallery');
-    const settingsBtn = this.createTabButton('settings');
 
     this.root.appendChild(merlinBtn);
     this.root.appendChild(journalBtn);
     this.root.appendChild(galleryBtn);
-    this.root.appendChild(settingsBtn);
     container.appendChild(this.root);
   }
 
@@ -103,15 +101,10 @@ export class TabBar {
 
   private loadActiveTab(): TabId {
     const stored = sessionStorage.getItem(STORAGE_KEY);
-    if (stored === 'thoughts') {
+    if (stored === 'thoughts' || stored === 'settings') {
       return 'gallery';
     }
-    if (
-      stored === 'journal' ||
-      stored === 'gallery' ||
-      stored === 'merlin' ||
-      stored === 'settings'
-    ) {
+    if (stored === 'journal' || stored === 'gallery' || stored === 'merlin') {
       return stored;
     }
     return 'merlin';

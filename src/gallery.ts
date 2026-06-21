@@ -1,22 +1,28 @@
-import { createThoughtsIcon } from './icons';
+import { createSettingsIcon, createThoughtsIcon } from './icons';
 import { MindMap } from './mindmap';
+import { SettingsPage, type SettingsCallbacks } from './settings';
 
-export type GalleryView = 'home' | 'thoughts';
+export type GalleryView = 'home' | 'thoughts' | 'settings';
 
 export interface GalleryOptions {
   container: HTMLElement;
+  settingsCallbacks: SettingsCallbacks;
 }
 
 export class Gallery {
   private container: HTMLElement;
   private homeView: HTMLElement;
   private appView: HTMLElement;
-  private appContent: HTMLElement;
+  private thoughtsPanel: HTMLElement;
+  private settingsPanel: HTMLElement;
   private viewTitle: HTMLElement;
   private currentView: GalleryView = 'home';
   private mindMap: MindMap | null = null;
+  private settingsPage: SettingsPage | null = null;
+  private settingsCallbacks: SettingsCallbacks;
 
   constructor(options: GalleryOptions) {
+    this.settingsCallbacks = options.settingsCallbacks;
     this.container = options.container;
     this.container.innerHTML = '';
     this.container.classList.add('gallery', 'tab-panel');
@@ -31,12 +37,22 @@ export class Gallery {
     const grid = document.createElement('div');
     grid.className = 'gallery__grid';
 
-    const thoughtsCard = this.createAppCard({
-      label: 'Pensées',
-      description: 'Carte de vos idées récurrentes',
-      onOpen: () => this.openView('thoughts'),
-    });
-    grid.appendChild(thoughtsCard);
+    grid.appendChild(
+      this.createAppCard({
+        label: 'Pensées',
+        description: 'Carte de vos idées récurrentes',
+        icon: createThoughtsIcon(),
+        onOpen: () => this.openView('thoughts'),
+      }),
+    );
+    grid.appendChild(
+      this.createAppCard({
+        label: 'Réglages',
+        description: 'Sync, Merlin, mémoire et mise à jour',
+        icon: createSettingsIcon(),
+        onOpen: () => this.openView('settings'),
+      }),
+    );
 
     this.homeView.appendChild(title);
     this.homeView.appendChild(grid);
@@ -63,31 +79,46 @@ export class Gallery {
     this.viewTitle = document.createElement('h2');
     this.viewTitle.className = 'gallery__view-title';
 
-    this.appContent = document.createElement('div');
-    this.appContent.className = 'gallery__content';
+    this.thoughtsPanel = document.createElement('div');
+    this.thoughtsPanel.className = 'gallery__app-panel';
+    this.thoughtsPanel.hidden = true;
+
+    this.settingsPanel = document.createElement('div');
+    this.settingsPanel.className = 'gallery__app-panel';
+    this.settingsPanel.hidden = true;
 
     header.appendChild(backBtn);
     header.appendChild(this.viewTitle);
     this.appView.appendChild(header);
-    this.appView.appendChild(this.appContent);
+    this.appView.appendChild(this.thoughtsPanel);
+    this.appView.appendChild(this.settingsPanel);
 
     this.container.appendChild(this.homeView);
     this.container.appendChild(this.appView);
   }
 
   async init(): Promise<void> {
-    this.mindMap = new MindMap({ container: this.appContent });
+    this.mindMap = new MindMap({ container: this.thoughtsPanel });
+    this.settingsPage = new SettingsPage(this.settingsPanel, this.settingsCallbacks);
     await this.mindMap.init();
+    await this.settingsPage.init();
   }
 
   onTabActive(): void {
     if (this.currentView === 'thoughts') {
       void this.mindMap?.refresh();
     }
+    if (this.currentView === 'settings') {
+      void this.settingsPage?.refresh();
+    }
   }
 
   openThoughts(): void {
     this.openView('thoughts');
+  }
+
+  openSettings(): void {
+    this.openView('settings');
   }
 
   resetAiAnalysis(): Promise<void> {
@@ -97,6 +128,7 @@ export class Gallery {
   private createAppCard(options: {
     label: string;
     description: string;
+    icon: SVGSVGElement;
     onOpen: () => void;
   }): HTMLButtonElement {
     const card = document.createElement('button');
@@ -105,7 +137,7 @@ export class Gallery {
 
     const iconWrap = document.createElement('span');
     iconWrap.className = 'gallery__card-icon';
-    iconWrap.appendChild(createThoughtsIcon());
+    iconWrap.appendChild(options.icon);
 
     const label = document.createElement('span');
     label.className = 'gallery__card-label';
@@ -129,10 +161,16 @@ export class Gallery {
 
     this.homeView.hidden = showingApp;
     this.appView.hidden = !showingApp;
+    this.thoughtsPanel.hidden = view !== 'thoughts';
+    this.settingsPanel.hidden = view !== 'settings';
 
     if (view === 'thoughts') {
       this.viewTitle.textContent = 'Pensées';
       void this.mindMap?.refresh();
+    }
+    if (view === 'settings') {
+      this.viewTitle.textContent = 'Réglages';
+      void this.settingsPage?.refresh();
     }
   }
 }

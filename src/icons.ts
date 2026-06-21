@@ -1,6 +1,6 @@
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-export type TabIconId = 'merlin' | 'journal' | 'gallery' | 'settings';
+export type TabIconId = 'merlin' | 'journal' | 'gallery';
 
 const TAB_ICON_PATHS: Record<TabIconId, string> = {
   merlin: `
@@ -9,10 +9,14 @@ const TAB_ICON_PATHS: Record<TabIconId, string> = {
     <path d="M19 17l.75-2.25L22 14l-2.25-.75L19 11l-.75 2.25L16 14l2.25.75L19 17z" />
   `,
   journal: `
-    <path d="M6 4h9a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2V6a2 2 0 0 1 2-2z" />
-    <path d="M6 8h11" />
-    <path d="M6 12h11" />
-    <path d="M6 16h7" />
+    <path d="M2 6h2" />
+    <path d="M2 10h2" />
+    <path d="M2 14h2" />
+    <path d="M2 18h2" />
+    <path d="M6 4v16a2 2 0 0 0 2 2h12V2H8a2 2 0 0 0-2 2z" />
+    <path d="M10 8h8" />
+    <path d="M10 12h8" />
+    <path d="M10 16h6" />
   `,
   gallery: `
     <rect x="3" y="3" width="7" height="7" rx="1.5" />
@@ -20,7 +24,50 @@ const TAB_ICON_PATHS: Record<TabIconId, string> = {
     <rect x="3" y="14" width="7" height="7" rx="1.5" />
     <rect x="14" y="14" width="7" height="7" rx="1.5" />
   `,
-  settings: `
+};
+
+export const TAB_LABELS: Record<TabIconId, string> = {
+  merlin: 'Merlin',
+  journal: 'Journal',
+  gallery: 'Galerie',
+};
+
+function createSvgIcon(className: string, paths: string): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.75');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add(className);
+  svg.innerHTML = paths.trim();
+  return svg;
+}
+
+export function createTabIcon(id: TabIconId): SVGSVGElement {
+  return createSvgIcon('tabs__icon', TAB_ICON_PATHS[id]);
+}
+
+export function createThoughtsIcon(): SVGSVGElement {
+  return createSvgIcon(
+    'gallery__card-icon-svg',
+    `
+    <circle cx="12" cy="5" r="2" />
+    <circle cx="5" cy="17" r="2" />
+    <circle cx="19" cy="17" r="2" />
+    <path d="M12 7v4" />
+    <path d="M8.5 14.5 10 12" />
+    <path d="M15.5 14.5 14 12" />
+  `,
+  );
+}
+
+export function createSettingsIcon(): SVGSVGElement {
+  return createSvgIcon(
+    'gallery__card-icon-svg',
+    `
     <circle cx="12" cy="12" r="3" />
     <path d="M12 2v2" />
     <path d="M12 20v2" />
@@ -31,46 +78,5 @@ const TAB_ICON_PATHS: Record<TabIconId, string> = {
     <path d="m4.93 19.07 1.41-1.41" />
     <path d="m17.66 6.34 1.41-1.41" />
   `,
-};
-
-export const TAB_LABELS: Record<TabIconId, string> = {
-  merlin: 'Merlin',
-  journal: 'Journal',
-  gallery: 'Galerie',
-  settings: 'Réglages',
-};
-
-export function createTabIcon(id: TabIconId): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '1.75');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.classList.add('tabs__icon');
-  svg.innerHTML = TAB_ICON_PATHS[id].trim();
-  return svg;
-}
-
-export function createThoughtsIcon(): SVGSVGElement {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('fill', 'none');
-  svg.setAttribute('stroke', 'currentColor');
-  svg.setAttribute('stroke-width', '1.75');
-  svg.setAttribute('stroke-linecap', 'round');
-  svg.setAttribute('stroke-linejoin', 'round');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.classList.add('gallery__card-icon-svg');
-  svg.innerHTML = `
-    <circle cx="12" cy="5" r="2" />
-    <circle cx="5" cy="17" r="2" />
-    <circle cx="19" cy="17" r="2" />
-    <path d="M12 7v4" />
-    <path d="M8.5 14.5 10 12" />
-    <path d="M15.5 14.5 14 12" />
-  `.trim();
-  return svg;
+  );
 }

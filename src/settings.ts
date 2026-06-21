@@ -46,7 +46,7 @@ export class SettingsPage {
   }
 
   async init(): Promise<void> {
-    this.container.classList.add('settings-page', 'tab-panel');
+    this.container.classList.add('settings-page');
     await this.render();
   }
 
