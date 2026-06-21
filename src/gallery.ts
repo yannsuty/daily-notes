@@ -98,7 +98,7 @@ export class Gallery {
   }
 
   async init(): Promise<void> {
-    this.mindMap = new MindMap({ container: this.thoughtsPanel });
+    this.mindMap = new MindMap({ container: this.thoughtsPanel, embedded: true });
     this.settingsPage = new SettingsPage(this.settingsPanel, this.settingsCallbacks);
     await this.mindMap.init();
     await this.settingsPage.init();
