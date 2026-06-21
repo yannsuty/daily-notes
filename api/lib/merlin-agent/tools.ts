@@ -1,4 +1,4 @@
-import { addDays, formatDateLabel, todayKey } from './dates';
+import { addDays, formatDateLabel, todayKey } from './dates.js';
 import type {
   AgentContext,
   AgentMutations,
@@ -8,7 +8,7 @@ import type {
   MerlinListItem,
   MerlinReminder,
   ToolResult,
-} from './types';
+} from './types.js';
 
 export function createEntityId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;

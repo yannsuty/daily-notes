@@ -1,13 +1,13 @@
-import { assessQueryDepth, extractMemoryQueries } from './complexity';
-import { callMerlinLlm } from './llm';
-import { gatherMemory } from './memory';
-import { parseJsonFromAi, parseToolCall } from './parse';
+import { assessQueryDepth, extractMemoryQueries } from './complexity.js';
+import { callMerlinLlm } from './llm.js';
+import { gatherMemory } from './memory.js';
+import { parseJsonFromAi, parseToolCall } from './parse.js';
 import {
   buildSystemPrompt,
   PLANNER_PROMPT,
   SYNTHESIS_PROMPT,
-} from './prompts';
-import { AgentStore, isMutationTool, templateReplyForTool } from './tools';
+} from './prompts.js';
+import { AgentStore, isMutationTool, templateReplyForTool } from './tools.js';
 import type {
   AgentClientConfig,
   AgentContext,
@@ -16,7 +16,7 @@ import type {
   AgentStep,
   ChatMessage,
   QueryDepth,
-} from './types';
+} from './types.js';
 
 const MAX_CONTEXT_MESSAGES = 24;
 const READ_TOOLS = new Set([

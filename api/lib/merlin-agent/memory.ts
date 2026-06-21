@@ -1,5 +1,5 @@
-import { formatDateLabel } from './dates';
-import type { AgentContext, MerlinFact } from './types';
+import { formatDateLabel } from './dates.js';
+import type { AgentContext, MerlinFact } from './types.js';
 
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

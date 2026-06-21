@@ -1,4 +1,4 @@
-import type { QueryDepth } from './types';
+import type { QueryDepth } from './types.js';
 
 const DEEP_PATTERNS = [
   /\b(pourquoi|comment|analyse|analyser|compare|comparer|explique|expliquer|réfléch|reflech|synthèse|synthese|plan|stratég|strateg|avis|recommand|pense|évalue|evalue|détail|detail|approfond|contexte)\b/i,

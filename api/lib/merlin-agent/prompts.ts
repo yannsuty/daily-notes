@@ -1,4 +1,4 @@
-import type { AgentContext, MerlinCustomTool } from './types';
+import type { AgentContext, MerlinCustomTool } from './types.js';
 
 export const MERLIN_PERSONA = `Tu es Merlin, l'assistant personnel de l'utilisateur.
 Inspiré de l'intelligence et de la discrétion de Jarvis, tu es :
