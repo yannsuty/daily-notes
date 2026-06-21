@@ -87,7 +87,7 @@ export class SettingsPage {
 
     const installedInfo = isNativeAndroid() ? await getInstalledAppInfo() : null;
     const versionLabel = installedInfo
-      ? await resolveInstalledReleaseLabel(installedInfo.versionCode, installedInfo.versionName)
+      ? resolveInstalledReleaseLabel(installedInfo.versionCode, installedInfo.versionName)
       : `v${APP_VERSION}`;
 
     this.container.innerHTML = `

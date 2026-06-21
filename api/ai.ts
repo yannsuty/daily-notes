@@ -4,6 +4,7 @@ import {
   OPENROUTER_FREE_ROUTER,
   type OpenRouterBody,
 } from './lib/openrouter-fallback.js';
+import { captureApiException, withSentry } from '../lib/sentry-server.js';
 
 interface AiClientConfigPayload {
   apiKey?: string;
@@ -31,7 +32,7 @@ function referer(): string {
   return 'http://localhost:5173';
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default withSentry(async function handler(req: VercelRequest, res: VercelResponse) {
   cors(res);
 
   if (req.method === 'OPTIONS') {
@@ -94,7 +95,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).send(result.payload);
   } catch (err) {
+    captureApiException(err, { route: '/api/ai' });
     const message = err instanceof Error ? err.message : 'Proxy error';
     return res.status(500).json({ error: message, retryable: true });
   }
-}
+});
