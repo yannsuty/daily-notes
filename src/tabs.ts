@@ -1,4 +1,6 @@
-export type TabId = 'merlin' | 'journal' | 'thoughts' | 'settings';
+import { createTabIcon, TAB_LABELS, type TabIconId } from './icons';
+
+export type TabId = TabIconId;
 
 const STORAGE_KEY = 'daily-note-active-tab';
 
@@ -22,15 +24,13 @@ export class TabBar {
     this.root.setAttribute('role', 'tablist');
     this.root.setAttribute('aria-label', 'Navigation');
 
-    const merlinBtn = this.createTabButton('merlin', 'Merlin');
-    const journalBtn = this.createTabButton('journal', 'Journal');
-    const thoughtsBtn = this.createTabButton('thoughts', 'Pensées');
-    const settingsBtn = this.createTabButton('settings', 'Réglages');
+    const merlinBtn = this.createTabButton('merlin');
+    const journalBtn = this.createTabButton('journal');
+    const galleryBtn = this.createTabButton('gallery');
 
     this.root.appendChild(merlinBtn);
     this.root.appendChild(journalBtn);
-    this.root.appendChild(thoughtsBtn);
-    this.root.appendChild(settingsBtn);
+    this.root.appendChild(galleryBtn);
     container.appendChild(this.root);
   }
 
@@ -63,14 +63,17 @@ export class TabBar {
     this.onChange(tab);
   }
 
-  private createTabButton(tab: TabId, label: string): HTMLButtonElement {
+  private createTabButton(tab: TabId): HTMLButtonElement {
+    const label = TAB_LABELS[tab];
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'tabs__btn';
-    btn.textContent = label;
     btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-selected', tab === this.activeTab ? 'true' : 'false');
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
     btn.dataset.tab = tab;
+    btn.appendChild(createTabIcon(tab));
     btn.addEventListener('click', () => this.switchTo(tab));
     this.buttons.set(tab, btn);
     if (tab === this.activeTab) {
@@ -98,12 +101,10 @@ export class TabBar {
 
   private loadActiveTab(): TabId {
     const stored = sessionStorage.getItem(STORAGE_KEY);
-    if (
-      stored === 'journal' ||
-      stored === 'thoughts' ||
-      stored === 'merlin' ||
-      stored === 'settings'
-    ) {
+    if (stored === 'thoughts' || stored === 'settings') {
+      return 'gallery';
+    }
+    if (stored === 'journal' || stored === 'gallery' || stored === 'merlin') {
       return stored;
     }
     return 'merlin';
