@@ -27,18 +27,21 @@ interface AgentProxyBody {
   message: string;
   context: import('./lib/merlin-agent/types').AgentContext;
   stream?: boolean;
+  background?: boolean;
+  jobId?: string;
   config?: { apiKey?: string; modelChain?: string; model?: string };
 }
 
 function createMerlinAgentDevProxy(fallbackApiKey: string) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
-    if (!req.url?.startsWith('/api/merlin-agent')) {
+    const url = req.url ?? '';
+    if (!url.startsWith('/api/merlin-agent')) {
       next();
       return;
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
     if (req.method === 'OPTIONS') {
@@ -47,20 +50,83 @@ function createMerlinAgentDevProxy(fallbackApiKey: string) {
       return;
     }
 
-    if (req.method !== 'POST') {
-      next();
-      return;
-    }
-
     try {
+      const {
+        appendAgentJobStep,
+        createJobId,
+        failAgentJob,
+        finishAgentJob,
+        getAgentJob,
+        saveAgentJob,
+      } = await import('./api/lib/agent-jobs');
+      const { runMerlinAgent } = await import('./api/lib/merlin-agent/runner');
+      const { scheduleBackground } = await import('./api/lib/wait-until');
+
+      if (req.method === 'GET') {
+        const jobId = new URL(url, 'http://localhost').searchParams.get('jobId');
+        if (!jobId) {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Missing jobId' }));
+          return;
+        }
+        const job = await getAgentJob(jobId);
+        if (!job) {
+          res.statusCode = 404;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Job not found' }));
+          return;
+        }
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(
+          JSON.stringify({
+            jobId,
+            status: job.status,
+            steps: job.steps,
+            result: job.result,
+            error: job.error,
+          }),
+        );
+        return;
+      }
+
+      if (req.method !== 'POST') {
+        next();
+        return;
+      }
+
       const rawBody = await readRequestBody(req);
       const parsed = JSON.parse(rawBody) as AgentProxyBody;
-      const { runMerlinAgent } = await import('./api/lib/merlin-agent/runner');
       const config = {
         apiKey: parsed.config?.apiKey?.trim() || fallbackApiKey,
         modelChain: parsed.config?.modelChain?.trim() || process.env.OPENROUTER_MODEL_CHAIN,
         model: parsed.config?.model,
       };
+
+      if (parsed.background) {
+        const jobId = parsed.jobId?.trim() || createJobId();
+        await saveAgentJob(jobId, { status: 'pending', steps: [], updatedAt: Date.now() });
+        scheduleBackground(async () => {
+          try {
+            await saveAgentJob(jobId, { status: 'running', steps: [], updatedAt: Date.now() });
+            const result = await runMerlinAgent(parsed.message, parsed.context, config, {
+              referer: 'http://localhost:5173',
+              onStep: (step) => {
+                void appendAgentJobStep(jobId, step);
+              },
+            });
+            await finishAgentJob(jobId, result);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Agent error';
+            await failAgentJob(jobId, message);
+          }
+        });
+        res.statusCode = 202;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ jobId, status: 'pending' }));
+        return;
+      }
 
       if (parsed.stream) {
         res.statusCode = 200;

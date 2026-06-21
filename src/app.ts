@@ -3,6 +3,8 @@ import { Journal, resetSessionScroll } from './journal';
 import { Merlin } from './merlin';
 import { MerlinChat } from './merlin-chat';
 import { setDeferredReplyHandler } from './merlin-pending';
+import { listPendingAgentJobs, registerAgentJobResume } from './merlin-agent-jobs';
+import { resumePendingAgentJobs } from './merlin-agent-resume';
 import { getMeta, saveMeta } from './db';
 import {
   initSyncFromMeta,
@@ -156,6 +158,22 @@ export async function initApp(root: HTMLElement): Promise<void> {
     void merlin?.onDeferredReply(info.reply);
     void syncNow().then(() => updateSyncIndicator(syncIndicator));
   });
+
+  const resumeAgentJobs = (): void => {
+    void resumePendingAgentJobs().then(async (completed) => {
+      if (completed > 0) {
+        await merlinChat?.refresh();
+        merlinChat?.setBackgroundComplete();
+        void syncNow().then(() => updateSyncIndicator(syncIndicator));
+      }
+    });
+  };
+
+  registerAgentJobResume(resumeAgentJobs);
+  if (listPendingAgentJobs().length > 0) {
+    void merlinChat?.refresh();
+    resumeAgentJobs();
+  }
 
   if (meta.merlinEnabled) {
     merlin.setEnabled(true);

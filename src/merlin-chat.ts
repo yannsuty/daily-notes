@@ -311,6 +311,10 @@ export class MerlinChat {
     }
   }
 
+  setBackgroundComplete(): void {
+    this.setThinking(false);
+  }
+
   private renderAgentStep(step: AgentStep): void {
     if (!this.traceEl) return;
     this.traceEl.hidden = false;
@@ -378,6 +382,14 @@ export class MerlinChat {
           : errMsg,
       );
       await this.renderMessages();
+      return;
+    }
+
+    if (result.backgroundPending) {
+      this.setThinking(false);
+      this.setAiBanner(false);
+      await this.renderAll();
+      this.setThinking(true, 'Merlin réfléchit en arrière-plan…');
       return;
     }
 
