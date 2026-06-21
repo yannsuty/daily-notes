@@ -124,18 +124,26 @@ Le workflow `.github/workflows/android-release.yml` build l'APK signé et crée 
 
 ### Monitoring des crashs (Sentry)
 
-L'app Android envoie les erreurs JS et les crashs natifs vers [Sentry](https://sentry.io) si un DSN est configuré.
+Les erreurs Android et API Vercel peuvent remonter dans **le même projet Sentry** (même DSN).
 
-1. Créer un projet Sentry (plateforme **Capacitor**)
+| Source | Tag Sentry | Variable |
+|--------|------------|----------|
+| App Android | `component: android` | `VITE_SENTRY_DSN` (build APK) |
+| API Vercel | `component: api` | `SENTRY_DSN` (env Vercel) |
+
+1. Créer un projet Sentry (plateforme **Capacitor** ou **Node.js**)
 2. Copier le DSN
-3. Ajouter le secret GitHub `VITE_SENTRY_DSN` (pour les builds release CI)
-4. En local, créer `.env.production` :
+3. **Android (CI)** : secret GitHub `VITE_SENTRY_DSN`
+4. **Vercel** : variable d'environnement `SENTRY_DSN` (même valeur que le DSN)
+5. En local Capacitor, `.env.production` :
 
 ```bash
 VITE_SENTRY_DSN=https://<key>@o<org>.ingest.sentry.io/<project>
 ```
 
-Sans DSN, Sentry reste désactivé — l'app fonctionne normalement.
+Sans DSN, Sentry reste désactivé — l'app et l'API fonctionnent normalement.
+
+Pour tester l'API après déploiement : provoquer une erreur 500 (ex. Redis non configuré) ou ajouter temporairement `throw new Error('Sentry test API')` dans une route — l'issue doit apparaître avec `runtime: vercel-node`.
 
 Pour des stack traces lisibles en production, uploader les source maps :
 

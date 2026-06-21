@@ -1,9 +1,12 @@
 import { initApp } from './app';
 import { initVisualViewport } from './viewport';
-import { initSentry } from './sentry';
+import { initSentry, isNativeAndroid } from './sentry';
 import './styles.css';
 
-initSentry();
+if (isNativeAndroid()) {
+  initSentry();
+}
+
 initVisualViewport();
 
 const root = document.getElementById('app');

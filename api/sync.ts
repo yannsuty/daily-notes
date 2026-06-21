@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
+import { captureApiException, withSentry } from '../lib/sentry-server.js';
 
 const MAX_BLOB_SIZE = 512_000;
 
@@ -28,7 +29,7 @@ function kvKey(id: string): string {
   return `sync:${id}`;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -40,7 +41,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let redis: Redis;
   try {
     redis = getRedis();
-  } catch {
+  } catch (error) {
+    captureApiException(error, { route: '/api/sync' });
     return res.status(500).json({ error: 'Redis not configured' });
   }
 
@@ -78,3 +80,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   return res.status(405).json({ error: 'Method not allowed' });
 }
+
+export default withSentry(handler);
