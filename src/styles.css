@@ -1347,6 +1347,49 @@ body {
   }
 }
 
+.merlin-chat__confirm {
+  align-self: stretch;
+  margin: 0.5rem 0 0;
+  padding: 0.875rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--accent, #6366f1);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.merlin-chat__confirm-label {
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent, #6366f1);
+}
+
+.merlin-chat__confirm-title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.merlin-chat__confirm-detail {
+  margin: 0 0 0.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.9375rem;
+}
+
+.merlin-chat__confirm-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+
+.merlin-chat__confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
 .merlin-chat__status {
   flex-shrink: 0;
   padding: 0.25rem 1rem;

@@ -6,6 +6,30 @@ export const STOP_PHRASES = [
   'merlin au revoir',
 ];
 
+export const CONFIRM_PHRASES = [
+  'oui',
+  'ok',
+  'vas y',
+  'vas-y',
+  'confirme',
+  "c'est bon",
+  'c est bon',
+  'valide',
+  'lance',
+  'envoie',
+  'fais le',
+];
+
+export const CANCEL_PHRASES = [
+  'non',
+  'annule',
+  'annuler',
+  'stop',
+  'laisse tomber',
+  'laisse tombé',
+  'pas maintenant',
+];
+
 export type WakeIntent = 'assistant' | 'journal';
 
 export function normalize(text: string): string {

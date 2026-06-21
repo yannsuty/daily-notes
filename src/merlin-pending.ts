@@ -1,5 +1,6 @@
 import { chatCompletion, type ChatMessage } from './ai-provider';
 import { updateMerlinMessageContent } from './db';
+import type { PendingAutomation } from './merlin-pending-action';
 import { backoffMs, sleep, waitForOnline } from '../lib/retry-backoff';
 
 type AgentSideEffect = 'list_updated' | 'reminder_created' | 'reminder_completed';
@@ -8,6 +9,7 @@ export interface DeferredReplyInfo {
   userText: string;
   reply: string;
   sideEffects?: AgentSideEffect;
+  pendingAutomation?: PendingAutomation;
 }
 
 type DeferredHandler = (info: DeferredReplyInfo) => void;
@@ -19,7 +21,7 @@ export interface DeferredReplyJob {
   processReply: (
     rawText: string,
     messages: ChatMessage[],
-  ) => Promise<{ reply: string; sideEffects?: AgentSideEffect }>;
+  ) => Promise<{ reply: string; sideEffects?: AgentSideEffect; pendingAutomation?: PendingAutomation }>;
 }
 
 let onReady: DeferredHandler | null = null;
@@ -68,6 +70,7 @@ async function runDeferredJob(job: DeferredReplyJob): Promise<void> {
         userText: job.userText,
         reply: processed.reply,
         sideEffects: processed.sideEffects,
+        pendingAutomation: processed.pendingAutomation,
       });
       return;
     }

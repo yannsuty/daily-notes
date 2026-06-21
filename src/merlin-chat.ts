@@ -6,10 +6,16 @@ import {
   saveMerlinReminder,
 } from './db';
 import { CONTEXT_CHIPS, likelyFastPath } from './merlin-intents';
-import { getWelcomeMessage, handleUserMessage } from './merlin-agent';
+import { createMessageId, getWelcomeMessage, handleUserMessage } from './merlin-agent';
 import { getPaletteShortcuts, toggleShortcutPin } from './merlin-shortcuts';
 import { renderMarkdownToHtml } from './markdown';
 import { getMerlinTtsPrefs, speakMerlin } from './merlin-tts';
+import {
+  cancelPendingAutomation,
+  confirmPendingAutomation,
+  getPendingAutomation,
+} from './merlin-pending-action';
+import { appendMerlinMessage } from './db';
 import type { MerlinMessage } from './types';
 
 export interface MerlinChatOptions {
@@ -30,6 +36,7 @@ export class MerlinChat {
   private sendBtn: HTMLButtonElement | null = null;
   private voiceBtn: HTMLButtonElement | null = null;
   private statusEl: HTMLElement | null = null;
+  private confirmEl: HTMLElement | null = null;
   private thinking = false;
 
   constructor(options: MerlinChatOptions) {
@@ -263,6 +270,7 @@ export class MerlinChat {
     }
 
     this.scrollToBottom();
+    this.renderConfirmPanel();
   }
 
   private appendBubble(role: MerlinMessage['role'] | 'assistant', content: string, id: string): void {
@@ -288,6 +296,79 @@ export class MerlinChat {
     bubble.appendChild(label);
     bubble.appendChild(text);
     this.messagesEl.appendChild(bubble);
+  }
+
+  private renderConfirmPanel(): void {
+    this.confirmEl?.remove();
+    this.confirmEl = null;
+
+    const pending = getPendingAutomation();
+    if (!pending || !this.messagesEl) return;
+
+    const panel = document.createElement('div');
+    panel.className = 'merlin-chat__confirm';
+    panel.dataset.pendingId = pending.id;
+    panel.innerHTML = `
+      <p class="merlin-chat__confirm-label">Action en attente de confirmation</p>
+      <h4 class="merlin-chat__confirm-title">${escapeHtml(pending.summary.title)}</h4>
+      <p class="merlin-chat__confirm-detail">${escapeHtml(pending.summary.detail)}</p>
+      <p class="merlin-chat__confirm-hint">Dites « oui » ou « non », ou utilisez les boutons.</p>
+      <div class="merlin-chat__confirm-actions">
+        <button type="button" class="btn btn--ghost merlin-chat__confirm-cancel">Annuler</button>
+        <button type="button" class="btn btn--primary merlin-chat__confirm-ok">Confirmer</button>
+      </div>
+    `;
+
+    panel.querySelector('.merlin-chat__confirm-ok')!.addEventListener('click', () => {
+      void this.handleConfirmPending();
+    });
+    panel.querySelector('.merlin-chat__confirm-cancel')!.addEventListener('click', () => {
+      void this.handleCancelPending();
+    });
+
+    this.messagesEl.appendChild(panel);
+    this.confirmEl = panel;
+    this.scrollToBottom();
+  }
+
+  private async handleConfirmPending(): Promise<void> {
+    if (this.thinking || !getPendingAutomation()) return;
+
+    this.setThinking(true, 'Merlin exécute…');
+    const result = await confirmPendingAutomation();
+    await appendMerlinMessage({
+      id: createMessageId(),
+      role: 'assistant',
+      content: result.content,
+      createdAt: Date.now(),
+    });
+    this.setThinking(false);
+    await this.renderAll();
+    this.onConversationUpdate?.();
+
+    const prefs = await getMerlinTtsPrefs();
+    if (prefs.enabled) {
+      await speakMerlin(result.content);
+    }
+  }
+
+  private async handleCancelPending(): Promise<void> {
+    if (this.thinking || !getPendingAutomation()) return;
+
+    const reply = cancelPendingAutomation();
+    await appendMerlinMessage({
+      id: createMessageId(),
+      role: 'assistant',
+      content: reply,
+      createdAt: Date.now(),
+    });
+    await this.renderAll();
+    this.onConversationUpdate?.();
+
+    const prefs = await getMerlinTtsPrefs();
+    if (prefs.enabled) {
+      await speakMerlin(reply);
+    }
   }
 
   private setThinking(active: boolean, message = ''): void {
@@ -367,10 +448,14 @@ export class MerlinChat {
     if (result.content) {
       const prefs = await getMerlinTtsPrefs();
       if (prefs.enabled) {
-        this.setThinking(true, result.fastPath ? 'Merlin parle…' : 'Merlin parle…');
+        this.setThinking(true, 'Merlin parle…');
         await speakMerlin(result.content);
         this.setThinking(false);
       }
+    }
+
+    if (result.pendingAutomation) {
+      this.renderConfirmPanel();
     }
   }
 

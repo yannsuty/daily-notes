@@ -14,6 +14,13 @@ import {
   updateMerlinConversationSummary,
 } from './db';
 import { tryFastIntent } from './merlin-intents';
+import {
+  buildConfirmationMessage,
+  getPendingAutomation,
+  stagePendingAutomation,
+  tryResolvePendingAutomation,
+  type PendingAutomation,
+} from './merlin-pending-action';
 import { scheduleDeferredReply } from './merlin-pending';
 import { getCustomToolsPromptBlock } from './merlin-tool-registry';
 import { recordShortcutUsage, recordToolAsShortcut } from './merlin-shortcuts';
@@ -38,7 +45,8 @@ Inspiré de l'intelligence et de la discrétion de Jarvis, tu es :
 - Tu tutoies l'utilisateur sauf indication contraire dans tes faits mémorisés
 - Tu exécutes des actions via tes outils plutôt que d'inventer du contenu du journal
 - Si tu n'as pas l'information, dis-le honnêtement
-- Tu peux aider avec le journal, les listes, les rappels, et la conversation générale`;
+- Tu peux aider avec le journal, les listes, les rappels, et la conversation générale
+- Sur Android, tu peux proposer des automatisations (ouvrir une app, partager un message) via automate_action — elles sont toujours confirmées à voix haute et à l'écran avant exécution`;
 
 let messagesSinceFactExtraction = 0;
 
@@ -226,6 +234,7 @@ export interface AgentReply {
   sideEffects?: AgentSideEffect;
   fastPath?: boolean;
   aiUnavailable?: boolean;
+  pendingAutomation?: PendingAutomation;
   deferred?: boolean;
 }
 
@@ -249,7 +258,21 @@ async function executeToolAndReply(
   toolCall: ToolCallPayload,
   messages: ChatMessage[],
   llmRawText: string,
-): Promise<{ reply: string; sideEffects?: AgentSideEffect }> {
+): Promise<{ reply: string; sideEffects?: AgentSideEffect; pendingAutomation?: PendingAutomation }> {
+  if (toolCall.name === 'automate_action') {
+    const staged = stagePendingAutomation(toolCall.args ?? {});
+    if (!staged) {
+      return {
+        reply:
+          "Je n'ai pas pu préparer cette automatisation. Précisez l'application, le message ou l'URL.",
+      };
+    }
+    return {
+      reply: buildConfirmationMessage(staged),
+      pendingAutomation: staged,
+    };
+  }
+
   const toolResult = await executeMerlinTool(toolCall.name, toolCall.args ?? {});
 
   void recordToolAsShortcut(toolCall.name, toolCall.args ?? {});
@@ -285,19 +308,23 @@ async function executeToolAndReply(
 async function processLlmRawText(
   rawText: string,
   messages: ChatMessage[],
-): Promise<{ replyText: string; sideEffects?: AgentSideEffect }> {
+): Promise<{ replyText: string; sideEffects?: AgentSideEffect; pendingAutomation?: PendingAutomation }> {
   let replyText = rawText;
   let sideEffects: AgentSideEffect | undefined;
+  let pendingAutomation: PendingAutomation | undefined;
   const toolCall = parseToolCall(rawText);
 
   if (toolCall) {
     const toolReply = await executeToolAndReply(toolCall, messages, rawText);
     replyText = toolReply.reply;
     sideEffects = toolReply.sideEffects;
-    void import('./sync').then(({ syncNow }) => syncNow());
+    pendingAutomation = toolReply.pendingAutomation;
+    if (!pendingAutomation) {
+      void import('./sync').then(({ syncNow }) => syncNow());
+    }
   }
 
-  return { replyText, sideEffects };
+  return { replyText, sideEffects, pendingAutomation };
 }
 
 async function deferLlmReply(
@@ -324,7 +351,11 @@ async function deferLlmReply(
         void extractFactsFromExchange(userText, processed.replyText);
       }
       void recordShortcutUsage(userText);
-      return { reply: processed.replyText, sideEffects: processed.sideEffects };
+      return {
+        reply: processed.replyText,
+        sideEffects: processed.sideEffects,
+        pendingAutomation: processed.pendingAutomation,
+      };
     },
   });
 
@@ -335,6 +366,22 @@ export async function handleUserMessage(userText: string): Promise<AgentReply> {
   const trimmed = userText.trim();
   if (!trimmed) {
     return { ok: false, error: 'Message vide.' };
+  }
+
+  if (getPendingAutomation()) {
+    const pendingResult = await tryResolvePendingAutomation(trimmed);
+    if (pendingResult?.handled) {
+      const userMsg: MerlinMessage = {
+        id: createMessageId(),
+        role: 'user',
+        content: trimmed,
+        createdAt: Date.now(),
+      };
+      await appendMerlinMessage(userMsg);
+      await appendExchange(trimmed, pendingResult.content);
+      void import('./sync').then(({ syncNow }) => syncNow());
+      return { ok: pendingResult.ok, content: pendingResult.content };
+    }
   }
 
   const explicitMatch = trimmed.match(
@@ -446,6 +493,7 @@ export async function handleUserMessage(userText: string): Promise<AgentReply> {
     ok: true,
     content: processed.replyText,
     sideEffects: processed.sideEffects,
+    pendingAutomation: processed.pendingAutomation,
   };
 }
 
