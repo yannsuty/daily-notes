@@ -162,7 +162,12 @@ public class AppUpdatePlugin extends Plugin {
                         launchInstaller(apkFile);
                         call.resolve();
                     } catch (Exception e) {
-                        call.reject("Installation impossible", e);
+                        android.util.Log.e("AppUpdate", "install failed", e);
+                        JSObject payload = new JSObject();
+                        payload.put("stage", "apk_install");
+                        payload.put("exception", e.getClass().getSimpleName());
+                        payload.put("exceptionMessage", e.getMessage() != null ? e.getMessage() : "");
+                        call.reject("Installation impossible", e, payload);
                     } finally {
                         downloadInProgress = false;
                     }
@@ -170,8 +175,18 @@ public class AppUpdatePlugin extends Plugin {
             } catch (Exception e) {
                 bridge.getActivity().runOnUiThread(() -> {
                     downloadInProgress = false;
+                    ApkDownloadManager.DownloadMeta pending = manager.getPendingDownload();
                     JSObject payload = new JSObject();
                     payload.put("resumable", true);
+                    payload.put("stage", "apk_download");
+                    payload.put("exception", e.getClass().getSimpleName());
+                    payload.put("exceptionMessage", e.getMessage() != null ? e.getMessage() : "");
+                    if (pending != null) {
+                        payload.put("downloadedBytes", pending.downloadedBytes);
+                        payload.put("totalBytes", pending.totalBytes);
+                        payload.put("versionCode", pending.versionCode);
+                    }
+                    android.util.Log.e("AppUpdate", "download failed", e);
                     call.reject("Téléchargement interrompu — réessayez pour reprendre", e, payload);
                 });
             }
