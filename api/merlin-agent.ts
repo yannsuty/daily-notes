@@ -32,6 +32,70 @@ function writeNdjson(res: VercelResponse, payload: unknown): void {
   res.write(`${JSON.stringify(payload)}\n`);
 }
 
+function writeSse(res: VercelResponse, event: string, payload: unknown): void {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const JOB_STREAM_POLL_MS = 400;
+const JOB_STREAM_MAX_MS = 55_000;
+
+async function streamAgentJob(
+  req: VercelRequest,
+  res: VercelResponse,
+  jobId: string,
+  fromStep: number,
+): Promise<void> {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+
+  const started = Date.now();
+  let seen = fromStep;
+
+  while (Date.now() - started < JOB_STREAM_MAX_MS) {
+    if (req.socket?.destroyed) {
+      return;
+    }
+
+    const job = await getAgentJob(jobId);
+    if (!job) {
+      writeSse(res, 'error', { error: 'Job not found' });
+      res.end();
+      return;
+    }
+
+    for (let i = seen; i < job.steps.length; i += 1) {
+      writeSse(res, 'step', { step: job.steps[i] });
+    }
+    seen = job.steps.length;
+
+    if (job.status === 'done' && job.result) {
+      writeSse(res, 'done', { result: job.result });
+      res.end();
+      return;
+    }
+
+    if (job.status === 'error') {
+      writeSse(res, 'error', {
+        error: job.error ?? 'Erreur agent',
+        steps: job.steps,
+      });
+      res.end();
+      return;
+    }
+
+    await sleep(JOB_STREAM_POLL_MS);
+  }
+
+  writeSse(res, 'reconnect', { fromStep: seen });
+  res.end();
+}
+
 async function processBackgroundJob(
   jobId: string,
   body: AgentRequestBody,
@@ -70,7 +134,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Missing jobId' });
     }
 
+    const stream =
+      req.query.stream === '1' ||
+      req.query.stream === 'true' ||
+      req.query.stream === 'sse';
+    const fromStepRaw = req.query.fromStep;
+    const fromStep =
+      typeof fromStepRaw === 'string' && fromStepRaw
+        ? Math.max(0, Number.parseInt(fromStepRaw, 10) || 0)
+        : 0;
+
     try {
+      if (stream) {
+        await streamAgentJob(req, res, jobId, fromStep);
+        return;
+      }
+
       const job = await getAgentJob(jobId);
       if (!job) {
         return res.status(404).json({ error: 'Job not found' });
@@ -85,6 +164,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Job lookup failed';
+      if (stream) {
+        writeSse(res, 'error', { error: message });
+        return res.end();
+      }
       return res.status(500).json({ error: message, retryable: true });
     }
   }

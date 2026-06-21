@@ -1,6 +1,6 @@
 import { updateMerlinMessageContent } from './db';
 import { applyAgentMutations } from './merlin-agent-context';
-import { pollAgentJob } from './merlin-agent-client';
+import { watchAgentJob } from './merlin-agent-client';
 import type { AgentReply, AgentSideEffect } from './merlin-agent';
 import {
   getActivePollController,
@@ -11,6 +11,10 @@ import {
   type AgentJobCallbacks,
   type PendingAgentJob,
 } from './merlin-agent-jobs';
+import {
+  startNativeAgentJobWatch,
+  stopNativeAgentJobWatch,
+} from './merlin-agent-native-watch';
 import { recordShortcutUsage } from './merlin-shortcuts';
 import type { AgentRunResult } from '../lib/merlin-agent';
 
@@ -21,6 +25,7 @@ export async function applyAgentJobResult(
   result: AgentRunResult,
 ): Promise<AgentReply> {
   removePendingAgentJob(job.jobId);
+  await stopNativeAgentJobWatch();
 
   if (result.ok && result.reply) {
     await applyAgentMutations(result.mutations);
@@ -58,12 +63,14 @@ export async function resumePendingAgentJobs(
   let completed = 0;
 
   try {
+    await stopNativeAgentJobWatch();
+
     for (const job of listPendingAgentJobs()) {
       stopPollingAgentJob(job.jobId);
       const controller = getActivePollController(job.jobId);
 
       try {
-        const result = await pollAgentJob(job.jobId, {
+        const result = await watchAgentJob(job.jobId, {
           onStep: callbacks?.onStep,
           signal: controller.signal,
         });
@@ -82,7 +89,7 @@ export async function resumePendingAgentJobs(
   return completed;
 }
 
-export async function pollPendingJobUntilDone(
+export async function watchPendingJobUntilDone(
   job: PendingAgentJob,
   callbacks?: AgentJobCallbacks,
 ): Promise<AgentReply | { backgroundPending: true }> {
@@ -97,7 +104,7 @@ export async function pollPendingJobUntilDone(
   document.addEventListener('visibilitychange', onVisibility);
 
   try {
-    const result = await pollAgentJob(job.jobId, {
+    const result = await watchAgentJob(job.jobId, {
       onStep: callbacks?.onStep,
       signal: controller.signal,
     });
@@ -105,9 +112,11 @@ export async function pollPendingJobUntilDone(
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       releaseActivePoll(job.jobId);
+      await startNativeAgentJobWatch(job.jobId);
       return { backgroundPending: true };
     }
     removePendingAgentJob(job.jobId);
+    await stopNativeAgentJobWatch();
     const message = err instanceof Error ? err.message : 'Erreur réseau';
     await updateMerlinMessageContent(job.placeholderId, message);
     return { ok: false, error: message, aiUnavailable: true };
@@ -116,3 +125,6 @@ export async function pollPendingJobUntilDone(
     releaseActivePoll(job.jobId);
   }
 }
+
+/** @deprecated Utiliser watchPendingJobUntilDone. */
+export const pollPendingJobUntilDone = watchPendingJobUntilDone;

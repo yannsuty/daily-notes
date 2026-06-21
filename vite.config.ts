@@ -32,6 +32,69 @@ interface AgentProxyBody {
   config?: { apiKey?: string; modelChain?: string; model?: string };
 }
 
+function writeSse(res: ServerResponse, event: string, payload: unknown): void {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function streamAgentJobDev(
+  req: IncomingMessage,
+  res: ServerResponse,
+  jobId: string,
+  fromStep: number,
+  getAgentJob: (id: string) => Promise<import('./lib/merlin-agent/types').AgentJobRecord | null>,
+): Promise<void> {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+
+  const started = Date.now();
+  let seen = fromStep;
+
+  while (Date.now() - started < 55_000) {
+    if (req.socket?.destroyed) {
+      return;
+    }
+
+    const job = await getAgentJob(jobId);
+    if (!job) {
+      writeSse(res, 'error', { error: 'Job not found' });
+      res.end();
+      return;
+    }
+
+    for (let i = seen; i < job.steps.length; i += 1) {
+      writeSse(res, 'step', { step: job.steps[i] });
+    }
+    seen = job.steps.length;
+
+    if (job.status === 'done' && job.result) {
+      writeSse(res, 'done', { result: job.result });
+      res.end();
+      return;
+    }
+
+    if (job.status === 'error') {
+      writeSse(res, 'error', {
+        error: job.error ?? 'Erreur agent',
+        steps: job.steps,
+      });
+      res.end();
+      return;
+    }
+
+    await sleep(400);
+  }
+
+  writeSse(res, 'reconnect', { fromStep: seen });
+  res.end();
+}
+
 function createMerlinAgentDevProxy(fallbackApiKey: string) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     const url = req.url ?? '';
@@ -63,13 +126,27 @@ function createMerlinAgentDevProxy(fallbackApiKey: string) {
       const { scheduleBackground } = await import('./api/lib/wait-until');
 
       if (req.method === 'GET') {
-        const jobId = new URL(url, 'http://localhost').searchParams.get('jobId');
+        const parsedUrl = new URL(url, 'http://localhost');
+        const jobId = parsedUrl.searchParams.get('jobId');
         if (!jobId) {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: 'Missing jobId' }));
           return;
         }
+
+        const streamParam = parsedUrl.searchParams.get('stream');
+        const stream = streamParam === '1' || streamParam === 'true' || streamParam === 'sse';
+        const fromStep = Math.max(
+          0,
+          Number.parseInt(parsedUrl.searchParams.get('fromStep') ?? '0', 10) || 0,
+        );
+
+        if (stream) {
+          await streamAgentJobDev(req, res, jobId, fromStep, getAgentJob);
+          return;
+        }
+
         const job = await getAgentJob(jobId);
         if (!job) {
           res.statusCode = 404;

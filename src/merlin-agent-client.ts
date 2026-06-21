@@ -2,23 +2,23 @@ import { apiUrl } from './api-base';
 import { getAiClientConfig } from './merlin-env';
 import type {
   AgentContext,
-  AgentJobPollResponse,
   AgentJobStartResponse,
   AgentRunResult,
   AgentStep,
 } from '../lib/merlin-agent';
-import { sleep } from '../lib/retry-backoff';
 
 export interface RunServerAgentOptions {
   onStep?: (step: AgentStep) => void;
   stream?: boolean;
   background?: boolean;
   jobId?: string;
-  pollIntervalMs?: number;
   signal?: AbortSignal;
 }
 
-const POLL_INTERVAL_MS = 2000;
+type AgentJobSseOutcome =
+  | { kind: 'done'; result: AgentRunResult }
+  | { kind: 'error'; error: string; steps?: AgentStep[] }
+  | { kind: 'reconnect'; fromStep: number };
 
 async function readNdjsonStream(
   response: Response,
@@ -74,6 +74,87 @@ async function readNdjsonStream(
   return finalResult;
 }
 
+async function readAgentJobSseStream(
+  response: Response,
+  options: {
+    onStep?: (step: AgentStep) => void;
+    signal?: AbortSignal;
+  },
+): Promise<AgentJobSseOutcome> {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Flux de réponse indisponible');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let currentEvent = 'message';
+
+  while (true) {
+    if (options.signal?.aborted) {
+      throw new DOMException('Flux interrompu', 'AbortError');
+    }
+
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+
+    while (true) {
+      const lineEnd = buffer.indexOf('\n');
+      if (lineEnd === -1) break;
+
+      let line = buffer.slice(0, lineEnd);
+      buffer = buffer.slice(lineEnd + 1);
+      if (line.endsWith('\r')) {
+        line = line.slice(0, -1);
+      }
+
+      if (line === '') {
+        currentEvent = 'message';
+        continue;
+      }
+
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim();
+        continue;
+      }
+
+      if (!line.startsWith('data:')) {
+        continue;
+      }
+
+      const payload = JSON.parse(line.slice(5).trim()) as Record<string, unknown>;
+
+      if (currentEvent === 'step' && payload.step) {
+        options.onStep?.(payload.step as AgentStep);
+        continue;
+      }
+
+      if (currentEvent === 'done' && payload.result) {
+        return { kind: 'done', result: payload.result as AgentRunResult };
+      }
+
+      if (currentEvent === 'error') {
+        return {
+          kind: 'error',
+          error: (payload.error as string) ?? 'Erreur agent',
+          steps: payload.steps as AgentStep[] | undefined,
+        };
+      }
+
+      if (currentEvent === 'reconnect') {
+        return {
+          kind: 'reconnect',
+          fromStep: (payload.fromStep as number) ?? 0,
+        };
+      }
+    }
+  }
+
+  throw new Error('Flux SSE incomplet');
+}
+
 export async function startBackgroundAgentJob(
   message: string,
   context: AgentContext,
@@ -111,22 +192,26 @@ export async function startBackgroundAgentJob(
   return (await response.json()) as AgentJobStartResponse;
 }
 
-export async function pollAgentJob(
+export async function watchAgentJob(
   jobId: string,
   options?: {
     onStep?: (step: AgentStep) => void;
-    pollIntervalMs?: number;
     signal?: AbortSignal;
-    lastStepCount?: number;
+    fromStep?: number;
   },
 ): Promise<AgentRunResult> {
-  const interval = options?.pollIntervalMs ?? POLL_INTERVAL_MS;
-  let seenSteps = options?.lastStepCount ?? 0;
+  let fromStep = options?.fromStep ?? 0;
 
   while (!options?.signal?.aborted) {
-    const response = await fetch(apiUrl(`/api/merlin-agent?jobId=${encodeURIComponent(jobId)}`), {
-      signal: options?.signal,
-    });
+    const response = await fetch(
+      apiUrl(
+        `/api/merlin-agent?jobId=${encodeURIComponent(jobId)}&stream=1&fromStep=${fromStep}`,
+      ),
+      {
+        signal: options?.signal,
+        headers: { Accept: 'text/event-stream' },
+      },
+    );
 
     if (response.status === 404) {
       throw new Error('Job introuvable ou expiré');
@@ -143,34 +228,37 @@ export async function pollAgentJob(
       throw new Error(detail);
     }
 
-    const body = (await response.json()) as AgentJobPollResponse;
+    const outcome = await readAgentJobSseStream(response, {
+      onStep: (step) => {
+        fromStep += 1;
+        options?.onStep?.(step);
+      },
+      signal: options?.signal,
+    });
 
-    if (body.steps.length > seenSteps) {
-      for (let i = seenSteps; i < body.steps.length; i += 1) {
-        options?.onStep?.(body.steps[i]);
-      }
-      seenSteps = body.steps.length;
+    if (outcome.kind === 'reconnect') {
+      fromStep = outcome.fromStep;
+      continue;
     }
 
-    if (body.status === 'done' && body.result) {
-      return body.result;
-    }
-
-    if (body.status === 'error') {
+    if (outcome.kind === 'error') {
       return {
         ok: false,
-        error: body.error ?? 'Erreur agent',
-        steps: body.steps,
+        error: outcome.error,
+        steps: outcome.steps ?? [],
         mutations: {},
         depth: 'standard',
       };
     }
 
-    await sleep(interval);
+    return outcome.result;
   }
 
-  throw new DOMException('Polling interrompu', 'AbortError');
+  throw new DOMException('Flux interrompu', 'AbortError');
 }
+
+/** @deprecated Utiliser watchAgentJob (SSE). */
+export const pollAgentJob = watchAgentJob;
 
 export async function runServerAgent(
   message: string,
@@ -179,9 +267,8 @@ export async function runServerAgent(
 ): Promise<AgentRunResult> {
   if (options?.background) {
     const started = await startBackgroundAgentJob(message, context, options.jobId);
-    return pollAgentJob(started.jobId, {
+    return watchAgentJob(started.jobId, {
       onStep: options.onStep,
-      pollIntervalMs: options.pollIntervalMs,
       signal: options.signal,
     });
   }
