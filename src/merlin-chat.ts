@@ -5,8 +5,11 @@ import {
   saveMerlinList,
   saveMerlinReminder,
 } from './db';
-import { CONTEXT_CHIPS, likelyFastPath } from './merlin-intents';
+import { CONTEXT_CHIPS } from './merlin-intents';
 import { getWelcomeMessage, handleUserMessage } from './merlin-agent';
+import { stepLabelForUi } from './merlin-agent-client';
+import { assessQueryDepth } from '../lib/merlin-agent';
+import type { AgentStep } from '../lib/merlin-agent';
 import { getPaletteShortcuts, toggleShortcutPin } from './merlin-shortcuts';
 import { renderMarkdownToHtml } from './markdown';
 import { getMerlinTtsPrefs, speakMerlin } from './merlin-tts';
@@ -30,6 +33,7 @@ export class MerlinChat {
   private sendBtn: HTMLButtonElement | null = null;
   private voiceBtn: HTMLButtonElement | null = null;
   private statusEl: HTMLElement | null = null;
+  private traceEl: HTMLElement | null = null;
   private thinking = false;
 
   constructor(options: MerlinChatOptions) {
@@ -50,6 +54,7 @@ export class MerlinChat {
       <div class="merlin-chat__messages" role="log" aria-live="polite" aria-label="Conversation avec Merlin"></div>
       <div class="merlin-chat__palette" role="toolbar" aria-label="Actions rapides"></div>
       <div class="merlin-chat__status" aria-live="polite"></div>
+      <div class="merlin-chat__trace" hidden aria-live="polite"></div>
       <form class="merlin-chat__composer">
         <button type="button" class="merlin-chat__voice" aria-label="Parler à Merlin" title="Parler à Merlin">🎙</button>
         <textarea
@@ -70,6 +75,7 @@ export class MerlinChat {
     this.sendBtn = this.container.querySelector('.merlin-chat__send');
     this.voiceBtn = this.container.querySelector('.merlin-chat__voice');
     this.statusEl = this.container.querySelector('.merlin-chat__status');
+    this.traceEl = this.container.querySelector('.merlin-chat__trace');
 
     const form = this.container.querySelector('.merlin-chat__composer') as HTMLFormElement;
     form.addEventListener('submit', (e) => {
@@ -299,6 +305,26 @@ export class MerlinChat {
       this.statusEl.textContent = message;
       this.statusEl.hidden = !message;
     }
+    if (!active && this.traceEl) {
+      this.traceEl.hidden = true;
+      this.traceEl.innerHTML = '';
+    }
+  }
+
+  private renderAgentStep(step: AgentStep): void {
+    if (!this.traceEl) return;
+    this.traceEl.hidden = false;
+
+    const item = document.createElement('div');
+    item.className = `merlin-chat__trace-item merlin-chat__trace-item--${step.phase}`;
+    item.textContent = stepLabelForUi(step);
+    this.traceEl.appendChild(item);
+    this.traceEl.scrollTop = this.traceEl.scrollHeight;
+
+    if (this.statusEl) {
+      this.statusEl.textContent = step.label;
+      this.statusEl.hidden = false;
+    }
   }
 
   private setAiBanner(show: boolean): void {
@@ -330,9 +356,15 @@ export class MerlinChat {
 
     this.appendBubble('user', trimmed, `pending-${Date.now()}`);
     this.scrollToBottom();
-    this.setThinking(true, likelyFastPath(trimmed) ? 'Merlin agit…' : 'Merlin réfléchit…');
+    const depth = assessQueryDepth(trimmed);
+    this.setThinking(
+      true,
+      depth === 'deep' ? 'Merlin analyse en profondeur…' : 'Merlin réfléchit…',
+    );
 
-    const result = await handleUserMessage(trimmed);
+    const result = await handleUserMessage(trimmed, {
+      onAgentStep: (step) => this.renderAgentStep(step),
+    });
 
     this.setThinking(false);
 
@@ -346,17 +378,6 @@ export class MerlinChat {
           : errMsg,
       );
       await this.renderMessages();
-      return;
-    }
-
-    if (result.deferred) {
-      this.setAiBanner(true);
-      await this.renderAll();
-      this.onConversationUpdate?.();
-      const prefs = await getMerlinTtsPrefs();
-      if (prefs.enabled && result.content) {
-        await speakMerlin(result.content);
-      }
       return;
     }
 

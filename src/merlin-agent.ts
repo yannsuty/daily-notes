@@ -1,9 +1,7 @@
 import {
   chatCompletion,
-  LLM_DEFERRED_MSG,
   LLM_UNAVAILABLE_MSG,
   parseJsonFromAi,
-  type ChatMessage,
 } from './ai-provider';
 import {
   appendMerlinMessage,
@@ -14,15 +12,10 @@ import {
   updateMerlinConversationSummary,
 } from './db';
 import { tryFastIntent } from './merlin-intents';
-import { scheduleDeferredReply } from './merlin-pending';
-import { getCustomToolsPromptBlock } from './merlin-tool-registry';
-import { recordShortcutUsage, recordToolAsShortcut } from './merlin-shortcuts';
-import {
-  executeMerlinTool,
-  isMutationTool,
-  templateReplyForTool,
-  TOOL_DOCS,
-} from './merlin-tools';
+import { applyAgentMutations, buildAgentContext } from './merlin-agent-context';
+import { runServerAgent } from './merlin-agent-client';
+import { recordShortcutUsage } from './merlin-shortcuts';
+import type { AgentStep } from '../lib/merlin-agent';
 import type { MerlinFact, MerlinMessage } from './types';
 
 const MAX_CONTEXT_MESSAGES = 24;
@@ -30,46 +23,10 @@ const COMPRESS_THRESHOLD = 40;
 const MESSAGES_TO_COMPRESS = 16;
 const FACT_EXTRACTION_INTERVAL = 4;
 
-const READ_TOOLS = new Set(['read_journal', 'search_journal', 'summarize_period', 'show_lists', 'list_reminders']);
-
-const MERLIN_PERSONA = `Tu es Merlin, l'assistant personnel de l'utilisateur.
-Inspiré de l'intelligence et de la discrétion de Jarvis, tu es :
-- Concis et naturel en français
-- Tu tutoies l'utilisateur sauf indication contraire dans tes faits mémorisés
-- Tu exécutes des actions via tes outils plutôt que d'inventer du contenu du journal
-- Si tu n'as pas l'information, dis-le honnêtement
-- Tu peux aider avec le journal, les listes, les rappels, et la conversation générale`;
-
 let messagesSinceFactExtraction = 0;
 
 export function createMessageId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-export async function buildSystemPrompt(): Promise<string> {
-  const facts = await getMerlinFacts();
-  const conv = await getMerlinConversation();
-  const customTools = await getCustomToolsPromptBlock();
-
-  let prompt = MERLIN_PERSONA;
-
-  if (facts.length > 0) {
-    const factsBlock = facts.map((f) => `- ${f.key} : ${f.value}`).join('\n');
-    prompt += `\n\nFaits mémorisés sur l'utilisateur :\n${factsBlock}`;
-  }
-
-  if (conv.summary.trim()) {
-    prompt += `\n\nRésumé des échanges précédents :\n${conv.summary.trim()}`;
-  }
-
-  prompt += `\n\nOutils disponibles :\n${TOOL_DOCS}${customTools}
-
-Pour utiliser un outil, réponds UNIQUEMENT avec ce JSON :
-{"action":"tool","name":"nom_outil","args":{"clé":"valeur"}}
-
-Sinon réponds normalement en texte.`;
-
-  return prompt;
 }
 
 export function getRecentMessages(messages: MerlinMessage[]): MerlinMessage[] {
@@ -107,20 +64,6 @@ Réponds uniquement avec le résumé, sans commentaire.`,
     : result.text.trim();
 
   await updateMerlinConversationSummary(newSummary, remaining);
-}
-
-interface ToolCallPayload {
-  action: 'tool';
-  name: string;
-  args?: Record<string, string>;
-}
-
-function parseToolCall(text: string): ToolCallPayload | null {
-  const parsed = parseJsonFromAi<ToolCallPayload>(text);
-  if (parsed?.action === 'tool' && parsed.name) {
-    return parsed;
-  }
-  return null;
 }
 
 function tryExplicitFactWithoutLlm(factText: string): { key: string; value: string } | null {
@@ -226,7 +169,12 @@ export interface AgentReply {
   sideEffects?: AgentSideEffect;
   fastPath?: boolean;
   aiUnavailable?: boolean;
-  deferred?: boolean;
+  steps?: AgentStep[];
+  depth?: 'standard' | 'deep';
+}
+
+export interface HandleUserMessageOptions {
+  onAgentStep?: (step: AgentStep) => void;
 }
 
 async function appendExchange(userText: string, reply: string): Promise<void> {
@@ -245,93 +193,10 @@ async function appendExchange(userText: string, reply: string): Promise<void> {
   }
 }
 
-async function executeToolAndReply(
-  toolCall: ToolCallPayload,
-  messages: ChatMessage[],
-  llmRawText: string,
-): Promise<{ reply: string; sideEffects?: AgentSideEffect }> {
-  const toolResult = await executeMerlinTool(toolCall.name, toolCall.args ?? {});
-
-  void recordToolAsShortcut(toolCall.name, toolCall.args ?? {});
-
-  const template = templateReplyForTool(toolCall.name, toolResult);
-  if (template) {
-    return { reply: template, sideEffects: toolResult.mutation };
-  }
-
-  if (isMutationTool(toolCall.name)) {
-    return { reply: toolResult.content, sideEffects: toolResult.mutation };
-  }
-
-  if (!READ_TOOLS.has(toolCall.name)) {
-    return { reply: toolResult.content, sideEffects: toolResult.mutation };
-  }
-
-  const toolMessages: ChatMessage[] = [
-    ...messages,
-    { role: 'assistant', content: llmRawText },
-    {
-      role: 'user',
-      content: `Résultat de l'outil ${toolCall.name} :\n${toolResult.content}\n\nFormule une réponse naturelle pour l'utilisateur.`,
-    },
-  ];
-  const followUp = await chatCompletion(toolMessages, { temperature: 0.5 });
-  if (!followUp.ok || !followUp.text) {
-    return { reply: toolResult.content, sideEffects: toolResult.mutation };
-  }
-  return { reply: followUp.text, sideEffects: toolResult.mutation };
-}
-
-async function processLlmRawText(
-  rawText: string,
-  messages: ChatMessage[],
-): Promise<{ replyText: string; sideEffects?: AgentSideEffect }> {
-  let replyText = rawText;
-  let sideEffects: AgentSideEffect | undefined;
-  const toolCall = parseToolCall(rawText);
-
-  if (toolCall) {
-    const toolReply = await executeToolAndReply(toolCall, messages, rawText);
-    replyText = toolReply.reply;
-    sideEffects = toolReply.sideEffects;
-    void import('./sync').then(({ syncNow }) => syncNow());
-  }
-
-  return { replyText, sideEffects };
-}
-
-async function deferLlmReply(
+export async function handleUserMessage(
   userText: string,
-  messages: ChatMessage[],
+  options?: HandleUserMessageOptions,
 ): Promise<AgentReply> {
-  const placeholderId = createMessageId();
-  await appendMerlinMessage({
-    id: placeholderId,
-    role: 'assistant',
-    content: LLM_DEFERRED_MSG,
-    createdAt: Date.now(),
-  });
-
-  scheduleDeferredReply({
-    userText,
-    messages,
-    placeholderId,
-    processReply: async (rawText, msgs) => {
-      const processed = await processLlmRawText(rawText, msgs);
-      messagesSinceFactExtraction += 1;
-      if (messagesSinceFactExtraction >= FACT_EXTRACTION_INTERVAL) {
-        messagesSinceFactExtraction = 0;
-        void extractFactsFromExchange(userText, processed.replyText);
-      }
-      void recordShortcutUsage(userText);
-      return { reply: processed.replyText, sideEffects: processed.sideEffects };
-    },
-  });
-
-  return { ok: true, content: LLM_DEFERRED_MSG, deferred: true };
-}
-
-export async function handleUserMessage(userText: string): Promise<AgentReply> {
   const trimmed = userText.trim();
   if (!trimmed) {
     return { ok: false, error: 'Message vide.' };
@@ -414,38 +279,33 @@ export async function handleUserMessage(userText: string): Promise<AgentReply> {
 
   void maybeCompressConversation();
 
-  const systemPrompt = await buildSystemPrompt();
-  const conv = await getMerlinConversation();
-  const recent = getRecentMessages(conv.messages);
+  const context = await buildAgentContext();
+  const agentResult = await runServerAgent(trimmed, context, {
+    onStep: options?.onAgentStep,
+    stream: !!options?.onAgentStep,
+  });
 
-  const messages: ChatMessage[] = [
-    { role: 'system', content: systemPrompt },
-    ...recent.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    })),
-  ];
-
-  let result = await chatCompletion(messages, { temperature: 0.5 });
-  if (!result.ok || !result.text) {
-    if (result.retryable) {
-      return deferLlmReply(trimmed, messages);
-    }
+  if (!agentResult.ok || !agentResult.reply) {
     return {
       ok: false,
-      error: result.error ?? LLM_UNAVAILABLE_MSG,
+      error: agentResult.error ?? LLM_UNAVAILABLE_MSG,
       aiUnavailable: true,
+      steps: agentResult.steps,
+      depth: agentResult.depth,
     };
   }
 
-  const processed = await processLlmRawText(result.text, messages);
-  await appendExchange(trimmed, processed.replyText);
+  await applyAgentMutations(agentResult.mutations);
+  await appendExchange(trimmed, agentResult.reply);
   void recordShortcutUsage(trimmed);
+  void import('./sync').then(({ syncNow }) => syncNow());
 
   return {
     ok: true,
-    content: processed.replyText,
-    sideEffects: processed.sideEffects,
+    content: agentResult.reply,
+    sideEffects: agentResult.sideEffects,
+    steps: agentResult.steps,
+    depth: agentResult.depth,
   };
 }
 

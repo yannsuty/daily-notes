@@ -23,6 +23,74 @@ interface AiProxyBody extends OpenRouterBody {
   config?: { apiKey?: string; modelChain?: string };
 }
 
+interface AgentProxyBody {
+  message: string;
+  context: import('./api/lib/merlin-agent/types').AgentContext;
+  stream?: boolean;
+  config?: { apiKey?: string; modelChain?: string; model?: string };
+}
+
+function createMerlinAgentDevProxy(fallbackApiKey: string) {
+  return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
+    if (!req.url?.startsWith('/api/merlin/agent')) {
+      next();
+      return;
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      next();
+      return;
+    }
+
+    try {
+      const rawBody = await readRequestBody(req);
+      const parsed = JSON.parse(rawBody) as AgentProxyBody;
+      const { runMerlinAgent } = await import('./api/lib/merlin-agent/runner');
+      const config = {
+        apiKey: parsed.config?.apiKey?.trim() || fallbackApiKey,
+        modelChain: parsed.config?.modelChain?.trim() || process.env.OPENROUTER_MODEL_CHAIN,
+        model: parsed.config?.model,
+      };
+
+      if (parsed.stream) {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+        const result = await runMerlinAgent(parsed.message, parsed.context, config, {
+          referer: 'http://localhost:5173',
+          onStep: (step) => {
+            res.write(`${JSON.stringify({ type: 'step', step })}\n`);
+          },
+        });
+        res.write(`${JSON.stringify({ type: 'done', result })}\n`);
+        res.end();
+        return;
+      }
+
+      const result = await runMerlinAgent(parsed.message, parsed.context, config, {
+        referer: 'http://localhost:5173',
+      });
+      res.statusCode = result.ok ? 200 : 503;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      const message = err instanceof Error ? err.message : 'Agent proxy error';
+      res.end(JSON.stringify({ ok: false, error: message, steps: [], mutations: {} }));
+    }
+  };
+}
+
 function createOpenRouterDevProxy(fallbackApiKey: string) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     if (!req.url?.startsWith('/api/ai')) {
@@ -130,9 +198,12 @@ export default defineConfig(({ mode }) => {
       {
         name: 'openrouter-dev-proxy',
         configureServer(server) {
-          const proxy = createOpenRouterDevProxy(env.OPENROUTER_API_KEY ?? '');
+          const aiProxy = createOpenRouterDevProxy(env.OPENROUTER_API_KEY ?? '');
+          const agentProxy = createMerlinAgentDevProxy(env.OPENROUTER_API_KEY ?? '');
           server.middlewares.use((req, res, next) => {
-            void proxy(req, res, next);
+            void agentProxy(req, res, () => {
+              void aiProxy(req, res, next);
+            });
           });
         },
       },

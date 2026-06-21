@@ -472,10 +472,12 @@ export class Merlin {
     this.state = 'processing';
     this.clearSilenceTimer();
     this.showOverlay('processing');
-    this.setStatusHint(likelyFastPath(text) ? 'Merlin agit…' : 'Merlin réfléchit…');
+    this.setStatusHint(likelyFastPath(text) ? 'Merlin agit…' : 'Merlin analyse…');
     await this.pauseListening();
 
-    const result = await handleUserMessage(text);
+    const result = await handleUserMessage(text, {
+      onAgentStep: (step) => this.setStatusHint(step.detail ? `${step.label} — ${step.detail}` : step.label),
+    });
 
     if (!result.ok) {
       this.state = 'conversing';
@@ -491,17 +493,6 @@ export class Merlin {
     this.conversingText = '';
     this.conversingHypothesis = '';
     this.heardSpeechInSession = false;
-
-    if (result.deferred) {
-      if (result.content) {
-        await this.speakResponse(result.content);
-      }
-      this.state = 'conversing';
-      this.showOverlay('conversing');
-      this.setStatusHint('Je vous écoute…');
-      await this.resumeListening();
-      return;
-    }
 
     if (result.content) {
       await this.speakResponse(result.content);
