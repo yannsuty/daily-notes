@@ -122,10 +122,6 @@ function githubHeaders(accept: string): HeadersInit {
   return headers;
 }
 
-function downloadHeaders(): HeadersInit {
-  return { 'User-Agent': 'Merlin-Android-App' };
-}
-
 async function readGitHubErrorBody(response: Response): Promise<string> {
   try {
     const text = await response.text();
@@ -258,47 +254,47 @@ async function fetchLatestRelease(
   return release;
 }
 
+/** Ne jamais fetch() les URLs github.com/releases/download dans la WebView — utiliser asset.url (API). */
 async function fetchVersionManifest(
   release: GitHubRelease,
   installed?: { versionCode: number; versionName: string },
 ): Promise<VersionManifest | null> {
   const asset = release.assets.find((item) => item.name === VERSION_ASSET_NAME);
-  if (!asset?.browser_download_url) {
+  if (!asset?.url) {
     return null;
   }
 
-  const response = await fetch(asset.browser_download_url, {
-    headers: downloadHeaders(),
-  });
-
-  if (!response.ok) {
-    const detail = await readGitHubErrorBody(response);
+  try {
+    const response = await githubFetch(
+      asset.url,
+      'application/octet-stream',
+      'github_version_manifest',
+      installed,
+    );
+    const manifest = (await response.json()) as VersionManifest;
+    if (typeof manifest.versionCode !== 'number') {
+      const context = buildAppUpdateContext('github_version_manifest', {
+        githubUrl: asset.url,
+        responseBody: JSON.stringify(manifest).slice(0, 500),
+        installedVersionCode: installed?.versionCode,
+        installedVersionName: installed?.versionName,
+      });
+      captureAppUpdateIssue('app-version.json invalide', new Error('versionCode manquant'), context);
+      return null;
+    }
+    return manifest;
+  } catch (error) {
+    if (error instanceof GitHubApiError) {
+      return null;
+    }
     const context = buildAppUpdateContext('github_version_manifest', {
-      githubUrl: asset.browser_download_url,
-      httpStatus: response.status,
-      httpStatusText: response.statusText,
-      responseBody: detail,
+      githubUrl: asset.url,
       installedVersionCode: installed?.versionCode,
       installedVersionName: installed?.versionName,
-      ...gitHubRateLimitContext(response),
     });
-    captureAppUpdateIssue('Lecture app-version.json échouée', new Error(detail), context);
+    captureAppUpdateIssue('Lecture app-version.json échouée', error, context);
     return null;
   }
-
-  const manifest = (await response.json()) as VersionManifest;
-  if (typeof manifest.versionCode !== 'number') {
-    const context = buildAppUpdateContext('github_version_manifest', {
-      githubUrl: asset.browser_download_url,
-      responseBody: JSON.stringify(manifest).slice(0, 500),
-      installedVersionCode: installed?.versionCode,
-      installedVersionName: installed?.versionName,
-    });
-    captureAppUpdateIssue('app-version.json invalide', new Error('versionCode manquant'), context);
-    return null;
-  }
-
-  return manifest;
 }
 
 /** Libellé local — sans appel réseau (évite de brûler le quota API GitHub). */
@@ -314,6 +310,7 @@ export function resolveInstalledReleaseLabel(
 }
 
 function getApkDownloadUrl(asset: GitHubAsset): string {
+  // Téléchargement APK via le plugin natif (HttpURLConnection), pas la WebView.
   return asset.browser_download_url;
 }
 
