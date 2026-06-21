@@ -1,5 +1,6 @@
 import {
   chatCompletion,
+  LLM_DEFERRED_MSG,
   LLM_UNAVAILABLE_MSG,
   parseJsonFromAi,
   type ChatMessage,
@@ -20,6 +21,7 @@ import {
   tryResolvePendingAutomation,
   type PendingAutomation,
 } from './merlin-pending-action';
+import { scheduleDeferredReply } from './merlin-pending';
 import { getCustomToolsPromptBlock } from './merlin-tool-registry';
 import { recordShortcutUsage, recordToolAsShortcut } from './merlin-shortcuts';
 import {
@@ -233,6 +235,7 @@ export interface AgentReply {
   fastPath?: boolean;
   aiUnavailable?: boolean;
   pendingAutomation?: PendingAutomation;
+  deferred?: boolean;
 }
 
 async function appendExchange(userText: string, reply: string): Promise<void> {
@@ -300,6 +303,63 @@ async function executeToolAndReply(
     return { reply: toolResult.content, sideEffects: toolResult.mutation };
   }
   return { reply: followUp.text, sideEffects: toolResult.mutation };
+}
+
+async function processLlmRawText(
+  rawText: string,
+  messages: ChatMessage[],
+): Promise<{ replyText: string; sideEffects?: AgentSideEffect; pendingAutomation?: PendingAutomation }> {
+  let replyText = rawText;
+  let sideEffects: AgentSideEffect | undefined;
+  let pendingAutomation: PendingAutomation | undefined;
+  const toolCall = parseToolCall(rawText);
+
+  if (toolCall) {
+    const toolReply = await executeToolAndReply(toolCall, messages, rawText);
+    replyText = toolReply.reply;
+    sideEffects = toolReply.sideEffects;
+    pendingAutomation = toolReply.pendingAutomation;
+    if (!pendingAutomation) {
+      void import('./sync').then(({ syncNow }) => syncNow());
+    }
+  }
+
+  return { replyText, sideEffects, pendingAutomation };
+}
+
+async function deferLlmReply(
+  userText: string,
+  messages: ChatMessage[],
+): Promise<AgentReply> {
+  const placeholderId = createMessageId();
+  await appendMerlinMessage({
+    id: placeholderId,
+    role: 'assistant',
+    content: LLM_DEFERRED_MSG,
+    createdAt: Date.now(),
+  });
+
+  scheduleDeferredReply({
+    userText,
+    messages,
+    placeholderId,
+    processReply: async (rawText, msgs) => {
+      const processed = await processLlmRawText(rawText, msgs);
+      messagesSinceFactExtraction += 1;
+      if (messagesSinceFactExtraction >= FACT_EXTRACTION_INTERVAL) {
+        messagesSinceFactExtraction = 0;
+        void extractFactsFromExchange(userText, processed.replyText);
+      }
+      void recordShortcutUsage(userText);
+      return {
+        reply: processed.replyText,
+        sideEffects: processed.sideEffects,
+        pendingAutomation: processed.pendingAutomation,
+      };
+    },
+  });
+
+  return { ok: true, content: LLM_DEFERRED_MSG, deferred: true };
 }
 
 export async function handleUserMessage(userText: string): Promise<AgentReply> {
@@ -415,6 +475,9 @@ export async function handleUserMessage(userText: string): Promise<AgentReply> {
 
   let result = await chatCompletion(messages, { temperature: 0.5 });
   if (!result.ok || !result.text) {
+    if (result.retryable) {
+      return deferLlmReply(trimmed, messages);
+    }
     return {
       ok: false,
       error: result.error ?? LLM_UNAVAILABLE_MSG,
@@ -422,25 +485,16 @@ export async function handleUserMessage(userText: string): Promise<AgentReply> {
     };
   }
 
-  let replyText = result.text;
-  let sideEffects: AgentSideEffect | undefined;
-  let pendingAutomation: PendingAutomation | undefined;
-  const toolCall = parseToolCall(result.text);
-
-  if (toolCall) {
-    const toolReply = await executeToolAndReply(toolCall, messages, result.text);
-    replyText = toolReply.reply;
-    sideEffects = toolReply.sideEffects;
-    pendingAutomation = toolReply.pendingAutomation;
-    if (!pendingAutomation) {
-      void import('./sync').then(({ syncNow }) => syncNow());
-    }
-  }
-
-  await appendExchange(trimmed, replyText);
+  const processed = await processLlmRawText(result.text, messages);
+  await appendExchange(trimmed, processed.replyText);
   void recordShortcutUsage(trimmed);
 
-  return { ok: true, content: replyText, sideEffects, pendingAutomation };
+  return {
+    ok: true,
+    content: processed.replyText,
+    sideEffects: processed.sideEffects,
+    pendingAutomation: processed.pendingAutomation,
+  };
 }
 
 export async function getWelcomeMessage(): Promise<string> {

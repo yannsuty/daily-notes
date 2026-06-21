@@ -1,3 +1,4 @@
+import { contextTagsMatch, detectContextTags, normalizeContextTags } from './merlin-context';
 import {
   describeAutomation,
   executeAutomationAction,
@@ -260,11 +261,15 @@ export async function createReminder(args: {
   const now = Date.now();
   let trigger: MerlinReminder['trigger'];
 
-  if (args.contextTags) {
-    const tags = args.contextTags
-      .split(/[,;]+/)
-      .map((t) => t.trim().toLowerCase())
-      .filter(Boolean);
+  const hasTimeHint = !!(args.timeOfDay || args.at);
+  let contextInput = args.contextTags?.trim();
+  if (!contextInput && text && !hasTimeHint) {
+    const detected = detectContextTags(text);
+    if (detected.length > 0) contextInput = detected.join(',');
+  }
+
+  if (contextInput) {
+    const tags = normalizeContextTags(contextInput);
     trigger = { kind: 'context', tags: tags.length > 0 ? tags : ['general'] };
   } else {
     const timeOfDay = args.timeOfDay ? parseTimeOfDay(args.timeOfDay) : undefined;
@@ -351,10 +356,7 @@ export async function completeReminder(text?: string): Promise<ToolResult> {
 }
 
 export async function triggerContext(tagsInput: string): Promise<ToolResult> {
-  const tags = tagsInput
-    .split(/[,;]+/)
-    .map((t) => t.trim().toLowerCase())
-    .filter(Boolean);
+  const tags = normalizeContextTags(tagsInput);
   if (tags.length === 0) {
     return { ok: false, content: 'Aucun contexte spécifié.' };
   }
@@ -364,7 +366,7 @@ export async function triggerContext(tagsInput: string): Promise<ToolResult> {
     (r) =>
       r.status === 'active' &&
       r.trigger.kind === 'context' &&
-      r.trigger.tags.some((t) => tags.includes(t.toLowerCase())),
+      contextTagsMatch(tags, r.trigger.tags),
   );
 
   if (matching.length === 0) {
@@ -494,7 +496,7 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - add_list_item(list, item) — ajouter un article à une liste
 - toggle_list_item(list, item) — cocher/décocher un article
 - show_lists(list?) — afficher les listes ou une liste
-- create_reminder(text, timeOfDay?, recurrence?, contextTags?) — créer un rappel horaire ou contextuel
+- create_reminder(text, timeOfDay?, recurrence?, contextTags?) — créer un rappel horaire ou contextuel (tags canoniques : travail, maison, courses)
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)

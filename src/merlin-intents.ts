@@ -1,3 +1,4 @@
+import { detectContextTags } from './merlin-context';
 import { executeMerlinTool, type ToolResult } from './merlin-tools';
 
 export interface IntentResult {
@@ -35,35 +36,13 @@ function parseTimeFromText(text: string): { timeOfDay?: string; recurrence?: str
   return { recurrence };
 }
 
-const CONTEXT_MAP: Record<string, string> = {
-  travail: 'travail',
-  bureau: 'travail',
-  maison: 'maison',
-  domicile: 'maison',
-  courses: 'courses',
-  'super marché': 'courses',
-  supermarche: 'courses',
-};
-
-function detectContextTags(text: string): string[] {
-  const lower = text.toLowerCase();
-  const tags = new Set<string>();
-  for (const [phrase, tag] of Object.entries(CONTEXT_MAP)) {
-    if (lower.includes(phrase)) tags.add(tag);
-  }
-  if (/au travail|en rentrant|rentrant du travail/.test(lower)) {
-    tags.add('maison');
-  }
-  return [...tags];
-}
-
 export async function tryFastIntent(rawText: string): Promise<IntentResult> {
   const text = stripMerlinPrefix(rawText.trim());
   if (!text) return { handled: false };
 
   // Context trigger: "je suis au travail"
   const contextMatch = text.match(
-    /^(?:je suis|nous sommes|contexte)\s+(?:au\s+|à\s+|chez\s+)?(.+)/i,
+    /^(?:j[e']?\s*suis|nous sommes|contexte)\s+(?:au\s+|à\s+|a\s+|chez\s+)?(.+)/i,
   );
   if (contextMatch) {
     const phrase = contextMatch[1].trim().toLowerCase();
@@ -233,7 +212,7 @@ export function likelyFastPath(text: string): boolean {
   const t = stripMerlinPrefix(text.trim());
   if (!t) return false;
   return (
-    /^(?:ajoute|rappelle|c'est fait|c est fait|je suis|crée|creer|créer|montre|affiche|mes rappels|coche|décoche|\/|routine\s+)/i.test(
+    /^(?:ajoute|rappelle|c'est fait|c est fait|j[e']?\s*suis|nous sommes|contexte|crée|creer|créer|montre|affiche|mes rappels|coche|décoche|\/|routine\s+)/i.test(
       t,
     ) || /(?:liste|courses)/i.test(t)
   );

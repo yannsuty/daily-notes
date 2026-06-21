@@ -1,12 +1,13 @@
+import { Gallery } from './gallery';
 import { Journal, resetSessionScroll } from './journal';
-import { MindMap } from './mindmap';
 import { Merlin } from './merlin';
 import { MerlinChat } from './merlin-chat';
+import { setDeferredReplyHandler } from './merlin-pending';
 import { getMeta, saveMeta } from './db';
 import {
-  SettingsPage,
   initSyncFromMeta,
   touchVisitMeta,
+  type SettingsCallbacks,
 } from './settings';
 import { syncNow } from './sync';
 import { getStoredPassphrase } from './crypto';
@@ -42,28 +43,23 @@ export async function initApp(root: HTMLElement): Promise<void> {
   const journalPanel = document.createElement('div');
   journalPanel.id = 'tab-journal';
 
-  const thoughtsPanel = document.createElement('div');
-  thoughtsPanel.id = 'tab-thoughts';
-
-  const settingsPanel = document.createElement('div');
-  settingsPanel.id = 'tab-settings';
+  const galleryPanel = document.createElement('div');
+  galleryPanel.id = 'tab-gallery';
 
   mainContainer.appendChild(merlinPanel);
   mainContainer.appendChild(journalPanel);
-  mainContainer.appendChild(thoughtsPanel);
-  mainContainer.appendChild(settingsPanel);
+  mainContainer.appendChild(galleryPanel);
 
   header.appendChild(title);
   header.appendChild(syncIndicator);
 
   let journal: Journal | null = null;
-  let mindMap: MindMap | null = null;
+  let gallery: Gallery | null = null;
   let merlin: Merlin | null = null;
   let merlinChat: MerlinChat | null = null;
-  let settingsPage: SettingsPage | null = null;
   let tabBar: TabBar | null = null;
 
-  const settingsCallbacks = {
+  const settingsCallbacks: SettingsCallbacks = {
     onPassphraseSet: () => {
       void getMeta().then((updatedMeta) => {
         initSyncFromMeta(updatedMeta, () => {
@@ -91,7 +87,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
         });
       }
     },
-    onReanalyzeThoughts: () => mindMap?.resetAiAnalysis() ?? Promise.resolve(),
+    onReanalyzeThoughts: () => gallery?.resetAiAnalysis() ?? Promise.resolve(),
     onMemoryCleared: () => void merlinChat?.refresh(),
   };
 
@@ -106,14 +102,11 @@ export async function initApp(root: HTMLElement): Promise<void> {
   tabBar = new TabBar(tabsHost, {
     onChange: (tab) => {
       merlin?.onTabChange(tab);
-      if (tab === 'thoughts') {
-        void mindMap?.refresh();
+      if (tab === 'gallery') {
+        gallery?.onTabActive();
       }
       if (tab === 'merlin') {
         void merlinChat?.refresh();
-      }
-      if (tab === 'settings') {
-        void settingsPage?.refresh();
       }
     },
   });
@@ -136,21 +129,18 @@ export async function initApp(root: HTMLElement): Promise<void> {
     },
   });
 
-  mindMap = new MindMap({
-    container: thoughtsPanel,
+  gallery = new Gallery({
+    container: galleryPanel,
+    settingsCallbacks,
   });
-
-  settingsPage = new SettingsPage(settingsPanel, settingsCallbacks);
 
   tabBar.registerPanel('merlin', merlinPanel);
   tabBar.registerPanel('journal', journalPanel);
-  tabBar.registerPanel('thoughts', thoughtsPanel);
-  tabBar.registerPanel('settings', settingsPanel);
+  tabBar.registerPanel('gallery', galleryPanel);
 
   await merlinChat.init();
   await journal.init();
-  await mindMap.init();
-  await settingsPage.init();
+  await gallery.init();
 
   merlin = new Merlin({
     journal,
@@ -160,6 +150,13 @@ export async function initApp(root: HTMLElement): Promise<void> {
       void syncNow().then(() => updateSyncIndicator(syncIndicator));
     },
   });
+
+  setDeferredReplyHandler((info) => {
+    void merlinChat?.refresh();
+    void merlin?.onDeferredReply(info.reply);
+    void syncNow().then(() => updateSyncIndicator(syncIndicator));
+  });
+
   if (meta.merlinEnabled) {
     merlin.setEnabled(true);
     void import('./merlin-scheduler').then(({ initMerlinScheduler }) => initMerlinScheduler());

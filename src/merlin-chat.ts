@@ -8,6 +8,7 @@ import {
 import { CONTEXT_CHIPS, likelyFastPath } from './merlin-intents';
 import { createMessageId, getWelcomeMessage, handleUserMessage } from './merlin-agent';
 import { getPaletteShortcuts, toggleShortcutPin } from './merlin-shortcuts';
+import { renderMarkdownToHtml } from './markdown';
 import { getMerlinTtsPrefs, speakMerlin } from './merlin-tts';
 import {
   cancelPendingAutomation,
@@ -285,7 +286,12 @@ export class MerlinChat {
 
     const text = document.createElement('div');
     text.className = 'merlin-chat__text';
-    text.textContent = content;
+    if (role === 'assistant') {
+      text.classList.add('merlin-chat__text--markdown');
+      text.innerHTML = renderMarkdownToHtml(content);
+    } else {
+      text.textContent = content;
+    }
 
     bubble.appendChild(label);
     bubble.appendChild(text);
@@ -421,6 +427,17 @@ export class MerlinChat {
           : errMsg,
       );
       await this.renderMessages();
+      return;
+    }
+
+    if (result.deferred) {
+      this.setAiBanner(true);
+      await this.renderAll();
+      this.onConversationUpdate?.();
+      const prefs = await getMerlinTtsPrefs();
+      if (prefs.enabled && result.content) {
+        await speakMerlin(result.content);
+      }
       return;
     }
 

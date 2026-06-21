@@ -94,6 +94,26 @@ export class Merlin {
     this.merlinChat = chat;
   }
 
+  async onDeferredReply(reply: string): Promise<void> {
+    await this.merlinChat?.refresh();
+    this.onConversationUpdate?.();
+    if (this.tabBar.getActiveTab() !== 'merlin') return;
+    if (this.state === 'off' || this.state === 'dictating') return;
+
+    const resumeAfter = this.state === 'conversing' || this.state === 'idle';
+    await this.speakResponse(reply);
+    if (resumeAfter) {
+      this.state = 'conversing';
+      this.showOverlay('conversing');
+      if (getPendingAutomation()) {
+        this.setStatusHint('Dites « oui » pour confirmer ou « non » pour annuler');
+      } else {
+        this.setStatusHint('Je vous écoute…');
+      }
+      await this.resumeListening();
+    }
+  }
+
   setEnabled(enabled: boolean): void {
     if (enabled) {
       void this.prepare();
@@ -484,6 +504,17 @@ export class Merlin {
     this.conversingText = '';
     this.conversingHypothesis = '';
     this.heardSpeechInSession = false;
+
+    if (result.deferred) {
+      if (result.content) {
+        await this.speakResponse(result.content);
+      }
+      this.state = 'conversing';
+      this.showOverlay('conversing');
+      this.setStatusHint('Je vous écoute…');
+      await this.resumeListening();
+      return;
+    }
 
     if (result.content) {
       await this.speakResponse(result.content);

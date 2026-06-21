@@ -46,7 +46,7 @@ export class SettingsPage {
   }
 
   async init(): Promise<void> {
-    this.container.classList.add('settings-page', 'tab-panel');
+    this.container.classList.add('settings-page');
     await this.render();
   }
 
@@ -366,7 +366,7 @@ export class SettingsPage {
       reanalyzeBtn.disabled = true;
       thoughtsStatusEl.textContent = 'Analyse en cours…';
       void this.callbacks.onReanalyzeThoughts().then(() => {
-        thoughtsStatusEl.textContent = 'Analyse relancée. Consultez l\'onglet Pensées.';
+        thoughtsStatusEl.textContent = 'Analyse relancée. Ouvrez Galerie > Pensées.';
         reanalyzeBtn.disabled = false;
       });
     });

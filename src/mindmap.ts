@@ -43,6 +43,8 @@ type SimLink = SimulationLinkDatum<SimNode> & { weight: number };
 
 export interface MindMapOptions {
   container: HTMLElement;
+  /** Dans la galerie : ne pas appliquer les styles d'onglet racine. */
+  embedded?: boolean;
 }
 
 export class MindMap {
@@ -65,7 +67,10 @@ export class MindMap {
     this.container = options.container;
 
     this.container.innerHTML = '';
-    this.container.classList.add('mindmap', 'tab-panel');
+    this.container.classList.add('mindmap');
+    if (!options.embedded) {
+      this.container.classList.add('tab-panel');
+    }
 
     const toolbar = document.createElement('div');
     toolbar.className = 'mindmap__toolbar';

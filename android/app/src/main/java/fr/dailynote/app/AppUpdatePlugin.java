@@ -153,7 +153,6 @@ public class AppUpdatePlugin extends Plugin {
 
         new Thread(() -> {
             try {
-                ApkDownloadManager manager = createDownloadManager();
                 File apkFile = manager.download(
                         url,
                         expectedVersionCode,
