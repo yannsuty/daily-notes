@@ -436,6 +436,10 @@ body {
   padding: 1rem;
 }
 
+.gallery__home[hidden] {
+  display: none !important;
+}
+
 .gallery__title {
   margin: 0 0 1rem;
   font-size: 1.125rem;
@@ -503,6 +507,10 @@ body {
   min-height: 0;
 }
 
+.gallery__view[hidden] {
+  display: none !important;
+}
+
 .gallery__header {
   display: flex;
   align-items: center;
@@ -536,8 +544,27 @@ body {
   overflow: hidden;
 }
 
+.gallery__app-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gallery__app-panel[hidden] {
+  display: none !important;
+}
+
 .gallery__content .mindmap {
   height: 100%;
+}
+
+.gallery__app-panel .mindmap,
+.gallery__app-panel .settings-page {
+  height: 100%;
+}
+
+.gallery__app-panel .settings-page__header {
+  display: none;
 }
 
 .modal--wide {

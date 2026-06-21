@@ -5,9 +5,9 @@ import { MerlinChat } from './merlin-chat';
 import { setDeferredReplyHandler } from './merlin-pending';
 import { getMeta, saveMeta } from './db';
 import {
-  SettingsPage,
   initSyncFromMeta,
   touchVisitMeta,
+  type SettingsCallbacks,
 } from './settings';
 import { syncNow } from './sync';
 import { getStoredPassphrase } from './crypto';
@@ -46,13 +46,9 @@ export async function initApp(root: HTMLElement): Promise<void> {
   const galleryPanel = document.createElement('div');
   galleryPanel.id = 'tab-gallery';
 
-  const settingsPanel = document.createElement('div');
-  settingsPanel.id = 'tab-settings';
-
   mainContainer.appendChild(merlinPanel);
   mainContainer.appendChild(journalPanel);
   mainContainer.appendChild(galleryPanel);
-  mainContainer.appendChild(settingsPanel);
 
   header.appendChild(title);
   header.appendChild(syncIndicator);
@@ -61,10 +57,9 @@ export async function initApp(root: HTMLElement): Promise<void> {
   let gallery: Gallery | null = null;
   let merlin: Merlin | null = null;
   let merlinChat: MerlinChat | null = null;
-  let settingsPage: SettingsPage | null = null;
   let tabBar: TabBar | null = null;
 
-  const settingsCallbacks = {
+  const settingsCallbacks: SettingsCallbacks = {
     onPassphraseSet: () => {
       void getMeta().then((updatedMeta) => {
         initSyncFromMeta(updatedMeta, () => {
@@ -113,9 +108,6 @@ export async function initApp(root: HTMLElement): Promise<void> {
       if (tab === 'merlin') {
         void merlinChat?.refresh();
       }
-      if (tab === 'settings') {
-        void settingsPage?.refresh();
-      }
     },
   });
 
@@ -139,19 +131,16 @@ export async function initApp(root: HTMLElement): Promise<void> {
 
   gallery = new Gallery({
     container: galleryPanel,
+    settingsCallbacks,
   });
-
-  settingsPage = new SettingsPage(settingsPanel, settingsCallbacks);
 
   tabBar.registerPanel('merlin', merlinPanel);
   tabBar.registerPanel('journal', journalPanel);
   tabBar.registerPanel('gallery', galleryPanel);
-  tabBar.registerPanel('settings', settingsPanel);
 
   await merlinChat.init();
   await journal.init();
   await gallery.init();
-  await settingsPage.init();
 
   merlin = new Merlin({
     journal,
