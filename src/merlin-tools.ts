@@ -1,3 +1,4 @@
+import { normalizeReminderArgs } from '../lib/merlin-agent/reminder-text';
 import { contextTagsMatch, detectContextTags, normalizeContextTags } from './merlin-context';
 import {
   deleteMerlinList,
@@ -250,14 +251,15 @@ export async function createReminder(args: {
   recurrence?: string;
   contextTags?: string;
 }): Promise<ToolResult> {
-  const text = args.text.trim();
+  const normalized = normalizeReminderArgs(args);
+  const text = normalized.text.trim();
   if (!text) return { ok: false, content: 'Rappel vide.' };
 
   const now = Date.now();
   let trigger: MerlinReminder['trigger'];
 
-  const hasTimeHint = !!(args.timeOfDay || args.at);
-  let contextInput = args.contextTags?.trim();
+  const hasTimeHint = !!(normalized.timeOfDay || normalized.at);
+  let contextInput = normalized.contextTags?.trim();
   if (!contextInput && text && !hasTimeHint) {
     const detected = detectContextTags(text);
     if (detected.length > 0) contextInput = detected.join(',');
@@ -267,15 +269,17 @@ export async function createReminder(args: {
     const tags = normalizeContextTags(contextInput);
     trigger = { kind: 'context', tags: tags.length > 0 ? tags : ['general'] };
   } else {
-    const timeOfDay = args.timeOfDay ? parseTimeOfDay(args.timeOfDay) : undefined;
+    const timeOfDay = normalized.timeOfDay ? parseTimeOfDay(normalized.timeOfDay) : undefined;
     let at: number | undefined;
-    if (args.at) {
-      const parsed = Date.parse(args.at);
+    if (normalized.at) {
+      const parsed = Date.parse(normalized.at);
       if (!Number.isNaN(parsed)) at = parsed;
     }
     const recurrence =
-      args.recurrence === 'daily' || args.recurrence === 'weekly' || args.recurrence === 'once'
-        ? args.recurrence
+      normalized.recurrence === 'daily' ||
+      normalized.recurrence === 'weekly' ||
+      normalized.recurrence === 'once'
+        ? normalized.recurrence
         : timeOfDay
           ? 'daily'
           : 'once';
@@ -467,7 +471,7 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - add_list_item(list, item) — ajouter un article à une liste
 - toggle_list_item(list, item) — cocher/décocher un article
 - show_lists(list?) — afficher les listes ou une liste
-- create_reminder(text, timeOfDay?, recurrence?, contextTags?) — créer un rappel horaire ou contextuel (tags canoniques : travail, maison, courses)
+- create_reminder(text, timeOfDay?, recurrence?, contextTags?) — créer un rappel contextuel ou horaire. text = action seule ; contextTags = lieu (travail, maison, courses). Ex. « quand je rentre à la maison je dois sortir les poubelles » → text « sortir les poubelles », contextTags « maison »
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)

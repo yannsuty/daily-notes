@@ -1,4 +1,5 @@
 import { addDays, formatDateLabel, todayKey } from '../../../lib/merlin-agent/dates.js';
+import { normalizeReminderArgs } from '../../../lib/merlin-agent/reminder-text.js';
 import type {
   AgentContext,
   AgentMutations,
@@ -324,28 +325,31 @@ export class AgentStore {
     recurrence?: string;
     contextTags?: string;
   }): ToolResult {
-    const text = args.text.trim();
+    const normalized = normalizeReminderArgs(args);
+    const text = normalized.text.trim();
     if (!text) return { ok: false, content: 'Rappel vide.' };
 
     const now = Date.now();
     let trigger: MerlinReminder['trigger'];
 
-    if (args.contextTags) {
-      const tags = args.contextTags
+    if (normalized.contextTags) {
+      const tags = normalized.contextTags
         .split(/[,;]+/)
         .map((t) => t.trim().toLowerCase())
         .filter(Boolean);
       trigger = { kind: 'context', tags: tags.length > 0 ? tags : ['general'] };
     } else {
-      const timeOfDay = args.timeOfDay ? parseTimeOfDay(args.timeOfDay) : undefined;
+      const timeOfDay = normalized.timeOfDay ? parseTimeOfDay(normalized.timeOfDay) : undefined;
       let at: number | undefined;
-      if (args.at) {
-        const parsed = Date.parse(args.at);
+      if (normalized.at) {
+        const parsed = Date.parse(normalized.at);
         if (!Number.isNaN(parsed)) at = parsed;
       }
       const recurrence =
-        args.recurrence === 'daily' || args.recurrence === 'weekly' || args.recurrence === 'once'
-          ? args.recurrence
+        normalized.recurrence === 'daily' ||
+        normalized.recurrence === 'weekly' ||
+        normalized.recurrence === 'once'
+          ? normalized.recurrence
           : timeOfDay
             ? 'daily'
             : 'once';

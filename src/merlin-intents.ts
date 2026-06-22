@@ -1,3 +1,4 @@
+import { parseContextualReminder } from '../lib/merlin-agent/reminder-text';
 import { detectContextTags } from './merlin-context';
 import { executeMerlinTool, type ToolResult } from './merlin-tools';
 
@@ -129,6 +130,21 @@ export async function tryFastIntent(rawText: string): Promise<IntentResult> {
     };
   }
 
+  // Contextual reminder: "quand je rentre à la maison je dois sortir les poubelles"
+  const contextual = parseContextualReminder(text);
+  if (contextual) {
+    const result = await executeMerlinTool('create_reminder', {
+      text: contextual.text,
+      contextTags: contextual.contextTags.join(','),
+    });
+    return {
+      handled: true,
+      reply: result.content,
+      sideEffects: result.mutation,
+      usedTool: 'create_reminder',
+    };
+  }
+
   // Reminder
   const reminderMatch = text.match(
     /^(?:rappelle[- ]moi(?: de)?|mets(?: un)? rappel(?: pour)?)\s+(.+)/i,
@@ -212,7 +228,7 @@ export function likelyFastPath(text: string): boolean {
   const t = stripMerlinPrefix(text.trim());
   if (!t) return false;
   return (
-    /^(?:ajoute|rappelle|c'est fait|c est fait|j[e']?\s*suis|nous sommes|contexte|crée|creer|créer|montre|affiche|mes rappels|coche|décoche|\/|routine\s+)/i.test(
+    /^(?:ajoute|rappelle|c'est fait|c est fait|j[e']?\s*suis|nous sommes|contexte|crée|creer|créer|montre|affiche|mes rappels|coche|décoche|\/|routine\s+|quand|lorsque|en\s+rentrant)/i.test(
       t,
     ) || /(?:liste|courses)/i.test(t)
   );
