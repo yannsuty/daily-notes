@@ -1,24 +1,5 @@
 import { CONTEXT_PHRASES, detectContextTags, normalizeContextTags } from './context.js';
 
-const LOCATION_FRAGMENT =
-  '(?:à\\s+la\\s+maison|a\\s+la\\s+maison|au\\s+travail|chez\\s+moi|au\\s+bureau)';
-
-const CONDITIONAL_PATTERNS: RegExp[] = [
-  new RegExp(
-    `^(?:quand|lorsque)\\s+je\\s+rentre(?:\\s+${LOCATION_FRAGMENT})?(?:\\s*,)?\\s*(?:je\\s+dois\\s+|il\\s+faut\\s+|de\\s+)?(.+)$`,
-    'i',
-  ),
-  new RegExp(
-    `^en\\s+rentrant(?:\\s+${LOCATION_FRAGMENT})?(?:\\s*,)?\\s*(?:je\\s+dois\\s+|il\\s+faut\\s+|de\\s+)?(.+)$`,
-    'i',
-  ),
-  new RegExp(
-    `^(?:quand|lorsque)\\s+je\\s+suis\\s+${LOCATION_FRAGMENT}(?:\\s*,)?\\s*(?:je\\s+dois\\s+|il\\s+faut\\s+|de\\s+)?(.+)$`,
-    'i',
-  ),
-  /^(?:je\s+dois|il\s+faut|faut)\s+(.+?)\s+(?:quand|lorsque)\s+je\s+(?:rentre|suis|arrive)/i,
-];
-
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -42,29 +23,6 @@ export function cleanReminderActionText(text: string): string {
   return cleaned.replace(/\s+/g, ' ').replace(/^[,.\s]+|[,.\s]+$/g, '').trim();
 }
 
-/** Extrait action + contexte d'une phrase du type « quand je rentre à la maison je dois … ». */
-export function parseContextualReminder(
-  rawText: string,
-): { text: string; contextTags: string[] } | null {
-  const text = rawText.trim();
-  if (!text) return null;
-
-  for (const pattern of CONDITIONAL_PATTERNS) {
-    const match = text.match(pattern);
-    if (!match?.[1]) continue;
-
-    const contextTags = detectContextTags(text);
-    if (contextTags.length === 0) continue;
-
-    const action = cleanReminderActionText(match[1].trim());
-    if (!action) continue;
-
-    return { text: action, contextTags };
-  }
-
-  return null;
-}
-
 export interface ReminderArgsInput {
   text: string;
   timeOfDay?: string;
@@ -73,24 +31,13 @@ export interface ReminderArgsInput {
   contextTags?: string;
 }
 
-/** Normalise texte et contextTags avant création d'un rappel. */
+/** Filet de sécurité après extraction IA ou appel agent. */
 export function normalizeReminderArgs<T extends ReminderArgsInput>(args: T): T {
   const hasTime = !!(args.timeOfDay?.trim() || args.at?.trim());
   let text = args.text.trim();
   let contextTags = args.contextTags?.trim();
 
   if (!text) return args;
-
-  if (!hasTime) {
-    const parsed = parseContextualReminder(text);
-    if (parsed) {
-      return {
-        ...args,
-        text: parsed.text,
-        contextTags: parsed.contextTags.join(','),
-      };
-    }
-  }
 
   if (contextTags && !hasTime) {
     const tags = normalizeContextTags(contextTags);

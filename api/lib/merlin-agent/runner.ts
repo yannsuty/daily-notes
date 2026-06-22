@@ -1,12 +1,14 @@
 import { assessQueryDepth, extractMemoryQueries } from '../../../lib/merlin-agent/complexity.js';
 import { gatherMemory } from '../../../lib/merlin-agent/memory.js';
 import { parseJsonFromAi, parseToolCall } from '../../../lib/merlin-agent/parse.js';
+import { needsReminderExtraction } from '../../../lib/merlin-agent/reminder-extract.js';
 import {
   buildSystemPrompt,
   PLANNER_PROMPT,
   SYNTHESIS_PROMPT,
 } from '../../../lib/merlin-agent/prompts.js';
 import { callMerlinLlm } from './llm.js';
+import { extractReminderFields } from './reminder-extract.js';
 import { AgentStore, isMutationTool, templateReplyForTool } from './tools.js';
 import type {
   AgentClientConfig,
@@ -261,7 +263,26 @@ export async function runMerlinAgent(
         .slice(0, 120) || undefined,
     }, onStep);
 
-    const toolResult = store.executeTool(toolCall.name, toolCall.args ?? {});
+    let toolArgs = toolCall.args ?? {};
+
+    if (toolCall.name === 'create_reminder') {
+      const text = toolArgs.text ?? '';
+      const contextTags = toolArgs.contextTags ?? toolArgs.tags;
+      if (needsReminderExtraction(text, contextTags)) {
+        const extracted = await extractReminderFields(trimmed, config, options?.referer);
+        if (extracted?.isReminder && extracted.text) {
+          toolArgs = {
+            ...toolArgs,
+            text: extracted.text,
+            contextTags: extracted.contextTags?.join(',') ?? contextTags,
+            timeOfDay: extracted.timeOfDay ?? toolArgs.timeOfDay ?? toolArgs.time,
+            recurrence: extracted.recurrence ?? toolArgs.recurrence,
+          };
+        }
+      }
+    }
+
+    const toolResult = store.executeTool(toolCall.name, toolArgs);
     if (toolResult.mutation) lastSideEffect = toolResult.mutation;
 
     const template = templateReplyForTool(toolCall.name, toolResult);
