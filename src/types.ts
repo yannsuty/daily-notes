@@ -24,6 +24,8 @@ export interface MerlinMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: number;
+  /** Horodatage de la dernière modification du contenu (ex. placeholder → réponse). */
+  updatedAt?: number;
 }
 
 export interface MerlinFact {

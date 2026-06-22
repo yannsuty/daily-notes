@@ -8,6 +8,7 @@ export interface MerlinMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 export interface MerlinFact {
