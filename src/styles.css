@@ -1474,6 +1474,165 @@ body {
   line-height: 1.4;
 }
 
+/* Listes page */
+.listes-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+
+.listes-page__header {
+  flex-shrink: 0;
+  padding: 1rem 1rem 0.5rem;
+}
+
+.listes-page__title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.listes-page__subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.listes-page__create {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 1rem 0.75rem;
+  flex-shrink: 0;
+}
+
+.listes-page__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 1rem 1rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.listes-page__empty {
+  margin: 1rem 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.listes-page__card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.875rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.listes-page__card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.listes-page__card-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.listes-page__card-meta {
+  margin: 0.15rem 0 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.listes-page__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.listes-page__item {
+  margin: 0;
+}
+
+.listes-page__item-btn {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0;
+  font-size: 0.9rem;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.listes-page__item-btn:hover {
+  color: var(--accent);
+}
+
+.listes-page__item--done .listes-page__item-text {
+  text-decoration: line-through;
+  color: var(--muted);
+}
+
+.listes-page__check {
+  flex-shrink: 0;
+  width: 1.1rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.listes-page__item--done .listes-page__check {
+  color: var(--accent);
+}
+
+.listes-page__item-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.listes-page__no-items {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.listes-page__add-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.listes-page__input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.625rem;
+  font: inherit;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+}
+
+.listes-page__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* Settings page */
 .settings-page {
   display: flex;

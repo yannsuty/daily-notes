@@ -1,6 +1,6 @@
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-export type TabIconId = 'merlin' | 'journal' | 'gallery';
+export type TabIconId = 'merlin' | 'journal' | 'listes' | 'gallery';
 
 const TAB_ICON_PATHS: Record<TabIconId, string> = {
   merlin: `
@@ -18,6 +18,14 @@ const TAB_ICON_PATHS: Record<TabIconId, string> = {
     <path d="M10 12h8" />
     <path d="M10 16h6" />
   `,
+  listes: `
+    <path d="M8 6h13" />
+    <path d="M8 12h13" />
+    <path d="M8 18h13" />
+    <path d="M3.5 6l1 1 1.5-1.5" />
+    <path d="M3.5 12l1 1 1.5-1.5" />
+    <path d="M3.5 18l1 1 1.5-1.5" />
+  `,
   gallery: `
     <rect x="3" y="3" width="7" height="7" rx="1.5" />
     <rect x="14" y="3" width="7" height="7" rx="1.5" />
@@ -29,6 +37,7 @@ const TAB_ICON_PATHS: Record<TabIconId, string> = {
 export const TAB_LABELS: Record<TabIconId, string> = {
   merlin: 'Merlin',
   journal: 'Journal',
+  listes: 'Listes',
   gallery: 'Galerie',
 };
 
