@@ -1,12 +1,14 @@
-import { createSettingsIcon, createThoughtsIcon } from './icons';
+import { createListesIcon, createSettingsIcon, createThoughtsIcon } from './icons';
+import { ListesPage } from './listes';
 import { MindMap } from './mindmap';
 import { SettingsPage, type SettingsCallbacks } from './settings';
 
-export type GalleryView = 'home' | 'thoughts' | 'settings';
+export type GalleryView = 'home' | 'thoughts' | 'listes' | 'settings';
 
 export interface GalleryOptions {
   container: HTMLElement;
   settingsCallbacks: SettingsCallbacks;
+  onListesUpdate?: () => void;
 }
 
 export class Gallery {
@@ -14,15 +16,19 @@ export class Gallery {
   private homeView: HTMLElement;
   private appView: HTMLElement;
   private thoughtsPanel: HTMLElement;
+  private listesPanel: HTMLElement;
   private settingsPanel: HTMLElement;
   private viewTitle: HTMLElement;
   private currentView: GalleryView = 'home';
   private mindMap: MindMap | null = null;
+  private listesPage: ListesPage | null = null;
   private settingsPage: SettingsPage | null = null;
   private settingsCallbacks: SettingsCallbacks;
+  private onListesUpdate?: () => void;
 
   constructor(options: GalleryOptions) {
     this.settingsCallbacks = options.settingsCallbacks;
+    this.onListesUpdate = options.onListesUpdate;
     this.container = options.container;
     this.container.innerHTML = '';
     this.container.classList.add('gallery', 'tab-panel');
@@ -37,6 +43,14 @@ export class Gallery {
     const grid = document.createElement('div');
     grid.className = 'gallery__grid';
 
+    grid.appendChild(
+      this.createAppCard({
+        label: 'Listes',
+        description: 'Courses, tâches et listes Merlin',
+        icon: createListesIcon(),
+        onOpen: () => this.openView('listes'),
+      }),
+    );
     grid.appendChild(
       this.createAppCard({
         label: 'Pensées',
@@ -83,6 +97,10 @@ export class Gallery {
     this.thoughtsPanel.className = 'gallery__app-panel';
     this.thoughtsPanel.hidden = true;
 
+    this.listesPanel = document.createElement('div');
+    this.listesPanel.className = 'gallery__app-panel';
+    this.listesPanel.hidden = true;
+
     this.settingsPanel = document.createElement('div');
     this.settingsPanel.className = 'gallery__app-panel';
     this.settingsPanel.hidden = true;
@@ -91,6 +109,7 @@ export class Gallery {
     header.appendChild(this.viewTitle);
     this.appView.appendChild(header);
     this.appView.appendChild(this.thoughtsPanel);
+    this.appView.appendChild(this.listesPanel);
     this.appView.appendChild(this.settingsPanel);
 
     this.container.appendChild(this.homeView);
@@ -99,8 +118,13 @@ export class Gallery {
 
   async init(): Promise<void> {
     this.mindMap = new MindMap({ container: this.thoughtsPanel, embedded: true });
+    this.listesPage = new ListesPage(this.listesPanel, {
+      embedded: true,
+      onUpdate: () => this.onListesUpdate?.(),
+    });
     this.settingsPage = new SettingsPage(this.settingsPanel, this.settingsCallbacks);
     await this.mindMap.init();
+    await this.listesPage.init();
     await this.settingsPage.init();
   }
 
@@ -108,13 +132,24 @@ export class Gallery {
     if (this.currentView === 'thoughts') {
       void this.mindMap?.refresh();
     }
+    if (this.currentView === 'listes') {
+      void this.listesPage?.refresh();
+    }
     if (this.currentView === 'settings') {
       void this.settingsPage?.refresh();
     }
   }
 
+  refreshListes(): Promise<void> {
+    return this.listesPage?.refresh() ?? Promise.resolve();
+  }
+
   openThoughts(): void {
     this.openView('thoughts');
+  }
+
+  openListes(): void {
+    this.openView('listes');
   }
 
   openSettings(): void {
@@ -162,11 +197,16 @@ export class Gallery {
     this.homeView.hidden = showingApp;
     this.appView.hidden = !showingApp;
     this.thoughtsPanel.hidden = view !== 'thoughts';
+    this.listesPanel.hidden = view !== 'listes';
     this.settingsPanel.hidden = view !== 'settings';
 
     if (view === 'thoughts') {
       this.viewTitle.textContent = 'Pensées';
       void this.mindMap?.refresh();
+    }
+    if (view === 'listes') {
+      this.viewTitle.textContent = 'Listes';
+      void this.listesPage?.refresh();
     }
     if (view === 'settings') {
       this.viewTitle.textContent = 'Réglages';

@@ -8,22 +8,28 @@ import { createEntityId } from './merlin-tools';
 import type { MerlinList } from './types';
 
 export interface ListesPageOptions {
+  embedded?: boolean;
   onUpdate?: () => void;
 }
 
 export class ListesPage {
   private container: HTMLElement;
   private scrollEl: HTMLElement | null = null;
+  private embedded: boolean;
   private onUpdate?: () => void;
 
   constructor(container: HTMLElement, options: ListesPageOptions = {}) {
     this.container = container;
+    this.embedded = options.embedded ?? false;
     this.onUpdate = options.onUpdate;
   }
 
   async init(): Promise<void> {
     this.container.innerHTML = '';
-    this.container.classList.add('listes-page', 'tab-panel');
+    this.container.classList.add('listes-page');
+    if (!this.embedded) {
+      this.container.classList.add('tab-panel');
+    }
 
     const header = document.createElement('header');
     header.className = 'listes-page__header';

@@ -1,6 +1,5 @@
 import { Gallery } from './gallery';
 import { Journal, resetSessionScroll } from './journal';
-import { ListesPage } from './listes';
 import { Merlin } from './merlin';
 import { MerlinChat } from './merlin-chat';
 import { setDeferredReplyHandler } from './merlin-pending';
@@ -46,26 +45,25 @@ export async function initApp(root: HTMLElement): Promise<void> {
   const journalPanel = document.createElement('div');
   journalPanel.id = 'tab-journal';
 
-  const listesPanel = document.createElement('div');
-  listesPanel.id = 'tab-listes';
-
   const galleryPanel = document.createElement('div');
   galleryPanel.id = 'tab-gallery';
 
   mainContainer.appendChild(merlinPanel);
   mainContainer.appendChild(journalPanel);
-  mainContainer.appendChild(listesPanel);
   mainContainer.appendChild(galleryPanel);
 
   header.appendChild(title);
   header.appendChild(syncIndicator);
 
   let journal: Journal | null = null;
-  let listesPage: ListesPage | null = null;
   let gallery: Gallery | null = null;
   let merlin: Merlin | null = null;
   let merlinChat: MerlinChat | null = null;
   let tabBar: TabBar | null = null;
+
+  const refreshListes = (): void => {
+    void gallery?.refreshListes();
+  };
 
   const settingsCallbacks: SettingsCallbacks = {
     onPassphraseSet: () => {
@@ -73,7 +71,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
         initSyncFromMeta(updatedMeta, () => {
           journal?.refreshAfterSync();
           void merlinChat?.refresh();
-          void listesPage?.refresh();
+          refreshListes();
           updateSyncIndicator(syncIndicator);
         });
       });
@@ -81,7 +79,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
     onSyncStatus: () => {
       journal?.refreshAfterSync();
       void merlinChat?.refresh();
-      void listesPage?.refresh();
+      refreshListes();
       updateSyncIndicator(syncIndicator);
     },
     onMerlinChange: (enabled: boolean, fromUserGesture?: boolean) => {
@@ -100,7 +98,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
     onReanalyzeThoughts: () => gallery?.resetAiAnalysis() ?? Promise.resolve(),
     onMemoryCleared: () => {
       void merlinChat?.refresh();
-      void listesPage?.refresh();
+      refreshListes();
     },
   };
 
@@ -121,16 +119,13 @@ export async function initApp(root: HTMLElement): Promise<void> {
       if (tab === 'merlin') {
         void merlinChat?.refresh();
       }
-      if (tab === 'listes') {
-        void listesPage?.refresh();
-      }
     },
   });
 
   merlinChat = new MerlinChat({
     container: merlinPanel,
     onConversationUpdate: () => {
-      void listesPage?.refresh();
+      refreshListes();
       void syncNow().then(() => updateSyncIndicator(syncIndicator));
     },
     onVoiceRequest: () => {
@@ -146,26 +141,21 @@ export async function initApp(root: HTMLElement): Promise<void> {
     },
   });
 
-  listesPage = new ListesPage(listesPanel, {
-    onUpdate: () => {
+  gallery = new Gallery({
+    container: galleryPanel,
+    settingsCallbacks,
+    onListesUpdate: () => {
       void merlinChat?.refresh();
       void syncNow().then(() => updateSyncIndicator(syncIndicator));
     },
   });
 
-  gallery = new Gallery({
-    container: galleryPanel,
-    settingsCallbacks,
-  });
-
   tabBar.registerPanel('merlin', merlinPanel);
   tabBar.registerPanel('journal', journalPanel);
-  tabBar.registerPanel('listes', listesPanel);
   tabBar.registerPanel('gallery', galleryPanel);
 
   await merlinChat.init();
   await journal.init();
-  await listesPage.init();
   await gallery.init();
 
   merlin = new Merlin({
@@ -173,14 +163,14 @@ export async function initApp(root: HTMLElement): Promise<void> {
     tabBar,
     merlinChat,
     onConversationUpdate: () => {
-      void listesPage?.refresh();
+      refreshListes();
       void syncNow().then(() => updateSyncIndicator(syncIndicator));
     },
   });
 
   setDeferredReplyHandler((info) => {
     void merlinChat?.refresh();
-    void listesPage?.refresh();
+    refreshListes();
     void merlin?.onDeferredReply(info.reply);
     void syncNow().then(() => updateSyncIndicator(syncIndicator));
   });
@@ -189,7 +179,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
     void resumePendingAgentJobs().then(async (completed) => {
       if (completed > 0) {
         await merlinChat?.refresh();
-        await listesPage?.refresh();
+        await gallery?.refreshListes();
         merlinChat?.setBackgroundComplete();
         void syncNow().then(() => updateSyncIndicator(syncIndicator));
       }
@@ -225,13 +215,13 @@ export async function initApp(root: HTMLElement): Promise<void> {
     initSyncFromMeta(meta, () => {
       journal?.refreshAfterSync();
       void merlinChat?.refresh();
-      void listesPage?.refresh();
+      refreshListes();
       updateSyncIndicator(syncIndicator);
     });
     void syncNow().then(() => {
       journal?.refreshAfterSync();
       void merlinChat?.refresh();
-      void listesPage?.refresh();
+      refreshListes();
       updateSyncIndicator(syncIndicator);
     });
   }

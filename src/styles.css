@@ -559,11 +559,13 @@ body {
 }
 
 .gallery__app-panel .mindmap,
-.gallery__app-panel .settings-page {
+.gallery__app-panel .settings-page,
+.gallery__app-panel .listes-page {
   height: 100%;
 }
 
-.gallery__app-panel .settings-page__header {
+.gallery__app-panel .settings-page__header,
+.gallery__app-panel .listes-page__header {
   display: none;
 }
 
