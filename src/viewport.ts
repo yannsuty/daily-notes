@@ -9,6 +9,7 @@ export function initVisualViewport(): void {
   const vv = window.visualViewport;
   if (!vv) {
     document.documentElement.style.setProperty('--visual-viewport-height', '100dvh');
+    updateShellLayoutVars();
     return;
   }
 
@@ -21,6 +22,7 @@ export function initVisualViewport(): void {
     document.documentElement.style.setProperty('--visual-viewport-offset-top', `${offsetTop}px`);
     document.documentElement.style.setProperty('--keyboard-inset', `${keyboardInset}px`);
     document.documentElement.classList.toggle('keyboard-open', keyboardInset > 48);
+    updateShellLayoutVars();
 
     for (const fn of listeners) fn();
   };
@@ -42,4 +44,15 @@ export function initVisualViewport(): void {
 export function onViewportChange(listener: ViewportListener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Mesure la barre d'onglets pour éviter un décalage sous le composer Merlin. */
+export function updateShellLayoutVars(): void {
+  const tabsHost = document.querySelector<HTMLElement>('.app__nav');
+  if (tabsHost) {
+    document.documentElement.style.setProperty(
+      '--tabs-height',
+      `${tabsHost.getBoundingClientRect().height}px`,
+    );
+  }
 }

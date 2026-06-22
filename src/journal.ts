@@ -1,7 +1,7 @@
 import { getDay, getDays, listDayKeysBefore, saveDay } from './db';
 import type { AppMeta, ScrollAnchor } from './types';
 import { addDays, formatDateLabel, todayKey } from './types';
-import { onViewportChange } from './viewport';
+import { onViewportChange, updateShellLayoutVars } from './viewport';
 
 const LAZY_LOAD_BATCH = 7;
 const SAVE_DEBOUNCE_MS = 300;
@@ -192,7 +192,6 @@ export class Journal {
 
   private updateViewportVars(): void {
     const appHeader = document.querySelector<HTMLElement>('.app__header');
-    const tabsHost = document.querySelector<HTMLElement>('.app__nav');
     const dayHeader = this.scrollEl.querySelector<HTMLElement>(
       '.day:last-child .day__header',
     );
@@ -204,12 +203,7 @@ export class Journal {
       );
     }
 
-    if (tabsHost) {
-      document.documentElement.style.setProperty(
-        '--tabs-height',
-        `${tabsHost.getBoundingClientRect().height}px`,
-      );
-    }
+    updateShellLayoutVars();
 
     if (dayHeader) {
       document.documentElement.style.setProperty(
