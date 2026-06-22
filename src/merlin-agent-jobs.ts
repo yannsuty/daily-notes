@@ -53,6 +53,11 @@ export function shouldUseBackgroundAgent(): boolean {
   return Capacitor.isNativePlatform();
 }
 
+/** Job serveur : utile si l'app est déjà en arrière-plan ; sinon flux direct en premier plan. */
+export function shouldStartBackgroundAgentJob(): boolean {
+  return shouldUseBackgroundAgent() && document.visibilityState !== 'visible';
+}
+
 export function registerAgentJobResume(onResume: () => void): () => void {
   const handler = (): void => {
     if (document.visibilityState === 'visible') {

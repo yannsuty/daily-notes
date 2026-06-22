@@ -191,6 +191,7 @@ export async function updateMerlinMessageContent(
   const message = conv.messages.find((m) => m.id === messageId);
   if (!message) return null;
   message.content = content;
+  message.updatedAt = Date.now();
   conv.updatedAt = Date.now();
   await saveMerlinConversation(conv);
   return conv;
@@ -516,7 +517,15 @@ export function mergeMerlinData(
   }
   for (const msg of remote.conversation.messages) {
     const existing = messageMap.get(msg.id);
-    if (!existing || msg.createdAt >= existing.createdAt) {
+    if (!existing) {
+      messageMap.set(msg.id, msg);
+      continue;
+    }
+    const localTs = existing.updatedAt ?? existing.createdAt;
+    const remoteTs = msg.updatedAt ?? msg.createdAt;
+    if (remoteTs > localTs) {
+      messageMap.set(msg.id, msg);
+    } else if (remoteTs === localTs && msg.content.length > existing.content.length) {
       messageMap.set(msg.id, msg);
     }
   }

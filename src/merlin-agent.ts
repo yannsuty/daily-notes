@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import {
   chatCompletion,
   LLM_UNAVAILABLE_MSG,
@@ -17,7 +18,7 @@ import { runServerAgent, startBackgroundAgentJob } from './merlin-agent-client';
 import {
   MERLIN_THINKING_PLACEHOLDER,
   savePendingAgentJob,
-  shouldUseBackgroundAgent,
+  shouldStartBackgroundAgentJob,
 } from './merlin-agent-jobs';
 import { pollPendingJobUntilDone } from './merlin-agent-resume';
 import { recordShortcutUsage } from './merlin-shortcuts';
@@ -185,6 +186,44 @@ export interface HandleUserMessageOptions {
   onAgentStep?: (step: AgentStep) => void;
 }
 
+async function runBackgroundAgentJobFlow(
+  trimmed: string,
+  options?: HandleUserMessageOptions,
+): Promise<AgentReply | { backgroundPending: true }> {
+  const placeholderId = createMessageId();
+  await appendMerlinMessage({
+    id: placeholderId,
+    role: 'assistant',
+    content: MERLIN_THINKING_PLACEHOLDER,
+    createdAt: Date.now(),
+  });
+
+  const context = await buildAgentContext();
+  const started = await startBackgroundAgentJob(trimmed, context);
+  savePendingAgentJob({
+    jobId: started.jobId,
+    userText: trimmed,
+    placeholderId,
+    startedAt: Date.now(),
+  });
+
+  const polled = await pollPendingJobUntilDone(
+    {
+      jobId: started.jobId,
+      userText: trimmed,
+      placeholderId,
+      startedAt: Date.now(),
+    },
+    { onStep: options?.onAgentStep },
+  );
+
+  if ('backgroundPending' in polled && polled.backgroundPending) {
+    return { ok: true, content: MERLIN_THINKING_PLACEHOLDER, backgroundPending: true };
+  }
+
+  return polled as AgentReply;
+}
+
 async function appendExchange(userText: string, reply: string): Promise<void> {
   const assistantMsg: MerlinMessage = {
     id: createMessageId(),
@@ -291,69 +330,63 @@ export async function handleUserMessage(
 
   void maybeCompressConversation();
 
-  if (shouldUseBackgroundAgent()) {
-    const placeholderId = createMessageId();
-    await appendMerlinMessage({
-      id: placeholderId,
-      role: 'assistant',
-      content: MERLIN_THINKING_PLACEHOLDER,
-      createdAt: Date.now(),
-    });
-
-    const context = await buildAgentContext();
-    const started = await startBackgroundAgentJob(trimmed, context);
-    savePendingAgentJob({
-      jobId: started.jobId,
-      userText: trimmed,
-      placeholderId,
-      startedAt: Date.now(),
-    });
-
-    const polled = await pollPendingJobUntilDone(
-      {
-        jobId: started.jobId,
-        userText: trimmed,
-        placeholderId,
-        startedAt: Date.now(),
-      },
-      { onStep: options?.onAgentStep },
-    );
-
-    if ('backgroundPending' in polled && polled.backgroundPending) {
-      return { ok: true, content: MERLIN_THINKING_PLACEHOLDER, backgroundPending: true };
-    }
-
-    return polled as AgentReply;
+  if (shouldStartBackgroundAgentJob()) {
+    return runBackgroundAgentJobFlow(trimmed, options) as Promise<AgentReply>;
   }
 
   const context = await buildAgentContext();
-  const agentResult = await runServerAgent(trimmed, context, {
-    onStep: options?.onAgentStep,
-    stream: !!options?.onAgentStep,
-  });
+  const useNativeAbortFallback = Capacitor.isNativePlatform();
+  const controller = useNativeAbortFallback ? new AbortController() : undefined;
 
-  if (!agentResult.ok || !agentResult.reply) {
+  const onVisibility = (): void => {
+    if (useNativeAbortFallback && document.visibilityState === 'hidden') {
+      controller?.abort();
+    }
+  };
+  if (useNativeAbortFallback) {
+    document.addEventListener('visibilitychange', onVisibility);
+  }
+
+  try {
+    const agentResult = await runServerAgent(trimmed, context, {
+      onStep: options?.onAgentStep,
+      stream: !!options?.onAgentStep,
+      signal: controller?.signal,
+    });
+
+    if (!agentResult.ok || !agentResult.reply) {
+      return {
+        ok: false,
+        error: agentResult.error ?? LLM_UNAVAILABLE_MSG,
+        aiUnavailable: true,
+        steps: agentResult.steps,
+        depth: agentResult.depth,
+      };
+    }
+
+    await applyAgentMutations(agentResult.mutations);
+    await appendExchange(trimmed, agentResult.reply);
+    void recordShortcutUsage(trimmed);
+    const { syncNow } = await import('./sync');
+    await syncNow();
+
     return {
-      ok: false,
-      error: agentResult.error ?? LLM_UNAVAILABLE_MSG,
-      aiUnavailable: true,
+      ok: true,
+      content: agentResult.reply,
+      sideEffects: agentResult.sideEffects,
       steps: agentResult.steps,
       depth: agentResult.depth,
     };
+  } catch (err) {
+    if (useNativeAbortFallback && err instanceof DOMException && err.name === 'AbortError') {
+      return runBackgroundAgentJobFlow(trimmed, options) as Promise<AgentReply>;
+    }
+    throw err;
+  } finally {
+    if (useNativeAbortFallback) {
+      document.removeEventListener('visibilitychange', onVisibility);
+    }
   }
-
-  await applyAgentMutations(agentResult.mutations);
-  await appendExchange(trimmed, agentResult.reply);
-  void recordShortcutUsage(trimmed);
-  void import('./sync').then(({ syncNow }) => syncNow());
-
-  return {
-    ok: true,
-    content: agentResult.reply,
-    sideEffects: agentResult.sideEffects,
-    steps: agentResult.steps,
-    depth: agentResult.depth,
-  };
 }
 
 export async function getWelcomeMessage(): Promise<string> {

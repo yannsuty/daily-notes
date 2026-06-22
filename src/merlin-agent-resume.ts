@@ -27,16 +27,18 @@ export async function applyAgentJobResult(
   removePendingAgentJob(job.jobId);
   await stopNativeAgentJobWatch();
 
-  if (result.ok && result.reply) {
+  const replyText = result.reply?.trim();
+  if (result.ok && replyText) {
     await applyAgentMutations(result.mutations);
-    await updateMerlinMessageContent(job.placeholderId, result.reply);
+    await updateMerlinMessageContent(job.placeholderId, replyText);
     const { noteAgentReplyForFacts } = await import('./merlin-agent');
-    await noteAgentReplyForFacts(job.userText, result.reply);
+    await noteAgentReplyForFacts(job.userText, replyText);
     void recordShortcutUsage(job.userText);
-    void import('./sync').then(({ syncNow }) => syncNow());
+    const { syncNow } = await import('./sync');
+    await syncNow();
     return {
       ok: true,
-      content: result.reply,
+      content: replyText,
       sideEffects: result.sideEffects as AgentSideEffect | undefined,
       steps: result.steps,
       depth: result.depth,
