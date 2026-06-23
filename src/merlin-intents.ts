@@ -1,4 +1,7 @@
+import { likelyReminderIntent } from '../lib/merlin-agent/reminder-extract';
+import { buildLocalReminderFallback } from '../lib/merlin-agent/reminder-text';
 import { detectContextTags } from './merlin-context';
+import { extractReminderFields } from './merlin-reminder-extract';
 import { executeMerlinTool, type ToolResult } from './merlin-tools';
 
 export interface IntentResult {
@@ -12,28 +15,35 @@ function stripMerlinPrefix(text: string): string {
   return text.replace(/^merlin[,:\s]+/i, '').trim();
 }
 
-function parseTimeFromText(text: string): { timeOfDay?: string; recurrence?: string } {
-  const lower = text.toLowerCase();
-  let recurrence: string | undefined;
-  if (/tous les midis|chaque midi|à midi|le midi/.test(lower)) {
-    return { timeOfDay: '12:00', recurrence: 'daily' };
+function reminderArgsFromExtract(
+  extracted: NonNullable<Awaited<ReturnType<typeof extractReminderFields>>>,
+): Record<string, string> {
+  const args: Record<string, string> = { text: extracted.text! };
+  if (extracted.contextTags?.length) {
+    args.contextTags = extracted.contextTags.join(',');
   }
-  if (/tous les matins|chaque matin|le matin/.test(lower)) {
-    return { timeOfDay: '08:00', recurrence: 'daily' };
+  if (extracted.timeOfDay) args.timeOfDay = extracted.timeOfDay;
+  if (extracted.recurrence) args.recurrence = extracted.recurrence;
+  return args;
+}
+
+function reminderArgsFromLocal(text: string): Record<string, string> | null {
+  const local = buildLocalReminderFallback(text);
+  if (!local?.text) return null;
+  const args: Record<string, string> = { text: local.text };
+  if (local.contextTags.length > 0) {
+    args.contextTags = local.contextTags.join(',');
   }
-  if (/tous les soirs|chaque soir|le soir/.test(lower)) {
-    return { timeOfDay: '20:00', recurrence: 'daily' };
+  return args;
+}
+
+async function resolveReminderArgs(text: string): Promise<Record<string, string> | null> {
+  const extracted = await extractReminderFields(text);
+  if (extracted?.isReminder === false) return null;
+  if (extracted?.isReminder && extracted.text) {
+    return reminderArgsFromExtract(extracted);
   }
-  if (/tous les jours|chaque jour|quotidien/.test(lower)) {
-    recurrence = 'daily';
-  }
-  const hm = lower.match(/(\d{1,2})[:h](\d{2})/);
-  if (hm) {
-    const h = String(Number(hm[1])).padStart(2, '0');
-    const m = hm[2] ?? '00';
-    return { timeOfDay: `${h}:${m}`, recurrence: recurrence ?? 'daily' };
-  }
-  return { recurrence };
+  return reminderArgsFromLocal(text);
 }
 
 export async function tryFastIntent(rawText: string): Promise<IntentResult> {
@@ -129,30 +139,13 @@ export async function tryFastIntent(rawText: string): Promise<IntentResult> {
     };
   }
 
-  // Reminder
+  // Reminder explicite : "rappelle-moi de …"
   const reminderMatch = text.match(
     /^(?:rappelle[- ]moi(?: de)?|mets(?: un)? rappel(?: pour)?)\s+(.+)/i,
   );
   if (reminderMatch) {
     const body = reminderMatch[1].trim();
-    const { timeOfDay, recurrence } = parseTimeFromText(body);
-    const contextTags = detectContextTags(body);
-    const cleanText = body
-      .replace(/tous les midis|chaque midi|à midi|le midi/gi, '')
-      .replace(/tous les matins|chaque matin/gi, '')
-      .replace(/tous les soirs|chaque soir/gi, '')
-      .replace(/au travail|à la maison|en rentrant/gi, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    const args: Record<string, string> = { text: cleanText || body };
-    if (contextTags.length > 0 && !timeOfDay) {
-      args.contextTags = contextTags.join(',');
-    } else {
-      if (timeOfDay) args.timeOfDay = timeOfDay;
-      if (recurrence) args.recurrence = recurrence;
-      if (contextTags.length > 0) args.contextTags = contextTags.join(',');
-    }
+    const args = (await resolveReminderArgs(body)) ?? { text: body };
 
     const result = await executeMerlinTool('create_reminder', args);
     return {
@@ -161,6 +154,20 @@ export async function tryFastIntent(rawText: string): Promise<IntentResult> {
       sideEffects: result.mutation,
       usedTool: 'create_reminder',
     };
+  }
+
+  // Rappel implicite : "quand je rentre à la maison je dois sortir les poubelles"
+  if (likelyReminderIntent(text)) {
+    const args = await resolveReminderArgs(text);
+    if (args?.text) {
+      const result = await executeMerlinTool('create_reminder', args);
+      return {
+        handled: true,
+        reply: result.content,
+        sideEffects: result.mutation,
+        usedTool: 'create_reminder',
+      };
+    }
   }
 
   // List reminders
@@ -214,7 +221,9 @@ export function likelyFastPath(text: string): boolean {
   return (
     /^(?:ajoute|rappelle|c'est fait|c est fait|j[e']?\s*suis|nous sommes|contexte|crée|creer|créer|montre|affiche|mes rappels|coche|décoche|\/|routine\s+)/i.test(
       t,
-    ) || /(?:liste|courses)/i.test(t)
+    ) ||
+    likelyReminderIntent(t) ||
+    /(?:liste|courses)/i.test(t)
   );
 }
 

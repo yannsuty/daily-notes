@@ -302,7 +302,8 @@ export async function handleUserMessage(
   }
 
   const fast = await tryFastIntent(trimmed);
-  if (fast.handled && fast.reply) {
+  if (fast.handled) {
+    const reply = fast.reply?.trim() || 'C\'est fait.';
     const userMsg: MerlinMessage = {
       id: createMessageId(),
       role: 'user',
@@ -310,12 +311,12 @@ export async function handleUserMessage(
       createdAt: Date.now(),
     };
     await appendMerlinMessage(userMsg);
-    await appendExchange(trimmed, fast.reply);
+    await appendExchange(trimmed, reply);
     void recordShortcutUsage(trimmed);
     void import('./sync').then(({ syncNow }) => syncNow());
     return {
       ok: true,
-      content: fast.reply,
+      content: reply,
       sideEffects: fast.sideEffects,
       fastPath: true,
     };
