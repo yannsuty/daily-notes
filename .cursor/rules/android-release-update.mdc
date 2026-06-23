@@ -36,8 +36,8 @@ Avant de créer un tag, merger une release ou modifier une version, **vérifier 
 - [ ] Le téléchargement APK est **repriseable** (`ApkDownloadManager`) : fichier `.part` + `merlin-update.meta.json` dans le cache
 - [ ] En cas de réseau instable, le bouton « Vérifier et mettre à jour » doit **reprendre** au dernier octet (HTTP Range)
 - [ ] Les erreurs GitHub / téléchargement sont envoyées à **Sentry** (`feature: app-update`, contexte `app_update`) avec status HTTP, rate limit, version installée
-- [ ] **`app-version.json`** : fetch via `asset.url` (API `api.github.com`), jamais `browser_download_url` dans la WebView (échoue avec `Failed to fetch`)
-- [ ] Optionnel : secret `VITE_GITHUB_TOKEN` (CI) pour éviter la limite API GitHub (60 req/h/IP)
+- [ ] **`app-version.json`** : lecture native via `browser_download_url` (`AppUpdate.fetchUrlText`), secours API `asset.url` — jamais `fetch()` WebView sur `github.com/releases/download`
+- [ ] Optionnel : secret `VITE_GITHUB_TOKEN` (CI) pour éviter la limite API GitHub (60 req/h/IP sans token, 5000/h avec)
 
 ## Avant de pousser le tag
 
