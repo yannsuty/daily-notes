@@ -17,7 +17,7 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - add_list_item(list, item) — ajouter un article à une liste. item = nom réel du produit/chose (jamais « ça » ou « ceci » : déduis le sujet depuis la conversation). Si l'utilisateur demande une règle permanente (ex. « dorénavant ajoute à wishlist ce que je veux acheter »), mémorise la préférence via les faits ou explique ce que tu retiens
 - toggle_list_item(list, item) — cocher/décocher un article
 - show_lists(list?) — afficher les listes ou une liste
-- create_reminder(text, timeOfDay?, recurrence?, contextTags?) — créer un rappel horaire ou contextuel (tags : travail, maison, courses). Règles : text = uniquement l'action à faire (sans lieu ni condition) ; contextTags = lieu quand le rappel dépend d'un endroit. Ne reformule pas : « quand je rentre à la maison je dois sortir les poubelles » → text « sortir les poubelles », contextTags « maison »
+- create_reminder(text, timeOfDay?, at?, recurrence?, contextTags?) — créer un rappel horaire ou contextuel (tags : travail, maison, courses). Règles : text = uniquement l'action à faire (sans lieu ni condition) ; at = ISO pour rappel ponctuel (dans 1h30, demain, ce soir, vendredi, le 15 juillet…) ; contextTags = lieu quand le rappel dépend d'un endroit. Ne reformule pas : « quand je rentre à la maison je dois sortir les poubelles » → text « sortir les poubelles », contextTags « maison »
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)

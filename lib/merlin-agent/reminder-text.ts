@@ -1,4 +1,5 @@
 import { CONTEXT_PHRASES, detectContextTags, normalizeContextTags } from './context.js';
+import { parseReminderScheduleFromText } from './reminder-datetime.js';
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -37,19 +38,44 @@ export interface ReminderArgsInput {
   contextTags?: string;
 }
 
-/** Filet de sécurité après extraction IA ou appel agent. */
-export function normalizeReminderArgs<T extends ReminderArgsInput>(args: T): T {
-  const hasTime = !!(args.timeOfDay?.trim() || args.at?.trim());
-  let text = args.text.trim();
-  let contextTags = args.contextTags?.trim();
+function applyScheduleFromText<T extends ReminderArgsInput>(args: T, sourceText?: string): T {
+  if (args.timeOfDay?.trim() || args.at?.trim()) return args;
 
-  if (!text) return args;
+  const schedule =
+    parseReminderScheduleFromText(sourceText?.trim() || args.text) ??
+    (sourceText?.trim() && sourceText.trim() !== args.text.trim()
+      ? parseReminderScheduleFromText(args.text)
+      : null);
+  if (!schedule?.at && !schedule?.timeOfDay) return args;
+
+  let text = args.text.trim();
+  if (schedule.text) {
+    const cleaned = cleanReminderActionText(schedule.text);
+    text = cleaned || schedule.text;
+  }
+
+  return {
+    ...args,
+    text,
+    at: schedule.at ? new Date(schedule.at).toISOString() : args.at,
+    recurrence: schedule.recurrence ?? args.recurrence ?? 'once',
+  };
+}
+
+/** Filet de sécurité après extraction IA ou appel agent. */
+export function normalizeReminderArgs<T extends ReminderArgsInput>(args: T, sourceText?: string): T {
+  const withSchedule = applyScheduleFromText(args, sourceText);
+  const hasTime = !!(withSchedule.timeOfDay?.trim() || withSchedule.at?.trim());
+  let text = withSchedule.text.trim();
+  let contextTags = withSchedule.contextTags?.trim();
+
+  if (!text) return withSchedule;
 
   if (contextTags && !hasTime) {
     const tags = normalizeContextTags(contextTags);
     const cleaned = cleanReminderActionText(text);
     if (cleaned) text = cleaned;
-    return { ...args, text, contextTags: tags.join(',') };
+    return { ...withSchedule, text, contextTags: tags.join(',') };
   }
 
   if (!contextTags && !hasTime) {
@@ -57,22 +83,37 @@ export function normalizeReminderArgs<T extends ReminderArgsInput>(args: T): T {
     if (detected.length > 0) {
       const cleaned = cleanReminderActionText(text);
       return {
-        ...args,
+        ...withSchedule,
         text: cleaned || text,
         contextTags: detected.join(','),
       };
     }
   }
 
-  return { ...args, text };
+  return { ...withSchedule, text };
 }
 
 /** Repli local quand l'extraction IA est indisponible ou trop lente. */
 export function buildLocalReminderFallback(
   text: string,
-): { text: string; contextTags: string[] } | null {
+): { text: string; contextTags: string[]; at?: string; recurrence?: string } | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
+
+  const schedule = parseReminderScheduleFromText(trimmed);
+  if (schedule?.at) {
+    const contextTags = detectContextTags(schedule.text);
+    const cleaned = cleanReminderActionText(schedule.text);
+    const action = cleaned || schedule.text;
+    if (action.length >= 2) {
+      return {
+        text: action,
+        contextTags,
+        at: new Date(schedule.at).toISOString(),
+        recurrence: schedule.recurrence ?? 'once',
+      };
+    }
+  }
 
   const contextTags = detectContextTags(trimmed);
   const cleaned = cleanReminderActionText(trimmed);

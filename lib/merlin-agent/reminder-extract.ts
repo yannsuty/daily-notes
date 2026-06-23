@@ -1,4 +1,5 @@
 import { detectContextTags, normalizeContextTags } from './context.js';
+import { hasRelativeReminderSchedule, hasReminderScheduleHint } from './reminder-datetime.js';
 
 export interface ReminderExtractPayload {
   isReminder?: boolean;
@@ -31,12 +32,15 @@ Règles :
 - text : uniquement l'action à faire (ex. « sortir les poubelles »), sans le lieu ni la condition temporelle (« quand je rentre », « à la maison »)
 - Ne reformule pas incorrectement : garde les mots de l'utilisateur pour l'action
 - contextTags : tableau parmi travail, maison, courses — seulement si le rappel dépend d'un lieu ou contexte
-- timeOfDay : format HH:MM (24h) si un horaire est mentionné, sinon null ou absent
+- timeOfDay : format HH:MM (24h) si un horaire absolu est mentionné (ex. « à 15h »), sinon null ou absent
+- Les expressions relatives (« dans 1h30 », « demain », « dans 2 jours ») sont gérées ailleurs : retire-les du champ text
 - recurrence : daily, weekly ou once si une récurrence est mentionnée, sinon absent
 
 Exemples :
 - « quand je rentre à la maison je dois sortir les poubelles » → {"isReminder":true,"text":"sortir les poubelles","contextTags":["maison"]}
 - « rappelle-moi d'appeler le médecin à 15h » → {"isReminder":true,"text":"appeler le médecin","timeOfDay":"15:00","recurrence":"daily"}
+- « rappelle-moi demain d'appeler le notaire » → {"isReminder":true,"text":"appeler le notaire"}
+- « dans 1h30 vider la machine » → {"isReminder":true,"text":"vider la machine"}
 - « comment ça va » → {"isReminder":false}`;
 
 /** Heuristique légère : la phrase ressemble-t-elle à un rappel implicite ? */
@@ -59,7 +63,8 @@ export function likelyReminderIntent(text: string): boolean {
       t,
     );
   const hasContext = detectContextTags(t).length > 0;
-  const hasTime = /\b(midi|matin|soir|\d{1,2}[:h]\d{2})\b/i.test(t);
+  const hasRelativeTime = hasRelativeReminderSchedule(t) || hasReminderScheduleHint(t);
+  const hasTime = /\b(midi|matin|soir|\d{1,2}[:h]\d{2})\b/i.test(t) || hasRelativeTime;
 
   return hasTaskSignal || hasContext || hasTime;
 }
