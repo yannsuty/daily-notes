@@ -60,3 +60,20 @@ export function normalizeReminderArgs<T extends ReminderArgsInput>(args: T): T {
 
   return { ...args, text };
 }
+
+/** Repli local quand l'extraction IA est indisponible ou trop lente. */
+export function buildLocalReminderFallback(
+  text: string,
+): { text: string; contextTags: string[] } | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const contextTags = detectContextTags(trimmed);
+  const cleaned = cleanReminderActionText(trimmed);
+  const action = cleaned || trimmed;
+
+  if (!action || action.length < 2) return null;
+  if (action.toLowerCase() === trimmed.toLowerCase() && contextTags.length === 0) return null;
+
+  return { text: action, contextTags };
+}

@@ -2,6 +2,7 @@ import { assessQueryDepth, extractMemoryQueries } from '../../../lib/merlin-agen
 import { gatherMemory } from '../../../lib/merlin-agent/memory.js';
 import { parseJsonFromAi, parseToolCall } from '../../../lib/merlin-agent/parse.js';
 import { needsReminderExtraction } from '../../../lib/merlin-agent/reminder-extract.js';
+import { buildLocalReminderFallback } from '../../../lib/merlin-agent/reminder-text.js';
 import {
   buildSystemPrompt,
   PLANNER_PROMPT,
@@ -278,6 +279,15 @@ export async function runMerlinAgent(
             timeOfDay: extracted.timeOfDay ?? toolArgs.timeOfDay ?? toolArgs.time,
             recurrence: extracted.recurrence ?? toolArgs.recurrence,
           };
+        } else {
+          const local = buildLocalReminderFallback(trimmed);
+          if (local?.text) {
+            toolArgs = {
+              ...toolArgs,
+              text: local.text,
+              contextTags: local.contextTags.join(',') || contextTags,
+            };
+          }
         }
       }
     }
