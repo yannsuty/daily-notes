@@ -2,9 +2,9 @@ import {
   REMINDER_EXTRACT_PROMPT,
   parseReminderExtractPayload,
   type ReminderExtractResult,
-} from '../../../lib/merlin-agent/reminder-extract.js';
-import { parseJsonFromAi } from '../../../lib/merlin-agent/parse.js';
-import type { AgentClientConfig } from '../../../lib/merlin-agent/types.js';
+} from '../../lib/merlin-agent/reminder-extract.js';
+import { parseJsonFromAi } from '../../lib/merlin-agent/parse.js';
+import type { AgentClientConfig } from '../../lib/merlin-agent/types.js';
 import { callMerlinLlm } from './llm.js';
 
 export async function extractReminderFields(

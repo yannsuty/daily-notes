@@ -1,4 +1,4 @@
-import type { AgentJobRecord, AgentRunResult, AgentStep } from '../../lib/merlin-agent/types.js';
+import type { AgentJobRecord, AgentRunResult, AgentStep } from '../lib/merlin-agent/types.js';
 import { agentJobKey, getRedis } from './redis.js';
 
 const JOB_TTL_SECONDS = 60 * 60;

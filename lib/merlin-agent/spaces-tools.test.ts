@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentContext } from '../../../lib/merlin-agent/types.js';
-import { AgentStore, isMutationTool } from './tools.js';
+import type { AgentContext } from './types.js';
+import { AgentStore, isMutationTool } from '../../server/merlin-agent/tools.js';
 
 function emptyContext(overrides: Partial<AgentContext> = {}): AgentContext {
   return {

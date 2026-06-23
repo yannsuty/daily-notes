@@ -18,11 +18,19 @@ alwaysApply: false
 | Zone | Fichier | Exemple |
 |------|---------|---------|
 | Logique pure `lib/merlin-agent/` | `lib/merlin-agent/*.test.ts` | `space-format.test.ts` |
-| Outils agent serveur | `api/lib/merlin-agent/*.test.ts` | `tools-spaces.test.ts` |
+| Outils agent serveur | `lib/merlin-agent/*.test.ts` (import depuis `server/`) | `spaces-tools.test.ts` |
 | Code client `src/` | `src/*.test.ts` | `merlin-intents.test.ts` |
 | Évaluations LLM | `tests/llm/*.eval.test.ts` | `reminder-extract.eval.test.ts` |
 
-Vitest inclut : `lib/**/*.test.ts`, `src/**/*.test.ts`, `api/**/*.test.ts` (exclut `tests/llm/**` du run standard).
+Vitest inclut : `lib/**/*.test.ts`, `src/**/*.test.ts` (exclut `tests/llm/**` du run standard).
+
+## Déploiement Vercel (plan Hobby)
+
+**Ne jamais placer de code utilitaire sous `api/`** — chaque fichier `.ts` dans `api/` (y compris sous-dossiers) compte comme une Serverless Function (limite : 12 sur Hobby).
+
+- Routes HTTP : uniquement `api/*.ts` (ex. `ai.ts`, `sync.ts`, `merlin-agent.ts`)
+- Logique serveur partagée : `server/` (jobs, redis, runner agent, etc.)
+- Tests : `lib/` ou `src/`, jamais dans `api/`
 
 ## Principes
 

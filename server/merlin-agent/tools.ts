@@ -1,6 +1,6 @@
-import { addDays, formatDateLabel, todayKey } from '../../../lib/merlin-agent/dates.js';
-import { formatGitHubSummary, inspectGitHubRepo } from '../../../lib/merlin-agent/github.js';
-import { normalizeReminderArgs } from '../../../lib/merlin-agent/reminder-text.js';
+import { addDays, formatDateLabel, todayKey } from '../../lib/merlin-agent/dates.js';
+import { formatGitHubSummary, inspectGitHubRepo } from '../../lib/merlin-agent/github.js';
+import { normalizeReminderArgs } from '../../lib/merlin-agent/reminder-text.js';
 import type {
   AgentContext,
   AgentMutations,
@@ -13,7 +13,7 @@ import type {
   MerlinSpaceData,
   MerlinSpaceKind,
   ToolResult,
-} from '../../../lib/merlin-agent/types.js';
+} from '../../lib/merlin-agent/types.js';
 
 export function createEntityId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;

@@ -1,1 +1,1 @@
-export * from '../api/lib/openrouter-fallback.js';
+export * from '../server/openrouter-fallback.js';

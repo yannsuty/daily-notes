@@ -1,13 +1,13 @@
-import { assessQueryDepth, extractMemoryQueries } from '../../../lib/merlin-agent/complexity.js';
-import { gatherMemory } from '../../../lib/merlin-agent/memory.js';
-import { parseJsonFromAi, parseToolCall } from '../../../lib/merlin-agent/parse.js';
-import { needsReminderExtraction } from '../../../lib/merlin-agent/reminder-extract.js';
-import { buildLocalReminderFallback } from '../../../lib/merlin-agent/reminder-text.js';
+import { assessQueryDepth, extractMemoryQueries } from '../../lib/merlin-agent/complexity.js';
+import { gatherMemory } from '../../lib/merlin-agent/memory.js';
+import { parseJsonFromAi, parseToolCall } from '../../lib/merlin-agent/parse.js';
+import { needsReminderExtraction } from '../../lib/merlin-agent/reminder-extract.js';
+import { buildLocalReminderFallback } from '../../lib/merlin-agent/reminder-text.js';
 import {
   buildSystemPrompt,
   PLANNER_PROMPT,
   SYNTHESIS_PROMPT,
-} from '../../../lib/merlin-agent/prompts.js';
+} from '../../lib/merlin-agent/prompts.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
 import { AgentStore, isMutationTool, templateReplyForTool } from './tools.js';
@@ -18,7 +18,7 @@ import type {
   AgentSideEffect,
   AgentStep,
   ChatMessage,
-} from '../../../lib/merlin-agent/types.js';
+} from '../../lib/merlin-agent/types.js';
 
 const MAX_CONTEXT_MESSAGES = 24;
 const READ_TOOLS = new Set([

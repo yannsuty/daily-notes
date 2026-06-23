@@ -6,14 +6,14 @@ import {
   finishAgentJob,
   getAgentJob,
   saveAgentJob,
-} from './lib/agent-jobs.js';
+} from '../server/agent-jobs.js';
 import {
   runMerlinAgent,
   type AgentRequestBody,
   type AgentRunResult,
   type AgentStep,
-} from './lib/merlin-agent/index.js';
-import { scheduleBackground } from './lib/wait-until.js';
+} from '../server/merlin-agent/index.js';
+import { scheduleBackground } from '../server/wait-until.js';
 
 function cors(res: VercelResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
