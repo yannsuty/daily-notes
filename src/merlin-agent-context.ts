@@ -1,7 +1,6 @@
 import {
   deleteMerlinList,
   deleteMerlinReminder,
-  deleteMerlinSpace,
   getAllDays,
   getMerlinConversation,
   getMerlinCustomTools,
@@ -84,14 +83,7 @@ export async function applyAgentMutations(mutations: AgentMutations): Promise<vo
     }
   }
 
-  if (mutations.spaces) {
-    const existing = await getMerlinSpaces();
-    const nextIds = new Set(mutations.spaces.map((s) => s.id));
-    for (const space of existing) {
-      if (!nextIds.has(space.id)) {
-        await deleteMerlinSpace(space.id);
-      }
-    }
+  if (mutations.spaces?.length) {
     for (const space of mutations.spaces) {
       await saveMerlinSpace(space);
     }

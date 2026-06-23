@@ -208,6 +208,10 @@ export class AgentStore {
     this.dirtySpaces.add(space.id);
   }
 
+  hasDirtySpaces(): boolean {
+    return this.dirtySpaces.size > 0;
+  }
+
   private markList(list: MerlinList): void {
     this.dirtyLists.add(list.id);
   }

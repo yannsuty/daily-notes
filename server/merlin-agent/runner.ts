@@ -10,6 +10,7 @@ import {
 } from '../../lib/merlin-agent/prompts.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
+import { ensureSpaceSaved } from './space-ensure.js';
 import { AgentStore, isImmediateReplyTool, normalizeToolArgs, templateReplyForTool } from './tools.js';
 import type {
   AgentClientConfig,
@@ -246,6 +247,22 @@ export async function runMerlinAgent(
 
     const toolCall = parseToolCall(result.text);
     if (!toolCall) {
+      const reply = result.text;
+      const autoSaved = await ensureSpaceSaved(
+        store,
+        trimmed,
+        reply,
+        config,
+        options?.referer,
+      );
+      if (autoSaved) {
+        pushStep(steps, {
+          phase: 'tool',
+          label: 'Espace sauvegardé',
+          detail: 'Extraction automatique depuis la réponse',
+        }, onStep);
+      }
+
       pushStep(steps, {
         phase: 'respond',
         label: 'Réponse prête',
@@ -253,7 +270,7 @@ export async function runMerlinAgent(
 
       return {
         ok: true,
-        reply: result.text,
+        reply,
         steps,
         mutations: store.getMutations(),
         sideEffects: pickSideEffect(store) ?? lastSideEffect,
@@ -356,6 +373,21 @@ export async function runMerlinAgent(
       config,
       options?.referer,
     );
+
+    const autoSaved = await ensureSpaceSaved(
+      store,
+      trimmed,
+      reply,
+      config,
+      options?.referer,
+    );
+    if (autoSaved) {
+      pushStep(steps, {
+        phase: 'tool',
+        label: 'Espace sauvegardé',
+        detail: 'Extraction automatique depuis la réponse',
+      }, onStep);
+    }
 
     pushStep(steps, {
       phase: 'respond',

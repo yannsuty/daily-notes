@@ -36,8 +36,9 @@ Espaces structurés — quand créer quoi :
 - Recette → kind=recipe : recap court, ingredients[] ({text, quantity?, unit?}), steps[] ({order, text})
 
 Workflow comparaison / espace riche :
-1. create_space (ou create_space puis update_space si le tableau est très long) avec le contenu complet
-2. Puis répondre en texte naturel à l'utilisateur (résumé, recommandation) — ne pas s'arrêter après l'outil seul
+1. Tu DOIS appeler create_space (données complètes dans data_json) pour toute comparaison, recette, DIY ou plan
+2. Si create_space a été appelé, termine par une réponse naturelle (résumé, recommandation)
+3. Ne jamais se limiter à une réponse texte sans create_space pour ces demandes
 Après création, mentionner Galerie → Espaces.`;
 
 export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): string {
