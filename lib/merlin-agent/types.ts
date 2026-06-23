@@ -132,6 +132,8 @@ export interface AgentClientConfig {
   model?: string;
   /** Clé Brave Search API — recherche web (secours : BRAVE_SEARCH_API_KEY côté serveur). */
   braveSearchApiKey?: string;
+  /** Clé Tavily API — fallback recherche web (secours : TAVILY_API_KEY côté serveur). */
+  tavilyApiKey?: string;
 }
 
 export interface AgentRequestBody {
@@ -167,8 +169,15 @@ export interface AgentJobPollResponse {
   error?: string;
 }
 
+export interface WebSource {
+  title?: string;
+  url: string;
+  kind: 'search' | 'page';
+}
+
 export interface ToolResult {
   ok: boolean;
   content: string;
   mutation?: AgentSideEffect;
+  webSources?: WebSource[];
 }

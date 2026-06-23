@@ -12,6 +12,7 @@ export const MERLIN_ENV = {
   OPENROUTER_MODEL: 'OPENROUTER_MODEL',
   OPENROUTER_MODEL_CHAIN: 'OPENROUTER_MODEL_CHAIN',
   BRAVE_SEARCH_API_KEY: 'BRAVE_SEARCH_API_KEY',
+  TAVILY_API_KEY: 'TAVILY_API_KEY',
 } as const;
 
 export type MerlinEnvKey = (typeof MERLIN_ENV)[keyof typeof MERLIN_ENV];
@@ -52,7 +53,14 @@ export const BUILTIN_MERLIN_ENV_FIELDS: MerlinEnvFieldDef[] = [
     label: 'Clé API Brave Search',
     placeholder: 'BSA…',
     secret: true,
-    hint: 'Optionnel. Permet à Merlin de rechercher sur Internet (gratuit : 2000 req/mois).',
+    hint: 'Optionnel. Recherche web principale (gratuit : 2000 req/mois).',
+  },
+  {
+    key: MERLIN_ENV.TAVILY_API_KEY,
+    label: 'Clé API Tavily',
+    placeholder: 'tvly-…',
+    secret: true,
+    hint: 'Optionnel. Fallback si Brave échoue (gratuit : 1000 crédits/mois).',
   },
 ];
 
@@ -61,6 +69,7 @@ export interface AiClientConfig {
   model?: string;
   modelChain?: string;
   braveSearchApiKey?: string;
+  tavilyApiKey?: string;
 }
 
 export async function getMerlinEnv(key: string): Promise<string | undefined> {
@@ -88,13 +97,14 @@ export async function getAllMerlinEnvMap(): Promise<Record<string, string>> {
 }
 
 export async function getAiClientConfig(): Promise<AiClientConfig> {
-  const [apiKey, model, modelChain, braveSearchApiKey] = await Promise.all([
+  const [apiKey, model, modelChain, braveSearchApiKey, tavilyApiKey] = await Promise.all([
     getMerlinEnv(MERLIN_ENV.OPENROUTER_API_KEY),
     getMerlinEnv(MERLIN_ENV.OPENROUTER_MODEL),
     getMerlinEnv(MERLIN_ENV.OPENROUTER_MODEL_CHAIN),
     getMerlinEnv(MERLIN_ENV.BRAVE_SEARCH_API_KEY),
+    getMerlinEnv(MERLIN_ENV.TAVILY_API_KEY),
   ]);
-  return { apiKey, model, modelChain, braveSearchApiKey };
+  return { apiKey, model, modelChain, braveSearchApiKey, tavilyApiKey };
 }
 
 /** Pour futurs outils / intégrations — lecture générique d'une variable Merlin. */

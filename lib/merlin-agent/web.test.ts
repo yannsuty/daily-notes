@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  appendSourcesCitation,
   clampWebResultCount,
   formatWebSearchResults,
   htmlToPlainText,
   isPublicHttpUrl,
+  mergeWebSources,
 } from './web.js';
 
 describe('isPublicHttpUrl', () => {
@@ -51,5 +53,36 @@ describe('htmlToPlainText', () => {
     expect(text).toContain('Texte & suite');
     expect(text).not.toContain('alert');
     expect(text).not.toContain('<p>');
+  });
+});
+
+describe('mergeWebSources', () => {
+  it('déduplique par URL', () => {
+    const merged = mergeWebSources(
+      [{ url: 'https://a.com', kind: 'search' }],
+      [
+        { url: 'https://a.com', kind: 'page' },
+        { url: 'https://b.com', title: 'B', kind: 'search' },
+      ],
+    );
+    expect(merged).toHaveLength(2);
+    expect(merged[1]?.url).toBe('https://b.com');
+  });
+});
+
+describe('appendSourcesCitation', () => {
+  it('ajoute un bloc Sources', () => {
+    const reply = appendSourcesCitation('Voici la réponse.', [
+      { title: 'Exemple', url: 'https://ex.com', kind: 'search' },
+    ]);
+    expect(reply).toContain('**Sources**');
+    expect(reply).toContain('[Exemple](https://ex.com)');
+  });
+
+  it('ne duplique pas si Sources déjà présent', () => {
+    const reply = appendSourcesCitation('Texte\n\n**Sources**\n1. déjà là', [
+      { url: 'https://ex.com', kind: 'search' },
+    ]);
+    expect(reply).toBe('Texte\n\n**Sources**\n1. déjà là');
   });
 });

@@ -72,4 +72,5 @@ memoryQueries : mots-clés ou phrases pour fouiller le journal et la mémoire (v
 suggestedTools : outils probablement nécessaires (peut être vide).`;
 
 export const SYNTHESIS_PROMPT = `Tu es Merlin. À partir des résultats d'outils et du contexte, formule une réponse naturelle, utile et concise en français pour l'utilisateur.
-Ne mentionne pas les outils ni le processus interne sauf si l'utilisateur le demande.`;
+Ne mentionne pas les outils ni le processus interne sauf si l'utilisateur le demande.
+Les sources web seront ajoutées automatiquement en fin de message : concentre-toi sur le fond, sans lister les URLs toi-même.`;

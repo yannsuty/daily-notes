@@ -1,8 +1,12 @@
+import type { WebSource } from './types.js';
+
 export interface WebSearchHit {
   title: string;
   url: string;
   snippet: string;
 }
+
+export type WebSearchProvider = 'brave' | 'tavily' | 'custom' | 'cache';
 
 const BLOCKED_HOSTNAMES = new Set(['localhost', '0.0.0.0', '[::1]']);
 
@@ -51,6 +55,45 @@ export function formatWebSearchResults(query: string, hits: WebSearchHit[]): str
   );
 
   return `${hits.length} résultat(s) pour « ${query} » :\n\n${lines.join('\n\n')}`;
+}
+
+export function hitsToWebSources(hits: WebSearchHit[]): WebSource[] {
+  return hits.map((hit) => ({
+    title: hit.title,
+    url: hit.url,
+    kind: 'search' as const,
+  }));
+}
+
+export function mergeWebSources(existing: WebSource[], incoming: WebSource[]): WebSource[] {
+  const seen = new Set(existing.map((s) => s.url));
+  const merged = [...existing];
+  for (const source of incoming) {
+    if (!source.url || seen.has(source.url)) continue;
+    seen.add(source.url);
+    merged.push(source);
+  }
+  return merged.slice(0, 8);
+}
+
+/** Ajoute un bloc Sources en fin de réponse si des URLs web ont été consultées. */
+export function appendSourcesCitation(reply: string, sources: WebSource[]): string {
+  if (sources.length === 0) return reply;
+  const trimmed = reply.trim();
+  if (/\*\*sources\*\*/i.test(trimmed) || /\nSources\s*:/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const lines = sources.map((source, index) => {
+    const label = source.title?.trim() || source.url;
+    return `${index + 1}. [${label}](${source.url})`;
+  });
+
+  return `${trimmed}\n\n**Sources**\n${lines.join('\n')}`;
+}
+
+export function pageWebSource(url: string, title?: string): WebSource {
+  return { title: title?.trim() || url, url, kind: 'page' };
 }
 
 /** Extrait du texte lisible depuis du HTML (sans dépendance externe). */

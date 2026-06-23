@@ -164,19 +164,23 @@ Sans DSN, Sentry reste désactivé — l'app et l'API fonctionnent normalement.
 
 Merlin peut interroger Internet via deux outils serveur :
 
-- `web_search` — résultats Brave Search (titres, URLs, extraits)
+- `web_search` — résultats Brave Search, avec **fallback Tavily** puis scraper personnalisé
 - `fetch_page` — lecture textuelle d'une page publique
 
-Configurer **une** des options suivantes :
+**Cache court** (15 min recherche, 20 min page) via Redis Upstash si disponible, sinon mémoire serveur.
 
-| Option | Où |
-|--------|-----|
-| `BRAVE_SEARCH_API_KEY` | Variable Vercel (recommandé) ou secret CI |
-| Clé Brave Search | Réglages Merlin → « Clé API Brave Search » |
+Configurer **au moins une** des options suivantes :
 
-Obtenir une clé gratuite (2000 requêtes/mois) : [Brave Search API](https://brave.com/search/api/).
+| Variable / réglage | Rôle |
+|--------------------|------|
+| `BRAVE_SEARCH_API_KEY` | Fournisseur principal ([Brave](https://brave.com/search/api/), 2000 req/mois) |
+| `TAVILY_API_KEY` | Fallback ([Tavily](https://tavily.com/), 1000 crédits/mois) |
+| `WEB_SEARCH_SCRAPER_URL` | Votre scraper (POST JSON `{ query, max_results }` → `{ results: [{ title, url, snippet }] }`) |
+| Réglages Merlin | Clés Brave / Tavily optionnelles côté client (sync chiffrée) |
 
-> La recherche s'exécute côté serveur (clé jamais exposée dans l'APK). Sans clé, Merlin indique que la recherche web est indisponible.
+Les **sources** sont citées automatiquement en fin de réponse Merlin.
+
+> La recherche s'exécute côté serveur (clés jamais exposées dans l'APK). Sans aucune clé ni scraper, Merlin indique que la recherche web est indisponible.
 
 Pour tester l'API après déploiement : provoquer une erreur 500 (ex. Redis non configuré) ou ajouter temporairement `throw new Error('Sentry test API')` dans une route — l'issue doit apparaître avec `runtime: vercel-node`.
 

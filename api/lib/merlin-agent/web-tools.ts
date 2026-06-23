@@ -1,18 +1,42 @@
 import {
   clampWebResultCount,
   formatWebSearchResults,
+  hitsToWebSources,
   htmlToPlainText,
   isPublicHttpUrl,
+  pageWebSource,
   type WebSearchHit,
+  type WebSearchProvider,
 } from '../../../lib/merlin-agent/web.js';
 import type { AgentClientConfig, ToolResult } from '../../../lib/merlin-agent/types.js';
+import {
+  getWebCache,
+  setWebCache,
+  WEB_PAGE_CACHE_TTL_SECONDS,
+  WEB_SEARCH_CACHE_TTL_SECONDS,
+} from './web-cache.js';
 
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
+const TAVILY_SEARCH_URL = 'https://api.tavily.com/search';
 const FETCH_TIMEOUT_MS = 12_000;
 const SEARCH_TIMEOUT_MS = 10_000;
 
+interface CachedWebPayload {
+  content: string;
+  webSources?: ToolResult['webSources'];
+  provider?: WebSearchProvider;
+}
+
 function resolveBraveApiKey(config: AgentClientConfig): string | undefined {
   return config.braveSearchApiKey?.trim() || process.env.BRAVE_SEARCH_API_KEY?.trim() || undefined;
+}
+
+function resolveTavilyApiKey(config: AgentClientConfig): string | undefined {
+  return config.tavilyApiKey?.trim() || process.env.TAVILY_API_KEY?.trim() || undefined;
+}
+
+function resolveCustomScraperUrl(): string | undefined {
+  return process.env.WEB_SEARCH_SCRAPER_URL?.trim() || undefined;
 }
 
 async function fetchWithTimeout(
@@ -29,6 +53,167 @@ async function fetchWithTimeout(
   }
 }
 
+function buildSearchCacheKey(query: string, count: number): string {
+  return `${query}::${count}`;
+}
+
+async function readSearchCache(query: string, count: number): Promise<ToolResult | null> {
+  const raw = await getWebCache('search', buildSearchCacheKey(query, count));
+  if (!raw) return null;
+
+  try {
+    const payload = JSON.parse(raw) as CachedWebPayload;
+    if (!payload.content) return null;
+    return {
+      ok: true,
+      content: payload.content,
+      webSources: payload.webSources,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function writeSearchCache(
+  query: string,
+  count: number,
+  result: ToolResult,
+  provider: WebSearchProvider,
+): Promise<void> {
+  const payload: CachedWebPayload = {
+    content: result.content,
+    webSources: result.webSources,
+    provider,
+  };
+  await setWebCache(
+    'search',
+    buildSearchCacheKey(query, count),
+    JSON.stringify(payload),
+    WEB_SEARCH_CACHE_TTL_SECONDS,
+  );
+}
+
+async function searchBrave(query: string, count: number, apiKey: string): Promise<ToolResult | null> {
+  const params = new URLSearchParams({
+    q: query,
+    count: String(count),
+    text_decorations: 'false',
+    search_lang: 'fr',
+  });
+
+  const response = await fetchWithTimeout(
+    `${BRAVE_SEARCH_URL}?${params}`,
+    {
+      headers: {
+        Accept: 'application/json',
+        'X-Subscription-Token': apiKey,
+      },
+    },
+    SEARCH_TIMEOUT_MS,
+  );
+
+  if (!response.ok) return null;
+
+  const payload = (await response.json()) as {
+    web?: { results?: { title?: string; url?: string; description?: string }[] };
+  };
+
+  const hits: WebSearchHit[] = (payload.web?.results ?? [])
+    .slice(0, count)
+    .map((item) => ({
+      title: item.title?.trim() || '(sans titre)',
+      url: item.url?.trim() || '',
+      snippet: item.description?.trim() || '',
+    }))
+    .filter((item) => item.url);
+
+  return {
+    ok: true,
+    content: formatWebSearchResults(query, hits),
+    webSources: hitsToWebSources(hits),
+  };
+}
+
+async function searchTavily(query: string, count: number, apiKey: string): Promise<ToolResult | null> {
+  const response = await fetchWithTimeout(
+    TAVILY_SEARCH_URL,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        max_results: count,
+        search_depth: 'basic',
+        include_answer: false,
+      }),
+    },
+    SEARCH_TIMEOUT_MS,
+  );
+
+  if (!response.ok) return null;
+
+  const payload = (await response.json()) as {
+    results?: { title?: string; url?: string; content?: string }[];
+  };
+
+  const hits: WebSearchHit[] = (payload.results ?? [])
+    .slice(0, count)
+    .map((item) => ({
+      title: item.title?.trim() || '(sans titre)',
+      url: item.url?.trim() || '',
+      snippet: item.content?.trim() || '',
+    }))
+    .filter((item) => item.url);
+
+  return {
+    ok: true,
+    content: formatWebSearchResults(query, hits),
+    webSources: hitsToWebSources(hits),
+  };
+}
+
+async function searchCustomScraper(query: string, count: number, endpoint: string): Promise<ToolResult | null> {
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, max_results: count }),
+    },
+    SEARCH_TIMEOUT_MS,
+  );
+
+  if (!response.ok) return null;
+
+  const payload = (await response.json()) as {
+    results?: { title?: string; url?: string; snippet?: string; description?: string }[];
+  };
+
+  const hits: WebSearchHit[] = (payload.results ?? [])
+    .slice(0, count)
+    .map((item) => ({
+      title: item.title?.trim() || '(sans titre)',
+      url: item.url?.trim() || '',
+      snippet: (item.snippet ?? item.description ?? '').trim(),
+    }))
+    .filter((item) => item.url);
+
+  if (hits.length === 0) return null;
+
+  return {
+    ok: true,
+    content: formatWebSearchResults(query, hits),
+    webSources: hitsToWebSources(hits),
+  };
+}
+
 export async function runWebSearch(
   args: Record<string, string>,
   config: AgentClientConfig,
@@ -38,61 +223,68 @@ export async function runWebSearch(
     return { ok: false, content: 'Requête de recherche vide.' };
   }
 
-  const apiKey = resolveBraveApiKey(config);
-  if (!apiKey) {
+  const count = clampWebResultCount(args.max_results ?? args.count);
+
+  const cached = await readSearchCache(query, count);
+  if (cached) return cached;
+
+  const braveKey = resolveBraveApiKey(config);
+  const tavilyKey = resolveTavilyApiKey(config);
+  const scraperUrl = resolveCustomScraperUrl();
+
+  if (!braveKey && !tavilyKey && !scraperUrl) {
     return {
       ok: false,
       content:
-        'Recherche web indisponible : configurez BRAVE_SEARCH_API_KEY sur le serveur (ou dans Réglages Merlin).',
+        'Recherche web indisponible : configurez BRAVE_SEARCH_API_KEY, TAVILY_API_KEY ou WEB_SEARCH_SCRAPER_URL.',
     };
   }
 
-  const count = clampWebResultCount(args.max_results ?? args.count);
-  const params = new URLSearchParams({
-    q: query,
-    count: String(count),
-    text_decorations: 'false',
-    search_lang: 'fr',
-  });
+  const errors: string[] = [];
 
-  try {
-    const response = await fetchWithTimeout(
-      `${BRAVE_SEARCH_URL}?${params}`,
-      {
-        headers: {
-          Accept: 'application/json',
-          'X-Subscription-Token': apiKey,
-        },
-      },
-      SEARCH_TIMEOUT_MS,
-    );
-
-    if (!response.ok) {
-      const detail = (await response.text()).slice(0, 200);
-      return {
-        ok: false,
-        content: `Recherche web échouée (HTTP ${response.status})${detail ? ` : ${detail}` : ''}.`,
-      };
+  if (braveKey) {
+    try {
+      const result = await searchBrave(query, count, braveKey);
+      if (result) {
+        await writeSearchCache(query, count, result, 'brave');
+        return result;
+      }
+      errors.push('Brave Search indisponible');
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'Brave Search en erreur');
     }
-
-    const payload = (await response.json()) as {
-      web?: { results?: { title?: string; url?: string; description?: string }[] };
-    };
-
-    const hits: WebSearchHit[] = (payload.web?.results ?? [])
-      .slice(0, count)
-      .map((item) => ({
-        title: item.title?.trim() || '(sans titre)',
-        url: item.url?.trim() || '',
-        snippet: item.description?.trim() || '',
-      }))
-      .filter((item) => item.url);
-
-    return { ok: true, content: formatWebSearchResults(query, hits) };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Erreur réseau';
-    return { ok: false, content: `Recherche web impossible : ${message}.` };
   }
+
+  if (tavilyKey) {
+    try {
+      const result = await searchTavily(query, count, tavilyKey);
+      if (result) {
+        await writeSearchCache(query, count, result, 'tavily');
+        return result;
+      }
+      errors.push('Tavily indisponible');
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'Tavily en erreur');
+    }
+  }
+
+  if (scraperUrl) {
+    try {
+      const result = await searchCustomScraper(query, count, scraperUrl);
+      if (result) {
+        await writeSearchCache(query, count, result, 'custom');
+        return result;
+      }
+      errors.push('Scraper personnalisé sans résultat');
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : 'Scraper personnalisé en erreur');
+    }
+  }
+
+  return {
+    ok: false,
+    content: `Recherche web impossible pour « ${query} » (${errors.join(' ; ') || 'aucun fournisseur'}).`,
+  };
 }
 
 export async function runFetchPage(args: Record<string, string>): Promise<ToolResult> {
@@ -102,6 +294,22 @@ export async function runFetchPage(args: Record<string, string>): Promise<ToolRe
   }
   if (!isPublicHttpUrl(url)) {
     return { ok: false, content: 'URL non autorisée (seuls http/https publics sont acceptés).' };
+  }
+
+  const cached = await getWebCache('page', url);
+  if (cached) {
+    try {
+      const payload = JSON.parse(cached) as CachedWebPayload;
+      if (payload.content) {
+        return {
+          ok: true,
+          content: payload.content,
+          webSources: payload.webSources ?? [pageWebSource(url)],
+        };
+      }
+    } catch {
+      // relire la page
+    }
   }
 
   try {
@@ -124,15 +332,31 @@ export async function runFetchPage(args: Record<string, string>): Promise<ToolRe
     const contentType = response.headers.get('content-type') ?? '';
     const raw = await response.text();
     const text = contentType.includes('html') ? htmlToPlainText(raw) : raw.trim();
+    const titleMatch = raw.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const pageTitle = titleMatch?.[1]?.trim();
 
     if (!text) {
-      return { ok: true, content: `Page lue mais sans contenu textuel exploitable : ${url}` };
+      const emptyResult: ToolResult = {
+        ok: true,
+        content: `Page lue mais sans contenu textuel exploitable : ${url}`,
+        webSources: [pageWebSource(url, pageTitle)],
+      };
+      return emptyResult;
     }
 
-    return {
+    const result: ToolResult = {
       ok: true,
       content: `Contenu de ${url} :\n\n${text}`,
+      webSources: [pageWebSource(url, pageTitle)],
     };
+
+    const payload: CachedWebPayload = {
+      content: result.content,
+      webSources: result.webSources,
+    };
+    await setWebCache('page', url, JSON.stringify(payload), WEB_PAGE_CACHE_TTL_SECONDS);
+
+    return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erreur réseau';
     return { ok: false, content: `Lecture de page impossible : ${message}.` };

@@ -1,4 +1,5 @@
 import { assessQueryDepth, extractMemoryQueries } from '../../../lib/merlin-agent/complexity.js';
+import { appendSourcesCitation, mergeWebSources } from '../../../lib/merlin-agent/web.js';
 import { gatherMemory } from '../../../lib/merlin-agent/memory.js';
 import { parseJsonFromAi, parseToolCall } from '../../../lib/merlin-agent/parse.js';
 import { needsReminderExtraction } from '../../../lib/merlin-agent/reminder-extract.js';
@@ -19,6 +20,7 @@ import type {
   AgentSideEffect,
   AgentStep,
   ChatMessage,
+  WebSource,
 } from '../../../lib/merlin-agent/types.js';
 
 const MAX_CONTEXT_MESSAGES = 24;
@@ -53,6 +55,11 @@ function getRecentMessages(context: AgentContext): ChatMessage[] {
     role: m.role,
     content: m.content,
   }));
+}
+
+function withWebCitations(reply: string | undefined, sources: WebSource[]): string | undefined {
+  if (!reply) return reply;
+  return appendSourcesCitation(reply, sources);
 }
 
 function pickSideEffect(store: AgentStore): AgentSideEffect | undefined {
@@ -221,6 +228,7 @@ export async function runMerlinAgent(
   let lastSideEffect: AgentSideEffect | undefined;
   let toolResultsForSynthesis: string[] = [];
   let readToolUsed = false;
+  let webSources: WebSource[] = [];
 
   for (let i = 0; i < maxIterations; i += 1) {
     pushStep(steps, {
@@ -252,7 +260,7 @@ export async function runMerlinAgent(
 
       return {
         ok: true,
-        reply: result.text,
+        reply: withWebCitations(result.text, webSources),
         steps,
         mutations: store.getMutations(),
         sideEffects: pickSideEffect(store) ?? lastSideEffect,
@@ -300,6 +308,9 @@ export async function runMerlinAgent(
     const toolResult = WEB_TOOLS.has(toolCall.name)
       ? await runWebTool(toolCall.name, toolArgs, config)
       : store.executeTool(toolCall.name, toolArgs);
+    if (toolResult.webSources?.length) {
+      webSources = mergeWebSources(webSources, toolResult.webSources);
+    }
     if (toolResult.mutation) lastSideEffect = toolResult.mutation;
 
     const template = templateReplyForTool(toolCall.name, toolResult);
@@ -351,11 +362,14 @@ export async function runMerlinAgent(
       label: 'Synthèse de la réponse…',
     }, onStep);
 
-    const reply = await synthesizeReply(
-      trimmed,
-      toolResultsForSynthesis.join('\n\n'),
-      config,
-      options?.referer,
+    const reply = withWebCitations(
+      await synthesizeReply(
+        trimmed,
+        toolResultsForSynthesis.join('\n\n'),
+        config,
+        options?.referer,
+      ),
+      webSources,
     );
 
     pushStep(steps, {
