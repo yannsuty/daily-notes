@@ -5,7 +5,10 @@ import {
   captureAppUpdateIssue,
   extractPluginErrorContext,
 } from './app-update-telemetry';
+import { isUpdateAvailable } from './app-update-compare';
 import { logger } from './logger';
+
+export { compareVersions, isUpdateAvailable } from './app-update-compare';
 
 const GITHUB_OWNER = 'yannsuty';
 const GITHUB_REPO = 'daily-notes';
@@ -86,28 +89,6 @@ export class GitHubApiError extends Error {
 
 const LATEST_RELEASE_CACHE_MS = 30 * 60_000;
 let latestReleaseCache: { expiresAt: number; release: GitHubRelease } | null = null;
-
-function parseVersion(version: string): number[] {
-  return version
-    .replace(/^v/i, '')
-    .split('.')
-    .map((part) => Number.parseInt(part, 10) || 0);
-}
-
-export function compareVersions(a: string, b: string): number {
-  const left = parseVersion(a);
-  const right = parseVersion(b);
-  const length = Math.max(left.length, right.length);
-
-  for (let i = 0; i < length; i += 1) {
-    const diff = (left[i] ?? 0) - (right[i] ?? 0);
-    if (diff !== 0) {
-      return diff;
-    }
-  }
-
-  return 0;
-}
 
 function githubHeaders(accept: string): HeadersInit {
   const headers: Record<string, string> = {
@@ -357,15 +338,9 @@ async function fetchVersionManifest(
   }
 }
 
-function isUpdateAvailable(
-  installed: { versionCode: number; versionName: string },
-  latestVersion: string,
-  latestVersionCode?: number,
-): boolean {
-  if (latestVersionCode != null && latestVersionCode > installed.versionCode) {
-    return true;
-  }
-  return compareVersions(latestVersion, installed.versionName) > 0;
+/** Vide le cache `/releases/latest` (ex. avant une vérification manuelle). */
+export function clearLatestReleaseCache(): void {
+  latestReleaseCache = null;
 }
 
 async function resolveTargetVersionCode(
@@ -397,7 +372,10 @@ function getApkDownloadUrl(asset: GitHubAsset): string {
   return asset.browser_download_url;
 }
 
-export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
+export async function checkForAppUpdate(options?: {
+  /** Ignore le cache 30 min — à utiliser au clic du bouton Réglages. */
+  forceRefresh?: boolean;
+}): Promise<UpdateCheckResult> {
   if (!isNativeAndroid()) {
     return {
       available: false,
@@ -429,12 +407,17 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
   addAppUpdateBreadcrumb('Vérification MAJ démarrée', {
     installedVersionCode: installed.versionCode,
     installedVersionName: installed.versionName,
+    forceRefresh: options?.forceRefresh === true,
   });
 
   try {
+    if (options?.forceRefresh) {
+      clearLatestReleaseCache();
+    }
+
     const release = await fetchLatestRelease(installed);
     const apkAsset = release.assets.find((asset) => asset.name === APK_ASSET_NAME);
-    const latestVersion = release.tag_name.replace(/^v/i, '');
+    const tagVersion = release.tag_name.replace(/^v/i, '');
 
     if (!apkAsset) {
       const message = `Asset ${APK_ASSET_NAME} introuvable dans la dernière release.`;
@@ -450,26 +433,24 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
         currentVersion: installed.versionName,
         currentVersionCode: installed.versionCode,
         currentReleaseLabel,
-        latestVersion,
+        latestVersion: tagVersion,
         error: message,
       };
     }
 
-    let latestVersionCode: number | undefined;
-    let available = isUpdateAvailable(installed, latestVersion);
-
-    // Même semver (ex. re-release) : 1 appel API supplémentaire pour comparer les builds.
-    if (!available && compareVersions(latestVersion, installed.versionName) === 0) {
-      const manifest = await fetchVersionManifest(release, installed);
-      latestVersionCode = manifest?.versionCode;
-      available = isUpdateAvailable(installed, latestVersion, latestVersionCode);
-    }
+    // Lecture native de app-version.json (hors quota API) — versionCode = source de vérité Android.
+    const manifest = await fetchVersionManifest(release, installed);
+    const latestVersionCode = manifest?.versionCode;
+    const latestVersion = manifest?.versionName ?? tagVersion;
+    const available = isUpdateAvailable(installed, latestVersion, latestVersionCode);
 
     addAppUpdateBreadcrumb('Vérification MAJ terminée', {
       available,
       latestVersion,
       latestVersionCode,
-      apiCalls: compareVersions(latestVersion, installed.versionName) === 0 && latestVersionCode != null ? 2 : 1,
+      tagVersion,
+      manifestLoaded: manifest != null,
+      apiCalls: 1,
     });
 
     return {

@@ -458,7 +458,7 @@ export class SettingsPage {
             return;
           }
 
-          const update = await checkForAppUpdate();
+          const update = await checkForAppUpdate({ forceRefresh: true });
           if (update.error) {
             appUpdateStatusEl.textContent = update.error;
             return;
