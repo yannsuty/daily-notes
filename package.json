@@ -12,7 +12,10 @@
     "android:local": "powershell -ExecutionPolicy Bypass -File scripts/android-build-local.ps1",
     "icons": "node scripts/generate-icons.mjs",
     "postinstall": "node scripts/generate-icons.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:llm": "vitest run --config vitest.llm.config.ts"
   },
   "dependencies": {
     "@capacitor-community/text-to-speech": "^8.0.2",
@@ -44,6 +47,7 @@
     "sharp": "^0.34.2",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
-    "vite-plugin-pwa": "^0.21.2"
+    "vite-plugin-pwa": "^0.21.2",
+    "vitest": "^3.2.4"
   }
 }
