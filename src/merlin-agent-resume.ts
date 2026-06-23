@@ -1,5 +1,6 @@
 import { updateMerlinMessageContent } from './db';
 import { applyAgentMutations } from './merlin-agent-context';
+import { setActiveSpaceId } from './merlin-space-session';
 import { getAgentJobStatus, watchAgentJob } from './merlin-agent-client';
 import type { AgentReply, AgentSideEffect } from './merlin-agent';
 import {
@@ -45,6 +46,12 @@ export async function applyAgentJobResult(
   const replyText = result.reply?.trim();
   if (result.ok && replyText) {
     await applyAgentMutations(result.mutations);
+    if (result.mutations.spaces?.length) {
+      const newest = [...result.mutations.spaces].sort(
+        (a, b) => b.updatedAt - a.updatedAt,
+      )[0];
+      if (newest) setActiveSpaceId(newest.id);
+    }
     await updateMerlinMessageContent(job.placeholderId, replyText);
     const { noteAgentReplyForFacts } = await import('./merlin-agent');
     await noteAgentReplyForFacts(job.userText, replyText);

@@ -75,12 +75,73 @@ export interface MerlinCustomTool {
   updatedAt: number;
 }
 
+export type MerlinSpaceKind = 'comparison' | 'diy' | 'plan' | 'recipe';
+
+export interface MerlinSpaceSection {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface MerlinSpaceIngredient {
+  id: string;
+  text: string;
+  quantity?: string;
+  unit?: string;
+}
+
+export interface MerlinSpaceStep {
+  id: string;
+  order: number;
+  text: string;
+}
+
+export interface MerlinSpaceMilestone {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+export interface MerlinSpaceGitHub {
+  owner: string;
+  repo: string;
+  defaultBranch?: string;
+}
+
+export interface MerlinSpaceData {
+  columns?: string[];
+  rows?: string[][];
+  intro?: string;
+  sections?: MerlinSpaceSection[];
+  listId?: string;
+  goal?: string;
+  milestones?: MerlinSpaceMilestone[];
+  github?: MerlinSpaceGitHub;
+  servings?: number;
+  ingredients?: MerlinSpaceIngredient[];
+  steps?: MerlinSpaceStep[];
+}
+
+export interface MerlinSpace {
+  id: string;
+  kind: MerlinSpaceKind;
+  title: string;
+  recap: string;
+  data: MerlinSpaceData;
+  status: 'active' | 'archived';
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface AgentContext {
   days: Record<string, DayEntry>;
   facts: MerlinFact[];
   lists: MerlinList[];
   reminders: MerlinReminder[];
   customTools: MerlinCustomTool[];
+  spaces: MerlinSpace[];
+  activeSpaceId?: string | null;
+  activeSpace?: MerlinSpace | null;
   conversationSummary: string;
   recentMessages: MerlinMessage[];
 }
@@ -100,13 +161,14 @@ export interface AgentStep {
   detail?: string;
 }
 
-export type AgentSideEffect = 'list_updated' | 'reminder_created' | 'reminder_completed';
+export type AgentSideEffect = 'list_updated' | 'reminder_created' | 'reminder_completed' | 'space_updated';
 
 export interface AgentMutations {
   lists?: MerlinList[];
   reminders?: MerlinReminder[];
   facts?: MerlinFact[];
   customTools?: MerlinCustomTool[];
+  spaces?: MerlinSpace[];
 }
 
 export interface AgentRunResult {
@@ -130,6 +192,7 @@ export interface AgentClientConfig {
   apiKey?: string;
   modelChain?: string;
   model?: string;
+  githubToken?: string;
 }
 
 export interface AgentRequestBody {

@@ -1,0 +1,71 @@
+---
+description: Conventions de tests unitaires et LLM pour Merlin
+alwaysApply: false
+---
+
+# Tests Merlin
+
+## Commandes
+
+| Commande | Usage |
+|----------|--------|
+| `npm test` | Tests unitaires Vitest (CI, avant commit) |
+| `npm run test:watch` | Mode interactif pendant le dev |
+| `npm run test:llm` | Évaluations LLM (réseau + clé API requise) |
+
+## Où placer les tests
+
+| Zone | Fichier | Exemple |
+|------|---------|---------|
+| Logique pure `lib/merlin-agent/` | `lib/merlin-agent/*.test.ts` | `space-format.test.ts` |
+| Outils agent serveur | `lib/merlin-agent/*.test.ts` (import depuis `server/`) | `spaces-tools.test.ts` |
+| Code client `src/` | `src/*.test.ts` | `merlin-intents.test.ts` |
+| Évaluations LLM | `tests/llm/*.eval.test.ts` | `reminder-extract.eval.test.ts` |
+
+Vitest inclut : `lib/**/*.test.ts`, `src/**/*.test.ts` (exclut `tests/llm/**` du run standard).
+
+## Déploiement Vercel (plan Hobby)
+
+**Ne jamais placer de code utilitaire sous `api/`** — chaque fichier `.ts` dans `api/` (y compris sous-dossiers) compte comme une Serverless Function (limite : 12 sur Hobby).
+
+- Routes HTTP : uniquement `api/*.ts` (ex. `ai.ts`, `sync.ts`, `merlin-agent.ts`)
+- Logique serveur partagée : `server/` (jobs, redis, runner agent, etc.)
+- Tests : `lib/` ou `src/`, jamais dans `api/`
+
+## Principes
+
+- **Tester le comportement**, pas l’implémentation interne.
+- **Pas de réseau** dans `npm test` : mocker `fetch`, IndexedDB (`idb`), Capacitor.
+- **Imports** : depuis `lib/`, utiliser l’extension `.js` dans les imports ESM (`./memory.js`).
+- **Nommage** : `describe` en français, `it('verbe…')` décrivant le cas.
+- **Données** : factories locales (`baseSpace()`, `emptyContext()`) plutôt que fixtures lourdes.
+
+## Ce qu’il faut couvrir
+
+- Fonctions pures (formatage, merge sync, parsing, heuristiques)
+- Outils agent (`AgentStore.executeTool`) sans appel LLM
+- Cas limites : entrées vides, entités archivées, JSON invalide, erreurs HTTP
+
+## Ce qu’il ne faut pas couvrir en unitaire
+
+- Flux UI DOM complets (pas de jsdom configuré aujourd’hui)
+- Appels OpenRouter / agent bout-en-bout → `tests/llm/` si nécessaire
+
+## Après une nouvelle fonctionnalité
+
+1. Ajouter ou étendre des tests dans la zone la plus proche du code testé.
+2. Lancer `npm test` — tous les tests doivent passer.
+3. Si la feature touche l’agent ou l’extraction LLM, envisager un test d’éval dans `tests/llm/`.
+
+## Exemple minimal
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { maFonction } from './mon-module.js';
+
+describe('maFonction', () => {
+  it('retourne X quand Y', () => {
+    expect(maFonction('entrée')).toBe('sortie attendue');
+  });
+});
+```

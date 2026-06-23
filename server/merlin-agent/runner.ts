@@ -1,13 +1,13 @@
-import { assessQueryDepth, extractMemoryQueries } from '../../../lib/merlin-agent/complexity.js';
-import { gatherMemory } from '../../../lib/merlin-agent/memory.js';
-import { parseJsonFromAi, parseToolCall } from '../../../lib/merlin-agent/parse.js';
-import { needsReminderExtraction } from '../../../lib/merlin-agent/reminder-extract.js';
-import { buildLocalReminderFallback } from '../../../lib/merlin-agent/reminder-text.js';
+import { assessQueryDepth, extractMemoryQueries } from '../../lib/merlin-agent/complexity.js';
+import { gatherMemory } from '../../lib/merlin-agent/memory.js';
+import { parseJsonFromAi, parseToolCall } from '../../lib/merlin-agent/parse.js';
+import { needsReminderExtraction } from '../../lib/merlin-agent/reminder-extract.js';
+import { buildLocalReminderFallback } from '../../lib/merlin-agent/reminder-text.js';
 import {
   buildSystemPrompt,
   PLANNER_PROMPT,
   SYNTHESIS_PROMPT,
-} from '../../../lib/merlin-agent/prompts.js';
+} from '../../lib/merlin-agent/prompts.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
 import { AgentStore, isMutationTool, templateReplyForTool } from './tools.js';
@@ -18,7 +18,7 @@ import type {
   AgentSideEffect,
   AgentStep,
   ChatMessage,
-} from '../../../lib/merlin-agent/types.js';
+} from '../../lib/merlin-agent/types.js';
 
 const MAX_CONTEXT_MESSAGES = 24;
 const READ_TOOLS = new Set([
@@ -27,6 +27,9 @@ const READ_TOOLS = new Set([
   'summarize_period',
   'show_lists',
   'list_reminders',
+  'show_space',
+  'list_spaces',
+  'inspect_github_repo',
 ]);
 
 export type StepCallback = (step: AgentStep) => void;
@@ -58,6 +61,7 @@ function pickSideEffect(store: AgentStore): AgentSideEffect | undefined {
     return 'reminder_created';
   }
   if ((mutations.lists?.length ?? 0) > 0) return 'list_updated';
+  if ((mutations.spaces?.length ?? 0) > 0) return 'space_updated';
   return undefined;
 }
 
@@ -141,7 +145,7 @@ export async function runMerlinAgent(
     detail: depth === 'deep' ? 'Question complexe détectée' : undefined,
   }, onStep);
 
-  const store = new AgentStore(context);
+  const store = new AgentStore(context, { githubToken: config.githubToken });
   let memoryBlock = '';
   let planner: PlannerResult | null = null;
   let memoryQueries = extractMemoryQueries(trimmed);
@@ -292,7 +296,7 @@ export async function runMerlinAgent(
       }
     }
 
-    const toolResult = store.executeTool(toolCall.name, toolArgs);
+    const toolResult = await store.executeTool(toolCall.name, toolArgs);
     if (toolResult.mutation) lastSideEffect = toolResult.mutation;
 
     const template = templateReplyForTool(toolCall.name, toolResult);

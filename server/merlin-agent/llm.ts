@@ -3,7 +3,7 @@ import {
   OPENROUTER_FREE_ROUTER,
   type OpenRouterBody,
 } from '../openrouter-fallback.js';
-import type { AgentClientConfig, ChatMessage } from '../../../lib/merlin-agent/types.js';
+import type { AgentClientConfig, ChatMessage } from '../../lib/merlin-agent/types.js';
 
 export interface LlmResult {
   ok: boolean;

@@ -1,14 +1,16 @@
-import { createListesIcon, createSettingsIcon, createThoughtsIcon } from './icons';
+import { createEspacesIcon, createListesIcon, createSettingsIcon, createThoughtsIcon } from './icons';
+import { EspacesPage } from './espaces';
 import { ListesPage } from './listes';
 import { MindMap } from './mindmap';
 import { SettingsPage, type SettingsCallbacks } from './settings';
 
-export type GalleryView = 'home' | 'thoughts' | 'listes' | 'settings';
+export type GalleryView = 'home' | 'thoughts' | 'listes' | 'espaces' | 'settings';
 
 export interface GalleryOptions {
   container: HTMLElement;
   settingsCallbacks: SettingsCallbacks;
   onListesUpdate?: () => void;
+  onDiscussSpace?: (spaceId: string) => void;
 }
 
 export class Gallery {
@@ -17,18 +19,22 @@ export class Gallery {
   private appView: HTMLElement;
   private thoughtsPanel: HTMLElement;
   private listesPanel: HTMLElement;
+  private espacesPanel: HTMLElement;
   private settingsPanel: HTMLElement;
   private viewTitle: HTMLElement;
   private currentView: GalleryView = 'home';
   private mindMap: MindMap | null = null;
   private listesPage: ListesPage | null = null;
+  private espacesPage: EspacesPage | null = null;
   private settingsPage: SettingsPage | null = null;
   private settingsCallbacks: SettingsCallbacks;
   private onListesUpdate?: () => void;
+  private onDiscussSpace?: (spaceId: string) => void;
 
   constructor(options: GalleryOptions) {
     this.settingsCallbacks = options.settingsCallbacks;
     this.onListesUpdate = options.onListesUpdate;
+    this.onDiscussSpace = options.onDiscussSpace;
     this.container = options.container;
     this.container.innerHTML = '';
     this.container.classList.add('gallery', 'tab-panel');
@@ -43,6 +49,14 @@ export class Gallery {
     const grid = document.createElement('div');
     grid.className = 'gallery__grid';
 
+    grid.appendChild(
+      this.createAppCard({
+        label: 'Espaces',
+        description: 'Comparaisons, DIY, plans et recettes',
+        icon: createEspacesIcon(),
+        onOpen: () => this.openView('espaces'),
+      }),
+    );
     grid.appendChild(
       this.createAppCard({
         label: 'Listes',
@@ -101,6 +115,10 @@ export class Gallery {
     this.listesPanel.className = 'gallery__app-panel';
     this.listesPanel.hidden = true;
 
+    this.espacesPanel = document.createElement('div');
+    this.espacesPanel.className = 'gallery__app-panel';
+    this.espacesPanel.hidden = true;
+
     this.settingsPanel = document.createElement('div');
     this.settingsPanel.className = 'gallery__app-panel';
     this.settingsPanel.hidden = true;
@@ -110,6 +128,7 @@ export class Gallery {
     this.appView.appendChild(header);
     this.appView.appendChild(this.thoughtsPanel);
     this.appView.appendChild(this.listesPanel);
+    this.appView.appendChild(this.espacesPanel);
     this.appView.appendChild(this.settingsPanel);
 
     this.container.appendChild(this.homeView);
@@ -122,9 +141,15 @@ export class Gallery {
       embedded: true,
       onUpdate: () => this.onListesUpdate?.(),
     });
+    this.espacesPage = new EspacesPage(this.espacesPanel, {
+      embedded: true,
+      onUpdate: () => this.onListesUpdate?.(),
+      onDiscuss: (spaceId) => this.onDiscussSpace?.(spaceId),
+    });
     this.settingsPage = new SettingsPage(this.settingsPanel, this.settingsCallbacks);
     await this.mindMap.init();
     await this.listesPage.init();
+    await this.espacesPage.init();
     await this.settingsPage.init();
   }
 
@@ -134,6 +159,9 @@ export class Gallery {
     }
     if (this.currentView === 'listes') {
       void this.listesPage?.refresh();
+    }
+    if (this.currentView === 'espaces') {
+      void this.espacesPage?.refresh();
     }
     if (this.currentView === 'settings') {
       void this.settingsPage?.refresh();
@@ -150,6 +178,19 @@ export class Gallery {
 
   openListes(): void {
     this.openView('listes');
+  }
+
+  openEspaces(): void {
+    this.openView('espaces');
+  }
+
+  openEspacesSpace(spaceId: string): void {
+    this.openView('espaces');
+    this.espacesPage?.openSpace(spaceId);
+  }
+
+  refreshEspaces(): Promise<void> {
+    return this.espacesPage?.refresh() ?? Promise.resolve();
   }
 
   openSettings(): void {
@@ -198,6 +239,7 @@ export class Gallery {
     this.appView.hidden = !showingApp;
     this.thoughtsPanel.hidden = view !== 'thoughts';
     this.listesPanel.hidden = view !== 'listes';
+    this.espacesPanel.hidden = view !== 'espaces';
     this.settingsPanel.hidden = view !== 'settings';
 
     if (view === 'thoughts') {
@@ -207,6 +249,10 @@ export class Gallery {
     if (view === 'listes') {
       this.viewTitle.textContent = 'Listes';
       void this.listesPage?.refresh();
+    }
+    if (view === 'espaces') {
+      this.viewTitle.textContent = 'Espaces';
+      void this.espacesPage?.refresh();
     }
     if (view === 'settings') {
       this.viewTitle.textContent = 'Réglages';

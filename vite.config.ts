@@ -121,9 +121,9 @@ function createMerlinAgentDevProxy(fallbackApiKey: string) {
         finishAgentJob,
         getAgentJob,
         saveAgentJob,
-      } = await import('./api/lib/agent-jobs');
-      const { runMerlinAgent } = await import('./api/lib/merlin-agent/runner');
-      const { scheduleBackground } = await import('./api/lib/wait-until');
+      } = await import('./server/agent-jobs');
+      const { runMerlinAgent } = await import('./server/merlin-agent/runner');
+      const { scheduleBackground } = await import('./server/wait-until');
 
       if (req.method === 'GET') {
         const parsedUrl = new URL(url, 'http://localhost');

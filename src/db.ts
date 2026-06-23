@@ -10,6 +10,7 @@ import type {
   MerlinMessage,
   MerlinReminder,
   MerlinShortcut,
+  MerlinSpace,
   MerlinSyncData,
   SyncPayload,
 } from './types';
@@ -52,10 +53,14 @@ interface DailyNoteDB extends DBSchema {
     key: string;
     value: MerlinEnvVar;
   };
+  merlin_spaces: {
+    key: string;
+    value: MerlinSpace;
+  };
 }
 
 const DB_NAME = 'daily-note';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 export const MERLIN_CONVERSATION_ID = 'main';
 
 let dbPromise: Promise<IDBPDatabase<DailyNoteDB>> | null = null;
@@ -95,6 +100,11 @@ function getDb(): Promise<IDBPDatabase<DailyNoteDB>> {
         if (oldVersion < 4) {
           if (!db.objectStoreNames.contains('merlin_env')) {
             db.createObjectStore('merlin_env');
+          }
+        }
+        if (oldVersion < 5) {
+          if (!db.objectStoreNames.contains('merlin_spaces')) {
+            db.createObjectStore('merlin_spaces');
           }
         }
       },
@@ -371,6 +381,31 @@ export async function deleteMerlinEnvVar(key: string): Promise<void> {
   await db.delete('merlin_env', key);
 }
 
+export async function getMerlinSpaces(): Promise<MerlinSpace[]> {
+  const db = await getDb();
+  return db.getAll('merlin_spaces');
+}
+
+export async function getMerlinSpace(id: string): Promise<MerlinSpace | undefined> {
+  const db = await getDb();
+  return db.get('merlin_spaces', id);
+}
+
+export async function saveMerlinSpace(space: MerlinSpace): Promise<void> {
+  const db = await getDb();
+  await db.put('merlin_spaces', { ...space, updatedAt: Date.now() }, space.id);
+}
+
+export async function deleteMerlinSpace(id: string): Promise<void> {
+  const db = await getDb();
+  await db.delete('merlin_spaces', id);
+}
+
+export async function getActiveSpaces(): Promise<MerlinSpace[]> {
+  const spaces = await getMerlinSpaces();
+  return spaces.filter((s) => s.status === 'active');
+}
+
 function mergeLists(local: MerlinList[], remote: MerlinList[]): MerlinList[] {
   const map = new Map<string, MerlinList>();
   for (const list of local) map.set(list.id, list);
@@ -442,7 +477,7 @@ function mergeByName(local: MerlinCustomTool[], remote: MerlinCustomTool[]): Mer
 }
 
 export async function exportMerlinData(): Promise<MerlinSyncData> {
-  const [conversation, facts, lists, reminders, shortcuts, customTools, env] =
+  const [conversation, facts, lists, reminders, shortcuts, customTools, env, spaces] =
     await Promise.all([
     getMerlinConversation(),
     getMerlinFacts(),
@@ -451,6 +486,7 @@ export async function exportMerlinData(): Promise<MerlinSyncData> {
     getMerlinShortcuts(),
     getMerlinCustomTools(),
     getMerlinEnvVars(),
+    getMerlinSpaces(),
   ]);
   const timestamps = [
     conversation.updatedAt,
@@ -460,6 +496,7 @@ export async function exportMerlinData(): Promise<MerlinSyncData> {
     ...shortcuts.map((s) => s.lastUsedAt),
     ...customTools.map((t) => t.updatedAt),
     ...env.map((e) => e.updatedAt),
+    ...spaces.map((s) => s.updatedAt),
   ];
   return {
     conversation,
@@ -469,6 +506,7 @@ export async function exportMerlinData(): Promise<MerlinSyncData> {
     shortcuts,
     customTools,
     env,
+    spaces,
     updatedAt: Math.max(...timestamps, 0),
   };
 }
@@ -481,7 +519,7 @@ export async function importMerlinData(remote: MerlinSyncData): Promise<void> {
 
   const db = await getDb();
   const tx = db.transaction(
-    ['merlin_lists', 'merlin_reminders', 'merlin_shortcuts', 'merlin_custom_tools', 'merlin_env'],
+    ['merlin_lists', 'merlin_reminders', 'merlin_shortcuts', 'merlin_custom_tools', 'merlin_env', 'merlin_spaces'],
     'readwrite',
   );
   await tx.objectStore('merlin_lists').clear();
@@ -503,6 +541,10 @@ export async function importMerlinData(remote: MerlinSyncData): Promise<void> {
   await tx.objectStore('merlin_env').clear();
   for (const envVar of merged.env ?? []) {
     await tx.objectStore('merlin_env').put(envVar, envVar.key);
+  }
+  await tx.objectStore('merlin_spaces').clear();
+  for (const space of merged.spaces ?? []) {
+    await tx.objectStore('merlin_spaces').put(space, space.id);
   }
   await tx.done;
 }
@@ -562,6 +604,7 @@ export function mergeMerlinData(
     shortcuts: mergeShortcuts(local.shortcuts ?? [], remote.shortcuts ?? []),
     customTools: mergeByName(local.customTools ?? [], remote.customTools ?? []),
     env: mergeEnvVars(local.env ?? [], remote.env ?? []),
+    spaces: mergeById(local.spaces ?? [], remote.spaces ?? []),
     updatedAt,
   };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { callOpenRouterWithFallback, OPENROUTER_FREE_ROUTER } from '../../api/lib/openrouter-fallback.js';
+import { callOpenRouterWithFallback, OPENROUTER_FREE_ROUTER } from '../../server/openrouter-fallback.js';
 import { parseJsonFromAi } from '../../lib/merlin-agent/parse.js';
 import {
   REMINDER_EXTRACT_PROMPT,

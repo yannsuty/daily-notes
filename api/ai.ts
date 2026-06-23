@@ -3,7 +3,7 @@ import {
   callOpenRouterWithFallback,
   OPENROUTER_FREE_ROUTER,
   type OpenRouterBody,
-} from './lib/openrouter-fallback.js';
+} from '../server/openrouter-fallback.js';
 import { captureApiException, withSentry } from '../lib/sentry-server.js';
 
 interface AiClientConfigPayload {

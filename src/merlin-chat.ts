@@ -1,10 +1,18 @@
 import {
   getActiveLists,
+  getActiveSpaces,
   getMerlinConversation,
+  getMerlinSpace,
   getPendingReminders,
   saveMerlinList,
   saveMerlinReminder,
 } from './db';
+import { SPACE_KIND_LABELS } from './merlin-space-format';
+import {
+  getActiveSpaceId,
+  onActiveSpaceChange,
+  setActiveSpaceId,
+} from './merlin-space-session';
 import { CONTEXT_CHIPS } from './merlin-intents';
 import { getWelcomeMessage, handleUserMessage } from './merlin-agent';
 import { stepLabelForUi } from './merlin-agent-client';
@@ -35,6 +43,7 @@ export class MerlinChat {
   private voiceBtn: HTMLButtonElement | null = null;
   private statusEl: HTMLElement | null = null;
   private traceEl: HTMLElement | null = null;
+  private contextEl: HTMLElement | null = null;
   private thinking = false;
 
   constructor(options: MerlinChatOptions) {
@@ -47,6 +56,7 @@ export class MerlinChat {
     this.container.innerHTML = '';
     this.container.classList.add('merlin-chat', 'tab-panel');
     this.container.innerHTML = `
+      <div class="merlin-chat__context" hidden role="status"></div>
       <div class="merlin-chat__banner" hidden role="status"></div>
       <details class="merlin-chat__actions-panel" open>
         <summary class="merlin-chat__actions-title">Mes actions</summary>
@@ -69,6 +79,7 @@ export class MerlinChat {
     `;
 
     this.bannerEl = this.container.querySelector('.merlin-chat__banner');
+    this.contextEl = this.container.querySelector('.merlin-chat__context');
     this.actionsEl = this.container.querySelector('.merlin-chat__actions-body');
     this.messagesEl = this.container.querySelector('.merlin-chat__messages');
     this.paletteEl = this.container.querySelector('.merlin-chat__palette');
@@ -96,6 +107,11 @@ export class MerlinChat {
     });
 
     await this.renderAll();
+
+    onActiveSpaceChange(() => {
+      void this.renderContextBanner();
+      void this.renderActionsPanel();
+    });
   }
 
   async refresh(): Promise<void> {
@@ -106,14 +122,74 @@ export class MerlinChat {
   }
 
   private async renderAll(): Promise<void> {
-    await Promise.all([this.renderMessages(), this.renderActionsPanel(), this.renderPalette()]);
+    await Promise.all([
+      this.renderMessages(),
+      this.renderActionsPanel(),
+      this.renderPalette(),
+      this.renderContextBanner(),
+    ]);
+  }
+
+  private async renderContextBanner(): Promise<void> {
+    if (!this.contextEl) return;
+
+    const activeId = getActiveSpaceId();
+    if (!activeId) {
+      this.contextEl.hidden = true;
+      this.contextEl.innerHTML = '';
+      return;
+    }
+
+    const space = await getMerlinSpace(activeId);
+    if (!space || space.status !== 'active') {
+      setActiveSpaceId(null);
+      this.contextEl.hidden = true;
+      return;
+    }
+
+    this.contextEl.hidden = false;
+    this.contextEl.innerHTML = `
+      <span class="merlin-chat__context-label">Contexte :</span>
+      <span class="merlin-chat__context-badge">${escapeHtml(SPACE_KIND_LABELS[space.kind])}</span>
+      <span class="merlin-chat__context-title">${escapeHtml(space.title)}</span>
+      <button type="button" class="merlin-chat__context-clear" data-action="clear-context" aria-label="Quitter le contexte">✕</button>
+    `;
+
+    this.contextEl.querySelector('[data-action="clear-context"]')?.addEventListener('click', () => {
+      setActiveSpaceId(null);
+      void this.renderContextBanner();
+      void this.renderActionsPanel();
+    });
   }
 
   private async renderActionsPanel(): Promise<void> {
     if (!this.actionsEl) return;
 
-    const [lists, reminders] = await Promise.all([getActiveLists(), getPendingReminders()]);
+    const [lists, reminders, spaces] = await Promise.all([
+      getActiveLists(),
+      getPendingReminders(),
+      getActiveSpaces(),
+    ]);
     const parts: string[] = [];
+
+    const activeSpaceId = getActiveSpaceId();
+    const recentSpaces = spaces
+      .filter((s) => s.id !== activeSpaceId)
+      .slice(0, 4);
+
+    if (recentSpaces.length > 0) {
+      parts.push(`<div class="merlin-actions__group">
+        <h4 class="merlin-actions__heading">Espaces récents</h4>
+        <ul class="merlin-actions__list">
+          ${recentSpaces
+            .map(
+              (s) =>
+                `<li><button type="button" class="merlin-actions__item" data-action="focus-space" data-space-id="${s.id}">📁 ${escapeHtml(s.title)} <span class="merlin-actions__meta">${escapeHtml(SPACE_KIND_LABELS[s.kind])}</span></button></li>`,
+            )
+            .join('')}
+        </ul>
+      </div>`);
+    }
 
     if (lists.length > 0) {
       for (const list of lists) {
@@ -169,10 +245,18 @@ export class MerlinChat {
 
     if (parts.length === 0) {
       this.actionsEl.innerHTML =
-        '<p class="merlin-actions__empty">Aucune liste ni rappel actif. Dites par ex. « ajoute du lait à courses » ou « rappelle-moi à midi ».</p>';
+        '<p class="merlin-actions__empty">Aucune liste ni espace actif. Dites par ex. « compare ces produits » ou « ajoute du lait à courses ».</p>';
     } else {
       this.actionsEl.innerHTML = parts.join('');
     }
+
+    this.actionsEl.querySelectorAll('[data-action="focus-space"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        setActiveSpaceId((btn as HTMLElement).dataset.spaceId!);
+        void this.renderContextBanner();
+        void this.renderActionsPanel();
+      });
+    });
 
     this.actionsEl.querySelectorAll('[data-action="toggle-item"]').forEach((btn) => {
       btn.addEventListener('click', () => {

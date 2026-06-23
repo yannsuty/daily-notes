@@ -8,6 +8,6 @@ export type {
   AgentStep,
   AgentStepPhase,
   QueryDepth,
-} from '../../../lib/merlin-agent/types.js';
+} from '../../lib/merlin-agent/types.js';
 
 export { runMerlinAgent, type StepCallback } from './runner.js';
