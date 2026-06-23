@@ -77,6 +77,23 @@ Configurer dans le dépôt (**Settings → Secrets and variables → Actions**) 
 | `ANDROID_KEY_ALIAS` | Secret | Alias de la clé (ex. `daily-note`) |
 | `ANDROID_KEY_PASSWORD` | Secret | Mot de passe de la clé (souvent identique au keystore) |
 | `VERCEL_URL` | Variable | URL Vercel (ex. `https://votre-app.vercel.app`) |
+| `VITE_GITHUB_TOKEN` | Secret (optionnel) | Token GitHub lecture seule — augmente le quota API (60 → 5000 req/h) pour la MAJ in-app |
+
+#### Token GitHub pour la MAJ in-app (optionnel)
+
+La vérification des mises à jour dans l'app appelle l'API GitHub (`/releases/latest`). Sans token, la limite est de **60 requêtes/heure par IP** ; avec un token, **5000/heure**.
+
+1. Ouvrir [GitHub → Settings → Developer settings → Personal access tokens](https://github.com/settings/tokens)
+2. **Fine-grained token** (recommandé) ou **classic token**
+3. Accès **lecture seule** au dépôt `daily-notes` (Contents + Metadata)
+4. Copier le token dans le secret GitHub Actions **`VITE_GITHUB_TOKEN`** (Settings → Secrets and variables → Actions)
+5. Pour un build local Capacitor, ajouter dans `.env.production` :
+
+```bash
+VITE_GITHUB_TOKEN=ghp_xxxxxxxx
+```
+
+> Le téléchargement de `app-version.json` utilise le code natif Android (pas la WebView) et ne consomme pas ce quota API.
 
 Générer le keystore (une seule fois, à conserver précieusement) :
 

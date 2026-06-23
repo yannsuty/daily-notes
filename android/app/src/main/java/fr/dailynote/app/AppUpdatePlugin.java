@@ -13,7 +13,11 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 @CapacitorPlugin(name = "AppUpdate")
 public class AppUpdatePlugin extends Plugin {
@@ -110,6 +114,54 @@ public class AppUpdatePlugin extends Plugin {
     public void clearDownload(PluginCall call) {
         createDownloadManager().clearPendingDownload();
         call.resolve();
+    }
+
+    @PluginMethod
+    public void fetchUrlText(PluginCall call) {
+        String url = call.getString("url");
+        if (url == null || url.isEmpty()) {
+            call.reject("URL manquante");
+            return;
+        }
+
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(url).openConnection();
+                connection.setInstanceFollowRedirects(true);
+                connection.setRequestMethod("GET");
+                connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("User-Agent", "Merlin-Android-App");
+                connection.setConnectTimeout(30_000);
+                connection.setReadTimeout(60_000);
+
+                int status = connection.getResponseCode();
+                if (status != HttpURLConnection.HTTP_OK) {
+                    JSObject payload = new JSObject();
+                    payload.put("httpStatus", status);
+                    call.reject("HTTP " + status, null, payload);
+                    return;
+                }
+
+                try (InputStream input = connection.getInputStream()) {
+                    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                    byte[] chunk = new byte[8 * 1024];
+                    int read;
+                    while ((read = input.read(chunk)) != -1) {
+                        buffer.write(chunk, 0, read);
+                    }
+                    JSObject result = new JSObject();
+                    result.put("text", buffer.toString("UTF-8"));
+                    call.resolve(result);
+                }
+            } catch (Exception e) {
+                call.reject("Lecture URL impossible", e);
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }).start();
     }
 
     @PluginMethod

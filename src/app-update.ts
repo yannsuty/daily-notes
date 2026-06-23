@@ -19,6 +19,7 @@ export interface AppUpdatePlugin {
   getDownloadState(): Promise<DownloadState>;
   clearDownload(): Promise<void>;
   downloadAndInstall(options: { url: string; versionCode: number }): Promise<void>;
+  fetchUrlText(options: { url: string }): Promise<{ text: string }>;
   addListener(
     eventName: 'downloadProgress',
     listenerFunc: (event: DownloadProgressEvent) => void,
@@ -254,13 +255,82 @@ async function fetchLatestRelease(
   return release;
 }
 
-/** Ne jamais fetch() les URLs github.com/releases/download dans la WebView — utiliser asset.url (API). */
+function parseVersionManifest(
+  raw: string,
+  sourceUrl: string,
+  installed?: { versionCode: number; versionName: string },
+): VersionManifest | null {
+  try {
+    const manifest = JSON.parse(raw) as VersionManifest;
+    if (typeof manifest.versionCode !== 'number') {
+      const context = buildAppUpdateContext('github_version_manifest', {
+        githubUrl: sourceUrl,
+        responseBody: raw.slice(0, 500),
+        installedVersionCode: installed?.versionCode,
+        installedVersionName: installed?.versionName,
+      });
+      captureAppUpdateIssue('app-version.json invalide', new Error('versionCode manquant'), context);
+      return null;
+    }
+    return manifest;
+  } catch (error) {
+    const context = buildAppUpdateContext('github_version_manifest', {
+      githubUrl: sourceUrl,
+      responseBody: raw.slice(0, 500),
+      installedVersionCode: installed?.versionCode,
+      installedVersionName: installed?.versionName,
+    });
+    captureAppUpdateIssue('app-version.json invalide', error, context);
+    return null;
+  }
+}
+
+/** Lecture native (HttpURLConnection) — hors WebView et hors quota API GitHub. */
+async function fetchVersionManifestNative(
+  browserDownloadUrl: string,
+  installed?: { versionCode: number; versionName: string },
+): Promise<VersionManifest | null> {
+  if (!isNativeAndroid()) {
+    return null;
+  }
+
+  try {
+    const { text } = await AppUpdate.fetchUrlText({ url: browserDownloadUrl });
+    return parseVersionManifest(text, browserDownloadUrl, installed);
+  } catch (error) {
+    const pluginContext = extractPluginErrorContext(error);
+    const context = buildAppUpdateContext('github_version_manifest', {
+      githubUrl: browserDownloadUrl,
+      installedVersionCode: installed?.versionCode,
+      installedVersionName: installed?.versionName,
+      httpStatus:
+        typeof pluginContext.httpStatus === 'number' ? pluginContext.httpStatus : undefined,
+      pluginMessage:
+        typeof pluginContext.pluginMessage === 'string' ? pluginContext.pluginMessage : undefined,
+    });
+    captureAppUpdateIssue('Lecture native app-version.json échouée', error, context);
+    return null;
+  }
+}
+
+/** WebView : ne pas fetch() browser_download_url. Natif d'abord, puis API asset.url en secours. */
 async function fetchVersionManifest(
   release: GitHubRelease,
   installed?: { versionCode: number; versionName: string },
 ): Promise<VersionManifest | null> {
   const asset = release.assets.find((item) => item.name === VERSION_ASSET_NAME);
-  if (!asset?.url) {
+  if (!asset) {
+    return null;
+  }
+
+  if (asset.browser_download_url) {
+    const nativeManifest = await fetchVersionManifestNative(asset.browser_download_url, installed);
+    if (nativeManifest) {
+      return nativeManifest;
+    }
+  }
+
+  if (!asset.url) {
     return null;
   }
 
@@ -271,18 +341,8 @@ async function fetchVersionManifest(
       'github_version_manifest',
       installed,
     );
-    const manifest = (await response.json()) as VersionManifest;
-    if (typeof manifest.versionCode !== 'number') {
-      const context = buildAppUpdateContext('github_version_manifest', {
-        githubUrl: asset.url,
-        responseBody: JSON.stringify(manifest).slice(0, 500),
-        installedVersionCode: installed?.versionCode,
-        installedVersionName: installed?.versionName,
-      });
-      captureAppUpdateIssue('app-version.json invalide', new Error('versionCode manquant'), context);
-      return null;
-    }
-    return manifest;
+    const raw = await response.text();
+    return parseVersionManifest(raw, asset.url, installed);
   } catch (error) {
     if (error instanceof GitHubApiError) {
       return null;
