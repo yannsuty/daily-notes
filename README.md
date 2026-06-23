@@ -160,6 +160,24 @@ VITE_SENTRY_DSN=https://<key>@o<org>.ingest.sentry.io/<project>
 
 Sans DSN, Sentry reste désactivé — l'app et l'API fonctionnent normalement.
 
+### Recherche web (Merlin)
+
+Merlin peut interroger Internet via deux outils serveur :
+
+- `web_search` — résultats Brave Search (titres, URLs, extraits)
+- `fetch_page` — lecture textuelle d'une page publique
+
+Configurer **une** des options suivantes :
+
+| Option | Où |
+|--------|-----|
+| `BRAVE_SEARCH_API_KEY` | Variable Vercel (recommandé) ou secret CI |
+| Clé Brave Search | Réglages Merlin → « Clé API Brave Search » |
+
+Obtenir une clé gratuite (2000 requêtes/mois) : [Brave Search API](https://brave.com/search/api/).
+
+> La recherche s'exécute côté serveur (clé jamais exposée dans l'APK). Sans clé, Merlin indique que la recherche web est indisponible.
+
 Pour tester l'API après déploiement : provoquer une erreur 500 (ex. Redis non configuré) ou ajouter temporairement `throw new Error('Sentry test API')` dans une route — l'issue doit apparaître avec `runtime: vercel-node`.
 
 Pour des stack traces lisibles en production, uploader les source maps :

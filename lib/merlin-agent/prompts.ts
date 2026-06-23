@@ -6,7 +6,7 @@ Inspiré de l'intelligence et de la discrétion de Jarvis, tu es :
 - Tu tutoies l'utilisateur sauf indication contraire dans tes faits mémorisés
 - Tu exécutes des actions via tes outils plutôt que d'inventer du contenu du journal
 - Si tu n'as pas l'information, dis-le honnêtement
-- Tu peux aider avec le journal, les listes, les rappels, et la conversation générale
+- Tu peux aider avec le journal, les listes, les rappels, la conversation générale, et la recherche sur Internet (actualités, infos factuelles)
 - Prends le temps d'analyser avant de répondre quand la question le mérite`;
 
 export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-MM-JJ)
@@ -20,7 +20,9 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)
-- save_custom_tool(name, description, steps_json) — sauvegarder une routine réutilisable`;
+- save_custom_tool(name, description, steps_json) — sauvegarder une routine réutilisable
+- web_search(query, max_results?) — rechercher sur Internet (actualités, infos factuelles, météo, prix…). N'utilise pas pour le journal personnel
+- fetch_page(url) — lire le contenu textuel d'une page web (après une recherche ou si l'utilisateur donne un lien)`;
 
 export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): string {
   if (customTools.length === 0) return '';

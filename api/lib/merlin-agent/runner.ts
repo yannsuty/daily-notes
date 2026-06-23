@@ -8,6 +8,7 @@ import {
   PLANNER_PROMPT,
   SYNTHESIS_PROMPT,
 } from '../../../lib/merlin-agent/prompts.js';
+import { runWebTool } from './web-tools.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
 import { AgentStore, isMutationTool, templateReplyForTool } from './tools.js';
@@ -27,7 +28,11 @@ const READ_TOOLS = new Set([
   'summarize_period',
   'show_lists',
   'list_reminders',
+  'web_search',
+  'fetch_page',
 ]);
+
+const WEB_TOOLS = new Set(['web_search', 'fetch_page']);
 
 export type StepCallback = (step: AgentStep) => void;
 
@@ -292,7 +297,9 @@ export async function runMerlinAgent(
       }
     }
 
-    const toolResult = store.executeTool(toolCall.name, toolArgs);
+    const toolResult = WEB_TOOLS.has(toolCall.name)
+      ? await runWebTool(toolCall.name, toolArgs, config)
+      : store.executeTool(toolCall.name, toolArgs);
     if (toolResult.mutation) lastSideEffect = toolResult.mutation;
 
     const template = templateReplyForTool(toolCall.name, toolResult);

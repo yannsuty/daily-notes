@@ -130,6 +130,8 @@ export interface AgentClientConfig {
   apiKey?: string;
   modelChain?: string;
   model?: string;
+  /** Clé Brave Search API — recherche web (secours : BRAVE_SEARCH_API_KEY côté serveur). */
+  braveSearchApiKey?: string;
 }
 
 export interface AgentRequestBody {

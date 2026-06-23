@@ -29,7 +29,7 @@ interface AgentProxyBody {
   stream?: boolean;
   background?: boolean;
   jobId?: string;
-  config?: { apiKey?: string; modelChain?: string; model?: string };
+  config?: { apiKey?: string; modelChain?: string; model?: string; braveSearchApiKey?: string };
 }
 
 function writeSse(res: ServerResponse, event: string, payload: unknown): void {
@@ -179,6 +179,8 @@ function createMerlinAgentDevProxy(fallbackApiKey: string) {
         apiKey: parsed.config?.apiKey?.trim() || fallbackApiKey,
         modelChain: parsed.config?.modelChain?.trim() || process.env.OPENROUTER_MODEL_CHAIN,
         model: parsed.config?.model,
+        braveSearchApiKey:
+          parsed.config?.braveSearchApiKey?.trim() || process.env.BRAVE_SEARCH_API_KEY,
       };
 
       if (parsed.background) {

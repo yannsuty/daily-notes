@@ -175,6 +175,7 @@ export async function startBackgroundAgentJob(
         apiKey: clientConfig.apiKey,
         modelChain: clientConfig.modelChain,
         model: clientConfig.model,
+        braveSearchApiKey: clientConfig.braveSearchApiKey,
       },
     }),
   });
@@ -313,6 +314,7 @@ export async function runServerAgent(
         apiKey: clientConfig.apiKey,
         modelChain: clientConfig.modelChain,
         model: clientConfig.model,
+        braveSearchApiKey: clientConfig.braveSearchApiKey,
       },
     }),
     signal: options?.signal,
