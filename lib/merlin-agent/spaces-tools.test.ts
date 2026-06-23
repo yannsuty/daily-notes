@@ -125,6 +125,79 @@ describe('AgentStore — espaces', () => {
     expect(store.getMutations().spaces?.[0].id).toBe(spaceId);
   });
 
+  it('ajoute des lignes à une comparaison en mode append', async () => {
+    await store.executeTool('create_space', {
+      kind: 'comparison',
+      title: 'Ventilateurs',
+      recap: 'Initiale',
+      data_json: {
+        columns: ['Modèle', 'Prix'],
+        rows: [['Alpha', '150 €']],
+      },
+    });
+
+    const result = await store.executeTool('update_space', {
+      title: 'Ventilateurs',
+      append: 'true',
+      data_json: {
+        rows: [['Beta', '180 €']],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(store.spaces[0].data.rows).toHaveLength(2);
+    expect(store.spaces[0].data.rows?.[1][0]).toBe('Beta');
+  });
+
+  it('résout update_space via le contexte actif', async () => {
+    const comparison = {
+      id: 'cmp-1',
+      kind: 'comparison' as const,
+      title: 'Ventilateurs plafond',
+      recap: 'Comparaison initiale',
+      data: {
+        columns: ['Modèle', 'Bruit'],
+        rows: [['Alpha', '30 dB']],
+      },
+      status: 'active' as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const contextualStore = new AgentStore(
+      emptyContext({ spaces: [comparison], activeSpaceId: 'cmp-1', activeSpace: comparison }),
+    );
+
+    const result = await contextualStore.executeTool('update_space', {
+      append: 'true',
+      data_json: { rows: [['Beta', '28 dB']] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(contextualStore.spaces[0].data.rows).toHaveLength(2);
+  });
+
+  it('show_space sans id affiche le contexte actif', async () => {
+    const plan = {
+      id: 'plan-1',
+      kind: 'plan' as const,
+      title: 'API v2',
+      recap: 'Plan de migration',
+      data: { goal: 'Migrer' },
+      status: 'active' as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const contextualStore = new AgentStore(
+      emptyContext({ spaces: [plan], activeSpaceId: 'plan-1', activeSpace: plan }),
+    );
+
+    const show = await contextualStore.executeTool('show_space', {});
+    expect(show.content).toContain('Plan de migration');
+    expect(show.content).toContain('id: plan-1');
+  });
+
   it('liste et affiche les espaces actifs', async () => {
     await store.executeTool('create_space', {
       kind: 'plan',

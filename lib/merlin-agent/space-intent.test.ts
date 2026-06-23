@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { detectSpaceKind, inferSpaceTitle } from './space-intent.js';
+import {
+  detectSpaceKind,
+  detectSpaceUpdateIntent,
+  inferSpaceTitle,
+  isExplicitNewSpaceIntent,
+  shouldUpdateActiveSpace,
+} from './space-intent.js';
 
 describe('detectSpaceKind', () => {
   it('détecte une comparaison de ventilateurs', () => {
@@ -18,5 +24,30 @@ describe('detectSpaceKind', () => {
 describe('inferSpaceTitle', () => {
   it('préfixe les titres courts', () => {
     expect(inferSpaceTitle('ventilateurs plafond', 'comparison')).toContain('Comparaison');
+  });
+});
+
+describe('detectSpaceUpdateIntent', () => {
+  it('détecte une mise à jour de comparaison existante', () => {
+    expect(detectSpaceUpdateIntent('Ajoute le modèle X à la comparaison')).toBe(true);
+    expect(detectSpaceUpdateIntent('Rajoute ce ventilateur dans le tableau')).toBe(true);
+    expect(detectSpaceUpdateIntent('Compare trois modèles de ventilateurs')).toBe(false);
+  });
+});
+
+describe('shouldUpdateActiveSpace', () => {
+  it('préfère update quand un espace actif correspond', () => {
+    expect(shouldUpdateActiveSpace('Ajoute le modèle B', 'comparison')).toBe(true);
+    expect(shouldUpdateActiveSpace('Crée une nouvelle comparaison', 'comparison')).toBe(false);
+    expect(shouldUpdateActiveSpace('Compare aussi le modèle C', 'comparison')).toBe(true);
+    expect(shouldUpdateActiveSpace('Quel modèle pour une chambre de 20 m² ?', 'comparison')).toBe(
+      false,
+    );
+  });
+
+  it('ne confond pas comparaison initiale et mise à jour', () => {
+    expect(detectSpaceKind('Ajoute le modèle X à la comparaison')).toBe('comparison');
+    expect(shouldUpdateActiveSpace('Ajoute le modèle X à la comparaison', 'comparison')).toBe(true);
+    expect(isExplicitNewSpaceIntent('Crée une nouvelle comparaison')).toBe(true);
   });
 });

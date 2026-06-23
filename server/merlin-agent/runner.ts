@@ -10,7 +10,7 @@ import {
 } from '../../lib/merlin-agent/prompts.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
-import { ensureSpaceSaved } from './space-ensure.js';
+import { ensureSpacePersisted } from './space-ensure.js';
 import { AgentStore, isImmediateReplyTool, normalizeToolArgs, templateReplyForTool } from './tools.js';
 import type {
   AgentClientConfig,
@@ -248,12 +248,13 @@ export async function runMerlinAgent(
     const toolCall = parseToolCall(result.text);
     if (!toolCall) {
       const reply = result.text;
-      const autoSaved = await ensureSpaceSaved(
+      const autoSaved = await ensureSpacePersisted(
         store,
         trimmed,
         reply,
         config,
         options?.referer,
+        context.activeSpace,
       );
       if (autoSaved) {
         pushStep(steps, {
@@ -374,12 +375,13 @@ export async function runMerlinAgent(
       options?.referer,
     );
 
-    const autoSaved = await ensureSpaceSaved(
+    const autoSaved = await ensureSpacePersisted(
       store,
       trimmed,
       reply,
       config,
       options?.referer,
+      context.activeSpace,
     );
     if (autoSaved) {
       pushStep(steps, {
