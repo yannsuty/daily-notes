@@ -1,8 +1,15 @@
 import { getMerlinCustomTools } from './db';
 import {
-  isPrimitiveTool,
   MAX_CUSTOM_ROUTINE_STEPS,
 } from '../lib/merlin-agent/primitive-tools';
+import {
+  buildRoutineParams,
+  createRoutineContext,
+  formatRoutineParamsHint,
+  recordRoutineStepResult,
+  resolveRoutineArgs,
+  shouldRunRoutineStep,
+} from '../lib/merlin-agent/routine';
 import type { ToolResult } from './merlin-tools';
 
 const MAX_CUSTOM_STEPS = MAX_CUSTOM_ROUTINE_STEPS;
@@ -26,20 +33,11 @@ export function invalidateCustomToolCache(): void {
   customToolsCache = null;
 }
 
+export { parseRoutineInvocation } from '../lib/merlin-agent/routine';
+
 export async function isCustomToolName(name: string): Promise<boolean> {
   const map = await getCustomToolMap();
   return map.has(name.toLowerCase());
-}
-
-function resolveArgs(
-  template: Record<string, string>,
-  params: Record<string, string>,
-): Record<string, string> {
-  const resolved: Record<string, string> = {};
-  for (const [key, value] of Object.entries(template)) {
-    resolved[key] = value.replace(/\{\{(\w+)\}\}/g, (_, param) => params[param] ?? '');
-  }
-  return resolved;
 }
 
 export async function executeCustomTool(
@@ -56,19 +54,28 @@ export async function executeCustomTool(
     return { ok: false, content: 'Routine trop longue.' };
   }
 
+  const routineContext = createRoutineContext(buildRoutineParams(tool.params, args));
   const results: string[] = [];
   let lastMutation: ToolResult['mutation'];
+  let executed = 0;
 
   for (const step of tool.steps) {
-    if (!isPrimitiveTool(step.tool) || step.tool === 'save_custom_tool') {
-      return { ok: false, content: `Étape interdite : ${step.tool}` };
+    if (!shouldRunRoutineStep(step, routineContext)) {
+      continue;
     }
-    const stepArgs = resolveArgs(step.args, args);
+
+    const stepArgs = resolveRoutineArgs(step.args ?? {}, routineContext);
     const { executeMerlinTool } = await import('./merlin-tools');
     const result = await executeMerlinTool(step.tool, stepArgs);
+    recordRoutineStepResult(routineContext, step.tool, result.content, result.ok);
     if (!result.ok) return result;
-    results.push(result.content);
+    results.push(`[${step.tool}]\n${result.content}`);
+    executed += 1;
     if (result.mutation) lastMutation = result.mutation;
+  }
+
+  if (executed === 0) {
+    return { ok: false, content: `Routine « ${name} » : aucune étape exécutée (conditions non remplies).` };
   }
 
   tool.usageCount += 1;
@@ -78,7 +85,7 @@ export async function executeCustomTool(
 
   return {
     ok: true,
-    content: results.join('\n'),
+    content: results.join('\n\n'),
     mutation: lastMutation,
   };
 }
@@ -87,10 +94,8 @@ export async function getCustomToolsPromptBlock(): Promise<string> {
   const tools = await getMerlinCustomTools();
   if (tools.length === 0) return '';
   const lines = tools.map((t) => {
-    const params = t.params?.length
-      ? ` (${t.params.map((p) => p.name).join(', ')})`
-      : '';
-    return `- ${t.name}${params} — ${t.description}`;
+    const params = formatRoutineParamsHint(t.params).trim();
+    return `- ${t.name}${params ? params : ''} — ${t.description}`;
   });
   return `\n\nRoutines personnalisées :\n${lines.join('\n')}`;
 }

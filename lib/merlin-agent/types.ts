@@ -56,11 +56,25 @@ export interface MerlinReminder {
 export interface MerlinToolStep {
   tool: string;
   args: Record<string, string>;
+  when?: RoutineCondition;
+  unless?: RoutineCondition;
 }
+
+export type RoutineCondition =
+  | { empty: string }
+  | { exists: string }
+  | { eq: [string, string] }
+  | { neq: [string, string] }
+  | { contains: [string, string] }
+  | { and: RoutineCondition[] }
+  | { or: RoutineCondition[] }
+  | { not: RoutineCondition };
 
 export interface MerlinCustomToolParam {
   name: string;
   description: string;
+  required?: boolean;
+  default?: string;
 }
 
 export interface MerlinCustomTool {

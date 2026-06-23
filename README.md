@@ -180,7 +180,12 @@ Configurer **au moins une** des options suivantes :
 
 Les **sources** sont citées automatiquement en fin de réponse Merlin.
 
-Les **routines personnalisées** (`save_custom_tool`) peuvent enchaîner jusqu'à 5 étapes, y compris `web_search` et `fetch_page` (exécution asynchrone côté serveur).
+Les **routines personnalisées** (`save_custom_tool`) supportent :
+
+- **Paramètres** : `params_json` avec `name`, `description`, `required`, `default`
+- **Variables** dans les args : `{{ville}}`, `{{ville|Paris}}`, `{{today}}`, `{{prev.url}}`, `{{steps.0.content}}`
+- **Conditions** par étape : `when` / `unless` (JSON : `exists`, `empty`, `eq`, `contains`, `and`, `or`, `not`)
+- **Invocation** : `/routine meteo ville=Lyon` ou `routine meteo Lyon`
 
 > La recherche s'exécute côté serveur (clés jamais exposées dans l'APK). Sans aucune clé ni scraper, Merlin indique que la recherche web est indisponible.
 

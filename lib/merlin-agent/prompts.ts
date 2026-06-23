@@ -1,4 +1,8 @@
 import type { AgentContext, MerlinCustomTool } from './types.js';
+import {
+  ROUTINE_CONDITION_DOCS,
+  formatRoutineParamsHint,
+} from './routine.js';
 
 export const MERLIN_PERSONA = `Tu es Merlin, l'assistant personnel de l'utilisateur.
 Inspiré de l'intelligence et de la discrétion de Jarvis, tu es :
@@ -20,7 +24,9 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)
-- save_custom_tool(name, description, steps_json) — sauvegarder une routine réutilisable (jusqu'à 5 étapes, dont web_search / fetch_page)
+- save_custom_tool(name, description, steps_json, params_json?) — sauvegarder une routine (≤5 étapes, web inclus). params_json : [{"name":"ville","description":"Ville","required":true,"default":"Paris"}]
+
+${ROUTINE_CONDITION_DOCS}
 - web_search(query, max_results?) — rechercher sur Internet (actualités, infos factuelles, météo, prix…). N'utilise pas pour le journal personnel
 - fetch_page(url) — lire le contenu textuel d'une page web (après une recherche ou si l'utilisateur donne un lien)`;
 
@@ -28,7 +34,7 @@ export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): st
   if (customTools.length === 0) return '';
   const lines = customTools.map(
     (tool) =>
-      `- ${tool.name} — ${tool.description} (routine : ${tool.steps.map((s) => s.tool).join(' → ')})`,
+      `- ${tool.name}${formatRoutineParamsHint(tool.params)} — ${tool.description} (routine : ${tool.steps.map((s) => s.tool).join(' → ')})`,
   );
   return `\n\nRoutines personnalisées :\n${lines.join('\n')}`;
 }

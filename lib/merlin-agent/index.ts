@@ -24,10 +24,17 @@ export type {
 
 export { assessQueryDepth, extractMemoryQueries } from './complexity.js';
 export {
-  isPrimitiveTool,
-  isWebTool,
-  MAX_CUSTOM_ROUTINE_STEPS,
-  PRIMITIVE_TOOL_NAMES,
-  PRIMITIVE_TOOLS,
-  WEB_TOOL_NAMES,
-} from './primitive-tools.js';
+  buildRoutineParams,
+  createRoutineContext,
+  evaluateRoutineCondition,
+  formatRoutineParamsHint,
+  parseRoutineInvocation,
+  parseRoutineParams,
+  parseRoutineSteps,
+  resolveRoutineArgs,
+  resolveRoutineTemplate,
+  ROUTINE_CONDITION_DOCS,
+  shouldRunRoutineStep,
+} from './routine.js';
+export type { ParsedRoutineStep } from './routine.js';
+export type { RoutineCondition } from './types.js';

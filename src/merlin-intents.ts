@@ -4,6 +4,8 @@ import { buildLocalReminderFallback } from '../lib/merlin-agent/reminder-text';
 import { detectContextTags } from './merlin-context';
 import { extractReminderFields } from './merlin-reminder-extract';
 import { executeMerlinTool, type ToolResult } from './merlin-tools';
+import { getMerlinCustomToolByName } from './db';
+import { parseRoutineInvocation } from './merlin-tool-registry';
 
 export interface IntentResult {
   handled: boolean;
@@ -184,8 +186,8 @@ export async function tryFastIntent(rawText: string): Promise<IntentResult> {
   if (macroMatch) {
     const name = macroMatch[1].toLowerCase();
     const paramStr = macroMatch[2]?.trim();
-    const args: Record<string, string> = {};
-    if (paramStr) args.item = paramStr;
+    const customTool = await getMerlinCustomToolByName(name);
+    const args = parseRoutineInvocation(paramStr, customTool?.params);
     const result = await executeMerlinTool(name, args);
     if (result.ok || !result.content.includes('introuvable')) {
       return {

@@ -1,10 +1,19 @@
 import { addDays, formatDateLabel, todayKey } from '../../../lib/merlin-agent/dates.js';
 import {
-  isPrimitiveTool,
   isWebTool,
   MAX_CUSTOM_ROUTINE_STEPS,
 } from '../../../lib/merlin-agent/primitive-tools.js';
 import { mergeWebSources } from '../../../lib/merlin-agent/web.js';
+import {
+  buildRoutineParams,
+  createRoutineContext,
+  formatRoutineParamsHint,
+  parseRoutineParams,
+  parseRoutineSteps,
+  recordRoutineStepResult,
+  resolveRoutineArgs,
+  shouldRunRoutineStep,
+} from '../../../lib/merlin-agent/routine.js';
 import { normalizeReminderArgs } from '../../../lib/merlin-agent/reminder-text.js';
 import { runWebTool } from './web-tools.js';
 import type {
@@ -75,17 +84,6 @@ function parseTimeOfDay(input: string): string | undefined {
   const h = String(Number(m[1])).padStart(2, '0');
   const min = m[2] ? String(Number(m[2])).padStart(2, '0') : '00';
   return `${h}:${min}`;
-}
-
-function resolveArgs(
-  template: Record<string, string>,
-  params: Record<string, string>,
-): Record<string, string> {
-  const resolved: Record<string, string> = {};
-  for (const [key, value] of Object.entries(template)) {
-    resolved[key] = value.replace(/\{\{(\w+)\}\}/g, (_, param) => params[param] ?? '');
-  }
-  return resolved;
 }
 
 export class AgentStore {
@@ -450,24 +448,16 @@ export class AgentStore {
     const name = (args.name ?? '').trim().toLowerCase().replace(/\s+/g, '_');
     const description = (args.description ?? args.desc ?? 'Routine personnalisée').trim();
     const stepsRaw = args.steps_json ?? args.steps ?? '[]';
+    const paramsRaw = args.params_json ?? args.params ?? '';
 
     if (!name) return { ok: false, content: 'Nom de routine manquant.' };
 
-    let steps: { tool: string; args: Record<string, string> }[];
-    try {
-      steps = JSON.parse(stepsRaw) as { tool: string; args: Record<string, string> }[];
-    } catch {
-      return { ok: false, content: 'steps_json invalide.' };
-    }
+    const parsedSteps = parseRoutineSteps(stepsRaw);
+    if (!parsedSteps.ok) return { ok: false, content: parsedSteps.error };
 
-    if (!Array.isArray(steps) || steps.length === 0 || steps.length > MAX_CUSTOM_ROUTINE_STEPS) {
-      return { ok: false, content: 'Routine vide ou trop longue.' };
-    }
-
-    for (const step of steps) {
-      if (!isPrimitiveTool(step.tool) || step.tool === 'save_custom_tool') {
-        return { ok: false, content: `Étape interdite : ${step.tool}` };
-      }
+    const parsedParams = parseRoutineParams(paramsRaw);
+    if (!Array.isArray(parsedParams)) {
+      return { ok: false, content: parsedParams.error };
     }
 
     const now = Date.now();
@@ -476,7 +466,8 @@ export class AgentStore {
       id: existing?.id ?? createEntityId(),
       name,
       description,
-      steps,
+      steps: parsedSteps.steps,
+      params: parsedParams.length > 0 ? parsedParams : undefined,
       source: 'auto',
       usageCount: existing?.usageCount ?? 0,
       createdAt: existing?.createdAt ?? now,
@@ -490,7 +481,11 @@ export class AgentStore {
     }
     this.markCustomTool(tool);
 
-    return { ok: true, content: `Routine « ${name} » enregistrée.`, mutation: 'list_updated' };
+    return {
+      ok: true,
+      content: `Routine « ${name} » enregistrée (${parsedSteps.steps.length} étape(s)${formatRoutineParamsHint(parsedParams)}).`,
+      mutation: 'list_updated',
+    };
   }
 
   isCustomTool(name: string): boolean {
@@ -568,24 +563,33 @@ export class AgentStore {
       return { ok: false, content: 'Routine trop longue.' };
     }
 
+    const routineContext = createRoutineContext(buildRoutineParams(tool.params, args));
     const results: string[] = [];
     let lastMutation: AgentSideEffect | undefined;
     let webSources: WebSource[] = [];
+    let executed = 0;
 
     for (const step of tool.steps) {
-      if (!isPrimitiveTool(step.tool) || step.tool === 'save_custom_tool') {
-        return { ok: false, content: `Étape interdite : ${step.tool}` };
+      if (!shouldRunRoutineStep(step, routineContext)) {
+        continue;
       }
-      const stepArgs = resolveArgs(step.args, args);
+
+      const stepArgs = resolveRoutineArgs(step.args ?? {}, routineContext);
       const result = await this.executeStepAsync(step.tool, stepArgs, config);
+      recordRoutineStepResult(routineContext, step.tool, result.content, result.ok);
       if (!result.ok) {
         return { ...result, webSources: mergeWebSources(webSources, result.webSources ?? []) };
       }
       results.push(`[${step.tool}]\n${result.content}`);
+      executed += 1;
       if (result.webSources?.length) {
         webSources = mergeWebSources(webSources, result.webSources);
       }
       if (result.mutation) lastMutation = result.mutation;
+    }
+
+    if (executed === 0) {
+      return { ok: false, content: `Routine « ${name} » : aucune étape exécutée (conditions non remplies).` };
     }
 
     tool.usageCount += 1;
