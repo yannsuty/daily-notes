@@ -8,6 +8,7 @@ import {
 import { CONTEXT_CHIPS } from './merlin-intents';
 import { getWelcomeMessage, handleUserMessage } from './merlin-agent';
 import { stepLabelForUi } from './merlin-agent-client';
+import { listPendingAgentJobs } from './merlin-agent-jobs';
 import { assessQueryDepth } from '../lib/merlin-agent';
 import type { AgentStep } from '../lib/merlin-agent';
 import { getPaletteShortcuts, toggleShortcutPin } from './merlin-shortcuts';
@@ -99,6 +100,9 @@ export class MerlinChat {
 
   async refresh(): Promise<void> {
     await this.renderAll();
+    if (listPendingAgentJobs().length > 0) {
+      this.setBackgroundPending();
+    }
   }
 
   private async renderAll(): Promise<void> {
@@ -313,6 +317,10 @@ export class MerlinChat {
 
   setBackgroundComplete(): void {
     this.setThinking(false);
+  }
+
+  setBackgroundPending(): void {
+    this.setThinking(true, 'Merlin réfléchit en arrière-plan…');
   }
 
   private renderAgentStep(step: AgentStep): void {

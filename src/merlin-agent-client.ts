@@ -2,6 +2,7 @@ import { apiUrl } from './api-base';
 import { getAiClientConfig } from './merlin-env';
 import type {
   AgentContext,
+  AgentJobPollResponse,
   AgentJobStartResponse,
   AgentRunResult,
   AgentStep,
@@ -190,6 +191,31 @@ export async function startBackgroundAgentJob(
   }
 
   return (await response.json()) as AgentJobStartResponse;
+}
+
+/** Lecture ponctuelle de l'état d'un job (sans SSE) — utile au retour en premier plan. */
+export async function getAgentJobStatus(jobId: string): Promise<AgentJobPollResponse> {
+  const response = await fetch(
+    apiUrl(`/api/merlin-agent?jobId=${encodeURIComponent(jobId)}`),
+    { headers: { Accept: 'application/json' } },
+  );
+
+  if (response.status === 404) {
+    throw new Error('Job introuvable ou expiré');
+  }
+
+  if (!response.ok) {
+    let detail = `Erreur serveur (${response.status})`;
+    try {
+      const body = (await response.json()) as { error?: string };
+      if (body.error) detail = body.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+
+  return (await response.json()) as AgentJobPollResponse;
 }
 
 export async function watchAgentJob(

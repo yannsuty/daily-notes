@@ -1,6 +1,6 @@
 import { updateMerlinMessageContent } from './db';
 import { applyAgentMutations } from './merlin-agent-context';
-import { watchAgentJob } from './merlin-agent-client';
+import { getAgentJobStatus, watchAgentJob } from './merlin-agent-client';
 import type { AgentReply, AgentSideEffect } from './merlin-agent';
 import {
   getActivePollController,
@@ -19,6 +19,21 @@ import { recordShortcutUsage } from './merlin-shortcuts';
 import type { AgentRunResult } from '../lib/merlin-agent';
 
 let resumeInFlight = false;
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError';
+}
+
+function isJobExpiredError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.includes('introuvable') || message.includes('expiré');
+}
+
+async function failPendingJob(job: PendingAgentJob, message: string): Promise<void> {
+  removePendingAgentJob(job.jobId);
+  await stopNativeAgentJobWatch();
+  await updateMerlinMessageContent(job.placeholderId, message);
+}
 
 export async function applyAgentJobResult(
   job: PendingAgentJob,
@@ -56,6 +71,27 @@ export async function applyAgentJobResult(
   };
 }
 
+async function tryApplyFinishedJobStatus(
+  job: PendingAgentJob,
+  status: Awaited<ReturnType<typeof getAgentJobStatus>>,
+): Promise<AgentReply | null> {
+  if (status.status === 'done' && status.result) {
+    return applyAgentJobResult(job, status.result);
+  }
+
+  if (status.status === 'error') {
+    return applyAgentJobResult(job, {
+      ok: false,
+      error: status.error ?? 'Merlin n\'a pas pu terminer sa réflexion.',
+      steps: status.steps ?? [],
+      mutations: {},
+      depth: 'standard',
+    });
+  }
+
+  return null;
+}
+
 export async function resumePendingAgentJobs(
   callbacks?: AgentJobCallbacks,
 ): Promise<number> {
@@ -65,21 +101,49 @@ export async function resumePendingAgentJobs(
   let completed = 0;
 
   try {
-    await stopNativeAgentJobWatch();
-
     for (const job of listPendingAgentJobs()) {
       stopPollingAgentJob(job.jobId);
       const controller = getActivePollController(job.jobId);
 
       try {
+        try {
+          const status = await getAgentJobStatus(job.jobId);
+          const applied = await tryApplyFinishedJobStatus(job, status);
+          if (applied) {
+            completed += 1;
+            continue;
+          }
+        } catch (statusErr) {
+          if (isJobExpiredError(statusErr)) {
+            const message =
+              statusErr instanceof Error ? statusErr.message : 'Job expiré';
+            await failPendingJob(job, message);
+            completed += 1;
+            continue;
+          }
+          // Erreur réseau transitoire — on tente le flux SSE ci-dessous.
+        }
+
         const result = await watchAgentJob(job.jobId, {
           onStep: callbacks?.onStep,
           signal: controller.signal,
         });
         await applyAgentJobResult(job, result);
         completed += 1;
-      } catch {
-        // Job toujours en cours côté serveur — on réessaiera au prochain retour.
+      } catch (err) {
+        if (isAbortError(err)) {
+          continue;
+        }
+
+        if (isJobExpiredError(err)) {
+          const message = err instanceof Error ? err.message : 'Job expiré';
+          await failPendingJob(job, message);
+          completed += 1;
+          continue;
+        }
+
+        // Réseau instable ou SSE coupé — conserver le job et relancer la surveillance native.
+        await startNativeAgentJobWatch(job.jobId);
       } finally {
         releaseActivePoll(job.jobId);
       }
