@@ -1,3 +1,4 @@
+import { tryParseAddListIntent } from '../lib/merlin-agent/list-fast-path';
 import { likelyReminderIntent } from '../lib/merlin-agent/reminder-extract';
 import { buildLocalReminderFallback } from '../lib/merlin-agent/reminder-text';
 import { detectContextTags } from './merlin-context';
@@ -79,18 +80,16 @@ export async function tryFastIntent(rawText: string): Promise<IntentResult> {
     };
   }
 
-  // Add to list: "ajoute X à la liste Y" / "ajoute X à courses"
-  const addMatch = text.match(
-    /^ajoute(?:r)?\s+(.+?)\s+(?:à la liste\s+|à\s+|sur\s+(?:la\s+)?liste\s+)?(.+)$/i,
-  );
-  if (addMatch) {
-    const item = addMatch[1].trim();
-    let list = addMatch[2].trim();
-    list = list.replace(/^(?:ma|la|les)\s+/i, '');
-    const result = await executeMerlinTool('add_list_item', { list, item });
+  // Add to list : uniquement si l'article est explicite (pas « ça ») et message simple
+  const addParsed = tryParseAddListIntent(text);
+  if (addParsed) {
+    const result = await executeMerlinTool('add_list_item', {
+      list: addParsed.list,
+      item: addParsed.item,
+    });
     return {
       handled: true,
-      reply: result.ok ? result.content : result.content,
+      reply: result.content,
       sideEffects: result.mutation,
       usedTool: 'add_list_item',
     };

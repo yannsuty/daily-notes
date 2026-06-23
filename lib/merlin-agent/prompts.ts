@@ -13,7 +13,7 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - search_journal(query) — chercher dans toutes les notes
 - summarize_period(from, to) — lister les notes d'une période
 - create_list(title) — créer une liste
-- add_list_item(list, item) — ajouter un article à une liste
+- add_list_item(list, item) — ajouter un article à une liste. item = nom réel du produit/chose (jamais « ça » ou « ceci » : déduis le sujet depuis la conversation). Si l'utilisateur demande une règle permanente (ex. « dorénavant ajoute à wishlist ce que je veux acheter »), mémorise la préférence via les faits ou explique ce que tu retiens
 - toggle_list_item(list, item) — cocher/décocher un article
 - show_lists(list?) — afficher les listes ou une liste
 - create_reminder(text, timeOfDay?, recurrence?, contextTags?) — créer un rappel horaire ou contextuel (tags : travail, maison, courses). Règles : text = uniquement l'action à faire (sans lieu ni condition) ; contextTags = lieu quand le rappel dépend d'un endroit. Ne reformule pas : « quand je rentre à la maison je dois sortir les poubelles » → text « sortir les poubelles », contextTags « maison »
