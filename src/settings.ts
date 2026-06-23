@@ -416,20 +416,7 @@ export class SettingsPage {
       void getPendingDownloadState().then((pending) => {
         if (pending) {
           appUpdateStatusEl.textContent = formatDownloadProgress(pending);
-          return;
         }
-
-        void checkForAppUpdate().then((update) => {
-          if (update.error) {
-            appUpdateStatusEl.textContent = update.error;
-            return;
-          }
-          if (update.available && update.latestVersionCode != null) {
-            appUpdateStatusEl.textContent = `Mise à jour disponible : v${update.latestVersion} · build ${update.latestVersionCode}.`;
-            return;
-          }
-          appUpdateStatusEl.textContent = `${update.currentReleaseLabel} — vous êtes à jour.`;
-        });
       });
     }
 
@@ -477,19 +464,16 @@ export class SettingsPage {
             return;
           }
 
-          if (!update.available || !update.apkUrl) {
-            const latestLabel =
-              update.latestVersionCode != null
-                ? `v${update.latestVersion} · build ${update.latestVersionCode}`
-                : `v${update.latestVersion}`;
-            appUpdateStatusEl.textContent = `${update.currentReleaseLabel} — à jour (dernière release ${latestLabel}).`;
-            return;
-          }
-
           const latestLabel =
             update.latestVersionCode != null
               ? `v${update.latestVersion} · build ${update.latestVersionCode}`
               : `v${update.latestVersion}`;
+
+          if (!update.available || !update.apkUrl) {
+            appUpdateStatusEl.textContent = `${update.currentReleaseLabel} — à jour (dernière release ${latestLabel}).`;
+            return;
+          }
+
           appUpdateStatusEl.textContent = `Mise à jour ${latestLabel} trouvée. Téléchargement…`;
 
           await onDownloadProgress((event) => {

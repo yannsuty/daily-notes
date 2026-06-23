@@ -29,7 +29,9 @@ Avant de créer un tag, merger une release ou modifier une version, **vérifier 
 
 ## MAJ in-app (`src/app-update.ts`)
 
-- [ ] La détection compare **`versionCode`** (via `app-version.json`), pas seulement `versionName`
+- [ ] La détection compare le **tag semver** (`v3.5.4`) comme Obtainium — 1 seul appel API `/releases/latest` par vérification
+- [ ] `app-version.json` n'est fetché qu'au **téléchargement** (ou si même semver, cas rare) — pas à l'ouverture des réglages
+- [ ] Pas de vérification automatique à l'ouverture des réglages (uniquement au clic du bouton)
 - [ ] Le tag GitHub affiché peut différer du `versionName` APK, mais `versionCode` est la source de vérité Android
 - [ ] Le téléchargement APK est **repriseable** (`ApkDownloadManager`) : fichier `.part` + `merlin-update.meta.json` dans le cache
 - [ ] En cas de réseau instable, le bouton « Vérifier et mettre à jour » doit **reprendre** au dernier octet (HTTP Range)

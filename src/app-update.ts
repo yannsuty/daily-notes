@@ -83,7 +83,7 @@ export class GitHubApiError extends Error {
   }
 }
 
-const LATEST_RELEASE_CACHE_MS = 5 * 60_000;
+const LATEST_RELEASE_CACHE_MS = 30 * 60_000;
 let latestReleaseCache: { expiresAt: number; release: GitHubRelease } | null = null;
 
 function parseVersion(version: string): number[] {
@@ -297,6 +297,29 @@ async function fetchVersionManifest(
   }
 }
 
+function isUpdateAvailable(
+  installed: { versionCode: number; versionName: string },
+  latestVersion: string,
+  latestVersionCode?: number,
+): boolean {
+  if (latestVersionCode != null && latestVersionCode > installed.versionCode) {
+    return true;
+  }
+  return compareVersions(latestVersion, installed.versionName) > 0;
+}
+
+async function resolveTargetVersionCode(
+  release: GitHubRelease,
+  versionCode: number,
+  installed?: { versionCode: number; versionName: string },
+): Promise<number> {
+  if (versionCode > 0) {
+    return versionCode;
+  }
+  const manifest = await fetchVersionManifest(release, installed);
+  return manifest?.versionCode ?? 0;
+}
+
 /** Libellé local — sans appel réseau (évite de brûler le quota API GitHub). */
 export function resolveInstalledReleaseLabel(
   versionCode: number,
@@ -350,13 +373,8 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
 
   try {
     const release = await fetchLatestRelease(installed);
-    const manifest = await fetchVersionManifest(release, installed);
     const apkAsset = release.assets.find((asset) => asset.name === APK_ASSET_NAME);
-
-    const latestVersion =
-      manifest?.tag?.replace(/^v/i, '') ??
-      manifest?.versionName ??
-      release.tag_name.replace(/^v/i, '');
+    const latestVersion = release.tag_name.replace(/^v/i, '');
 
     if (!apkAsset) {
       const message = `Asset ${APK_ASSET_NAME} introuvable dans la dernière release.`;
@@ -377,16 +395,21 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
       };
     }
 
-    const latestVersionCode = manifest?.versionCode;
-    const available =
-      latestVersionCode != null
-        ? latestVersionCode > installed.versionCode
-        : compareVersions(latestVersion, installed.versionName) > 0;
+    let latestVersionCode: number | undefined;
+    let available = isUpdateAvailable(installed, latestVersion);
+
+    // Même semver (ex. re-release) : 1 appel API supplémentaire pour comparer les builds.
+    if (!available && compareVersions(latestVersion, installed.versionName) === 0) {
+      const manifest = await fetchVersionManifest(release, installed);
+      latestVersionCode = manifest?.versionCode;
+      available = isUpdateAvailable(installed, latestVersion, latestVersionCode);
+    }
 
     addAppUpdateBreadcrumb('Vérification MAJ terminée', {
       available,
       latestVersion,
       latestVersionCode,
+      apiCalls: compareVersions(latestVersion, installed.versionName) === 0 && latestVersionCode != null ? 2 : 1,
     });
 
     return {
@@ -574,8 +597,17 @@ export async function downloadAndInstallUpdate(
   });
 
   try {
-    await AppUpdate.downloadAndInstall({ url: apkUrl, versionCode });
-    addAppUpdateBreadcrumb('Téléchargement APK terminé', { targetVersionCode: versionCode });
+    const release = await fetchLatestRelease(installed ?? undefined);
+    const targetVersionCode = await resolveTargetVersionCode(
+      release,
+      versionCode,
+      installed ?? undefined,
+    );
+    if (targetVersionCode <= 0) {
+      throw new Error('Impossible de déterminer le numéro de build de la release.');
+    }
+    await AppUpdate.downloadAndInstall({ url: apkUrl, versionCode: targetVersionCode });
+    addAppUpdateBreadcrumb('Téléchargement APK terminé', { targetVersionCode });
   } catch (error) {
     reportDownloadFailure(error, apkUrl, versionCode, installed);
     throw error;
