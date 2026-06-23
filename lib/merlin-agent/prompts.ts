@@ -30,11 +30,15 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 
 export const SPACE_GUIDANCE = `
 Espaces structurés — quand créer quoi :
-- Comparaison de produits → kind=comparison : recap de la demande, puis data_json avec columns[] et rows[][]
+- Comparaison de produits → kind=comparison : récap de la demande + data_json avec columns[] et rows[][] (critères en colonnes, produits en lignes)
 - Projet DIY → kind=diy : recap + intro, sections[] (titre + contenu détaillé), create_todo_list=true si besoin d'une todo
 - Plan de programmation → kind=plan : recap + goal, milestones[], optionnel github {owner, repo} ; utilise inspect_github_repo si un repo est mentionné
 - Recette → kind=recipe : recap court, ingredients[] ({text, quantity?, unit?}), steps[] ({order, text})
-Après création, résume brièvement et indique que l'espace est dans Galerie → Espaces.`;
+
+Workflow comparaison / espace riche :
+1. create_space (ou create_space puis update_space si le tableau est très long) avec le contenu complet
+2. Puis répondre en texte naturel à l'utilisateur (résumé, recommandation) — ne pas s'arrêter après l'outil seul
+Après création, mentionner Galerie → Espaces.`;
 
 export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): string {
   if (customTools.length === 0) return '';

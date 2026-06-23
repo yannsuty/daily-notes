@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentContext } from './types.js';
-import { AgentStore, isMutationTool } from '../../server/merlin-agent/tools.js';
+import { AgentStore, isImmediateReplyTool, isMutationTool, normalizeToolArgs, parseSpaceDataJson } from '../../server/merlin-agent/tools.js';
 
 function emptyContext(overrides: Partial<AgentContext> = {}): AgentContext {
   return {
@@ -23,10 +23,54 @@ describe('AgentStore — espaces', () => {
     store = new AgentStore(emptyContext());
   });
 
-  it('marque create_space et update_space comme mutations', () => {
+  it('marque create_space comme mutation sans réponse immédiate', () => {
     expect(isMutationTool('create_space')).toBe(true);
     expect(isMutationTool('update_space')).toBe(true);
+    expect(isImmediateReplyTool('create_space')).toBe(false);
+    expect(isImmediateReplyTool('update_space')).toBe(false);
+    expect(isImmediateReplyTool('create_list')).toBe(true);
     expect(isMutationTool('show_space')).toBe(false);
+  });
+
+  it('parse data_json objet ou chaîne', () => {
+    expect(parseSpaceDataJson({ columns: ['A'], rows: [['1']] })).toEqual({
+      columns: ['A'],
+      rows: [['1']],
+    });
+    expect(parseSpaceDataJson('{"columns":["B"]}')).toEqual({ columns: ['B'] });
+    expect(parseSpaceDataJson('not-json')).toBeNull();
+  });
+
+  it('normalise les args outil avec objets imbriqués', () => {
+    expect(
+      normalizeToolArgs({
+        kind: 'comparison',
+        data_json: { columns: ['Prix'], rows: [['100 €']] },
+      }),
+    ).toEqual({
+      kind: 'comparison',
+      data_json: '{"columns":["Prix"],"rows":[["100 €"]]}',
+    });
+  });
+
+  it('crée une comparaison avec data_json objet', async () => {
+    const result = await store.executeTool('create_space', {
+      kind: 'comparison',
+      title: 'Ventilateurs plafond',
+      recap: 'Comparer modèles silencieux',
+      data_json: {
+        columns: ['Modèle', 'Diamètre', 'Bruit'],
+        rows: [
+          ['Alpha', '132 cm', '30 dB'],
+          ['Beta', '142 cm', '28 dB'],
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.content).toContain('Alpha');
+    expect(result.content).toContain('| Modèle |');
+    expect(store.spaces[0].data.rows).toHaveLength(2);
   });
 
   it('crée un espace comparison avec data_json', async () => {

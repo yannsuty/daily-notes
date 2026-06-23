@@ -32,6 +32,18 @@ const MUTATION_TOOLS = new Set([
   'update_space',
 ]);
 
+/** Mutations qui renvoient tout de suite sans laisser l'agent formuler (listes, rappels). */
+const IMMEDIATE_REPLY_TOOLS = new Set([
+  'create_list',
+  'add_list_item',
+  'toggle_list_item',
+  'create_reminder',
+  'complete_reminder',
+  'trigger_context',
+  'delete_list',
+  'save_custom_tool',
+]);
+
 const PRIMITIVE_TOOLS = new Set([
   'read_journal',
   'search_journal',
@@ -61,9 +73,43 @@ export function isMutationTool(name: string): boolean {
   return MUTATION_TOOLS.has(name);
 }
 
+export function isImmediateReplyTool(name: string): boolean {
+  return IMMEDIATE_REPLY_TOOLS.has(name);
+}
+
+export function parseSpaceDataJson(raw: unknown): MerlinSpaceData | null {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as MerlinSpaceData;
+  }
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return {};
+  try {
+    return JSON.parse(trimmed) as MerlinSpaceData;
+  } catch {
+    return null;
+  }
+}
+
+export function normalizeToolArgs(args: Record<string, unknown>): Record<string, string> {
+  const normalized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'string') {
+      normalized[key] = value;
+    } else if (typeof value === 'object') {
+      normalized[key] = JSON.stringify(value);
+    } else {
+      normalized[key] = String(value);
+    }
+  }
+  return normalized;
+}
+
 export function templateReplyForTool(name: string, toolResult: ToolResult): string | null {
   if (!toolResult.ok) return toolResult.content;
-  if (isMutationTool(name) || name === 'save_custom_tool') {
+  if (isImmediateReplyTool(name)) {
     return toolResult.content;
   }
   return null;
@@ -553,13 +599,11 @@ export class AgentStore {
     if (!title) return { ok: false, content: 'Titre d\'espace vide.' };
 
     let data: MerlinSpaceData = {};
-    if (args.data_json?.trim()) {
-      try {
-        data = JSON.parse(args.data_json) as MerlinSpaceData;
-      } catch {
-        return { ok: false, content: 'data_json invalide.' };
-      }
+    const parsedData = parseSpaceDataJson(args.data_json);
+    if (parsedData === null && args.data_json !== undefined && args.data_json !== null && String(args.data_json).trim()) {
+      return { ok: false, content: 'data_json invalide.' };
     }
+    if (parsedData) data = parsedData;
 
     if (kind === 'diy' && args.create_todo_list === 'true') {
       const listResult = this.createList(`DIY — ${title}`);
@@ -586,7 +630,7 @@ export class AgentStore {
 
     return {
       ok: true,
-      content: `Espace « ${title} » créé (${kind}, id: ${space.id}). Consultez-le dans Galerie → Espaces.`,
+      content: `Espace « ${title} » créé (${kind}, id: ${space.id}). Consultez-le dans Galerie → Espaces.\n\n${this.formatSpaceContent(space)}`,
       mutation: 'space_updated',
     };
   }
@@ -606,13 +650,12 @@ export class AgentStore {
     if (args.status === 'archived' || args.status === 'active') {
       space.status = args.status;
     }
-    if (args.data_json?.trim()) {
-      try {
-        const patch = JSON.parse(args.data_json) as MerlinSpaceData;
-        space.data = { ...space.data, ...patch };
-      } catch {
+    if (args.data_json !== undefined && args.data_json !== null && String(args.data_json).trim()) {
+      const patch = parseSpaceDataJson(args.data_json);
+      if (patch === null) {
         return { ok: false, content: 'data_json invalide.' };
       }
+      space.data = { ...space.data, ...patch };
     }
 
     space.updatedAt = Date.now();
@@ -620,7 +663,7 @@ export class AgentStore {
 
     return {
       ok: true,
-      content: `Espace « ${space.title} » mis à jour.`,
+      content: `Espace « ${space.title} » mis à jour.\n\n${this.formatSpaceContent(space)}`,
       mutation: 'space_updated',
     };
   }
@@ -748,70 +791,71 @@ export class AgentStore {
     return { ok: true, content: results.join('\n'), mutation: lastMutation };
   }
 
-  async executeTool(name: string, args: Record<string, string>): Promise<ToolResult> {
+  async executeTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+    const normalized = normalizeToolArgs(args);
     const custom = this.customTools.find((t) => t.name.toLowerCase() === name.toLowerCase());
     if (custom) {
-      return this.executeCustomTool(name, args);
+      return this.executeCustomTool(name, normalized);
     }
 
     switch (name) {
       case 'read_journal':
-        return this.readJournal(args.date ?? todayKey());
+        return this.readJournal(normalized.date ?? todayKey());
       case 'search_journal':
-        return this.searchJournal(args.query ?? '');
+        return this.searchJournal(normalized.query ?? '');
       case 'summarize_period':
         return this.summarizePeriod(
-          args.from ?? addDays(todayKey(), -7),
-          args.to ?? todayKey(),
+          normalized.from ?? addDays(todayKey(), -7),
+          normalized.to ?? todayKey(),
         );
       case 'create_list':
-        return this.createList(args.title ?? args.list ?? '');
+        return this.createList(normalized.title ?? normalized.list ?? '');
       case 'add_list_item':
-        return this.addListItem(args.list ?? args.title ?? 'courses', args.item ?? args.text ?? '');
+        return this.addListItem(normalized.list ?? normalized.title ?? 'courses', normalized.item ?? normalized.text ?? '');
       case 'toggle_list_item':
-        return this.toggleListItem(args.list ?? args.title ?? '', args.item ?? args.text ?? '');
+        return this.toggleListItem(normalized.list ?? normalized.title ?? '', normalized.item ?? normalized.text ?? '');
       case 'show_lists':
-        return this.showLists(args.list ?? args.title);
+        return this.showLists(normalized.list ?? normalized.title);
       case 'create_reminder':
         return this.createReminder({
-          text: args.text ?? '',
-          timeOfDay: args.timeOfDay ?? args.time,
-          at: args.at,
-          recurrence: args.recurrence,
-          contextTags: args.contextTags ?? args.tags,
+          text: normalized.text ?? '',
+          timeOfDay: normalized.timeOfDay ?? normalized.time,
+          at: normalized.at,
+          recurrence: normalized.recurrence,
+          contextTags: normalized.contextTags ?? normalized.tags,
         });
       case 'list_reminders':
         return this.listReminders();
       case 'complete_reminder':
-        return this.completeReminder(args.text ?? args.item);
+        return this.completeReminder(normalized.text ?? normalized.item);
       case 'trigger_context':
-        return this.triggerContext(args.tags ?? args.context ?? '');
+        return this.triggerContext(normalized.tags ?? normalized.context ?? '');
       case 'delete_list':
-        return this.deleteList(args.list ?? args.title ?? '');
+        return this.deleteList(normalized.list ?? normalized.title ?? '');
       case 'save_custom_tool':
-        return this.saveCustomTool(args);
+        return this.saveCustomTool(normalized);
       case 'create_space':
         return this.createSpace({
-          kind: args.kind ?? '',
-          title: args.title ?? '',
-          recap: args.recap,
-          data_json: args.data_json,
-          create_todo_list: args.create_todo_list,
+          kind: normalized.kind ?? '',
+          title: normalized.title ?? '',
+          recap: normalized.recap,
+          data_json: normalized.data_json,
+          create_todo_list: normalized.create_todo_list,
         });
       case 'update_space':
         return this.updateSpace({
-          space_id: args.space_id ?? args.id,
-          title: args.title,
-          recap: args.recap,
-          data_json: args.data_json,
-          status: args.status,
+          space_id: normalized.space_id ?? normalized.id,
+          title: normalized.title,
+          recap: normalized.recap,
+          data_json: normalized.data_json,
+          status: normalized.status,
         });
       case 'show_space':
-        return this.showSpace(args.space_id ?? args.title ?? args.id);
+        return this.showSpace(normalized.space_id ?? normalized.title ?? normalized.id);
       case 'list_spaces':
-        return this.listSpaces(args.kind);
+        return this.listSpaces(normalized.kind);
       case 'inspect_github_repo':
-        return this.inspectGitHubRepo(args.owner ?? '', args.repo ?? '');
+        return this.inspectGitHubRepo(normalized.owner ?? '', normalized.repo ?? '');
       default:
         return { ok: false, content: `Outil inconnu : ${name}` };
     }

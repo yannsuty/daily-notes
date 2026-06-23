@@ -10,7 +10,7 @@ import {
 } from '../../lib/merlin-agent/prompts.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
-import { AgentStore, isMutationTool, templateReplyForTool } from './tools.js';
+import { AgentStore, isImmediateReplyTool, normalizeToolArgs, templateReplyForTool } from './tools.js';
 import type {
   AgentClientConfig,
   AgentContext,
@@ -21,7 +21,7 @@ import type {
 } from '../../lib/merlin-agent/types.js';
 
 const MAX_CONTEXT_MESSAGES = 24;
-const READ_TOOLS = new Set([
+const CONTINUE_TOOLS = new Set([
   'read_journal',
   'search_journal',
   'summarize_period',
@@ -30,6 +30,8 @@ const READ_TOOLS = new Set([
   'show_space',
   'list_spaces',
   'inspect_github_repo',
+  'create_space',
+  'update_space',
 ]);
 
 export type StepCallback = (step: AgentStep) => void;
@@ -219,7 +221,7 @@ export async function runMerlinAgent(
   const maxIterations = depth === 'deep' ? 5 : 3;
   let lastSideEffect: AgentSideEffect | undefined;
   let toolResultsForSynthesis: string[] = [];
-  let readToolUsed = false;
+  let continueAfterTools = false;
 
   for (let i = 0; i < maxIterations; i += 1) {
     pushStep(steps, {
@@ -268,7 +270,7 @@ export async function runMerlinAgent(
         .slice(0, 120) || undefined,
     }, onStep);
 
-    let toolArgs = toolCall.args ?? {};
+    let toolArgs = normalizeToolArgs(toolCall.args ?? {});
 
     if (toolCall.name === 'create_reminder') {
       const text = toolArgs.text ?? '';
@@ -315,7 +317,7 @@ export async function runMerlinAgent(
       };
     }
 
-    if (isMutationTool(toolCall.name)) {
+    if (isImmediateReplyTool(toolCall.name)) {
       pushStep(steps, {
         phase: 'respond',
         label: 'Action effectuée',
@@ -330,8 +332,8 @@ export async function runMerlinAgent(
       };
     }
 
-    if (READ_TOOLS.has(toolCall.name)) {
-      readToolUsed = true;
+    if (CONTINUE_TOOLS.has(toolCall.name)) {
+      continueAfterTools = true;
       toolResultsForSynthesis.push(`[${toolCall.name}]\n${toolResult.content}`);
     }
 
@@ -342,7 +344,7 @@ export async function runMerlinAgent(
     });
   }
 
-  if (readToolUsed && toolResultsForSynthesis.length > 0) {
+  if (continueAfterTools && toolResultsForSynthesis.length > 0) {
     pushStep(steps, {
       phase: 'synthesize',
       label: 'Synthèse de la réponse…',
