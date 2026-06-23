@@ -1,5 +1,5 @@
 import { detectContextTags, normalizeContextTags } from './context.js';
-import { hasRelativeReminderSchedule } from './reminder-datetime.js';
+import { hasRelativeReminderSchedule, hasReminderScheduleHint } from './reminder-datetime.js';
 
 export interface ReminderExtractPayload {
   isReminder?: boolean;
@@ -63,7 +63,7 @@ export function likelyReminderIntent(text: string): boolean {
       t,
     );
   const hasContext = detectContextTags(t).length > 0;
-  const hasRelativeTime = hasRelativeReminderSchedule(t);
+  const hasRelativeTime = hasRelativeReminderSchedule(t) || hasReminderScheduleHint(t);
   const hasTime = /\b(midi|matin|soir|\d{1,2}[:h]\d{2})\b/i.test(t) || hasRelativeTime;
 
   return hasTaskSignal || hasContext || hasTime;

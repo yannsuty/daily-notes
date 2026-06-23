@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   hasRelativeReminderSchedule,
+  hasReminderScheduleHint,
+  needsScheduleLlmFallback,
   parseReminderScheduleFromText,
 } from './reminder-datetime.js';
 
-const BASE = new Date('2026-06-23T14:00:00');
+const BASE = new Date('2026-06-23T14:00:00'); // mardi
 
 describe('parseReminderScheduleFromText', () => {
   it('parse « dans 1h30 de vider la machine »', () => {
@@ -46,6 +48,37 @@ describe('parseReminderScheduleFromText', () => {
     expect(at.getHours()).toBe(9);
   });
 
+  it('parse « ce soir sortir les poubelles »', () => {
+    const result = parseReminderScheduleFromText('ce soir sortir les poubelles', BASE);
+    expect(result?.text).toBe('sortir les poubelles');
+    const at = new Date(result!.at!);
+    expect(at.getDate()).toBe(23);
+    expect(at.getHours()).toBe(19);
+  });
+
+  it('parse « vendredi appeler le client »', () => {
+    const result = parseReminderScheduleFromText('vendredi appeler le client', BASE);
+    expect(result?.text).toBe('appeler le client');
+    const at = new Date(result!.at!);
+    expect(at.getDay()).toBe(5);
+    expect(at.getDate()).toBe(26);
+  });
+
+  it('parse « dans une semaine relancer le devis »', () => {
+    const result = parseReminderScheduleFromText('dans une semaine relancer le devis', BASE);
+    expect(result?.text).toBe('relancer le devis');
+    const at = new Date(result!.at!);
+    expect(at.getDate()).toBe(30);
+  });
+
+  it('parse « aujourd\'hui à 18h prendre le médicament »', () => {
+    const result = parseReminderScheduleFromText("aujourd'hui à 18h prendre le médicament", BASE);
+    expect(result?.text).toBe('prendre le médicament');
+    const at = new Date(result!.at!);
+    expect(at.getDate()).toBe(23);
+    expect(at.getHours()).toBe(18);
+  });
+
   it('retourne null sans horaire relatif', () => {
     expect(parseReminderScheduleFromText('appeler le médecin', BASE)).toBeNull();
   });
@@ -56,5 +89,17 @@ describe('hasRelativeReminderSchedule', () => {
     expect(hasRelativeReminderSchedule('rappelle-moi demain de sortir les poubelles')).toBe(true);
     expect(hasRelativeReminderSchedule('dans 1h30 vider la machine')).toBe(true);
     expect(hasRelativeReminderSchedule('appeler le médecin à 15h')).toBe(false);
+  });
+});
+
+describe('needsScheduleLlmFallback', () => {
+  it('propose le LLM pour une date calendaire complexe', () => {
+    expect(hasReminderScheduleHint('le 15 juillet signer le contrat')).toBe(true);
+    expect(parseReminderScheduleFromText('le 15 juillet signer le contrat', BASE)).toBeNull();
+    expect(needsScheduleLlmFallback('le 15 juillet signer le contrat', BASE)).toBe(true);
+  });
+
+  it('ne propose pas le LLM si le parseur local suffit', () => {
+    expect(needsScheduleLlmFallback('demain appeler Paul', BASE)).toBe(false);
   });
 });

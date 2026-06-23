@@ -2,11 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   extractReminderFields: vi.fn(),
+  extractReminderScheduleFields: vi.fn(),
   executeMerlinTool: vi.fn(),
 }));
 
 vi.mock('./merlin-reminder-extract', () => ({
   extractReminderFields: mocks.extractReminderFields,
+}));
+
+vi.mock('./merlin-schedule-extract', () => ({
+  extractReminderScheduleFields: mocks.extractReminderScheduleFields,
 }));
 
 vi.mock('./merlin-tools', () => ({
@@ -18,6 +23,7 @@ import { tryFastIntent } from './merlin-intents';
 describe('tryFastIntent — rappels', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.extractReminderScheduleFields.mockResolvedValue(null);
     mocks.executeMerlinTool.mockResolvedValue({
       ok: true,
       content: 'Rappel créé : « sortir les poubelles » (contexte : maison)',

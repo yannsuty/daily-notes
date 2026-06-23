@@ -2,6 +2,10 @@ import { assessQueryDepth, extractMemoryQueries } from '../../lib/merlin-agent/c
 import { gatherMemory } from '../../lib/merlin-agent/memory.js';
 import { parseJsonFromAi, parseToolCall } from '../../lib/merlin-agent/parse.js';
 import { needsReminderExtraction } from '../../lib/merlin-agent/reminder-extract.js';
+import {
+  reminderArgsFromSchedule,
+  resolveReminderSchedule,
+} from '../../lib/merlin-agent/reminder-schedule-resolve.js';
 import { buildLocalReminderFallback, normalizeReminderArgs } from '../../lib/merlin-agent/reminder-text.js';
 import {
   buildSystemPrompt,
@@ -10,6 +14,7 @@ import {
 } from '../../lib/merlin-agent/prompts.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
+import { extractReminderScheduleFields } from './schedule-extract.js';
 import { ensureSpaceSaved } from './space-ensure.js';
 import { AgentStore, isImmediateReplyTool, normalizeToolArgs, templateReplyForTool } from './tools.js';
 import type {
@@ -313,6 +318,17 @@ export async function runMerlinAgent(
               recurrence: local.recurrence ?? toolArgs.recurrence,
             };
           }
+        }
+      }
+      if (!toolArgs.at && !toolArgs.timeOfDay) {
+        const schedule = await resolveReminderSchedule(trimmed, {
+          llmExtract: (text) => extractReminderScheduleFields(text, config, options?.referer),
+        });
+        if (schedule?.at) {
+          toolArgs = {
+            ...toolArgs,
+            ...reminderArgsFromSchedule(schedule),
+          };
         }
       }
       toolArgs = normalizeReminderArgs(toolArgs, trimmed);
