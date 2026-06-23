@@ -1227,20 +1227,25 @@ body {
 }
 
 .merlin-chat__bubble {
-  max-width: 85%;
-  padding: 0.625rem 0.875rem;
-  border-radius: 12px;
   line-height: 1.45;
 }
 
 .merlin-chat__bubble--assistant {
-  align-self: flex-start;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  align-self: stretch;
+  max-width: none;
+  width: 100%;
+  margin-inline: -1rem;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
 
 .merlin-chat__bubble--user {
   align-self: flex-end;
+  max-width: 85%;
+  padding: 0.625rem 0.875rem;
+  border-radius: 12px;
   background: var(--accent);
   color: #fff;
 }
@@ -1399,7 +1404,6 @@ body {
   align-items: flex-end;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
   background: var(--surface);
   flex-shrink: 0;
@@ -1772,9 +1776,20 @@ body {
 @media (max-width: 640px) {
   .merlin-chat__messages {
     padding-bottom: 0.5rem;
+    scroll-padding-bottom: calc(var(--tabs-height, 3rem) + 0.5rem);
+  }
+
+  .merlin-chat__composer {
+    padding-bottom: 0.5rem;
   }
 
   .keyboard-open .merlin-chat__composer {
     padding-bottom: calc(var(--keyboard-inset, 0px) + 0.5rem);
+  }
+}
+
+@media (min-width: 641px) {
+  .merlin-chat__composer {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
 }

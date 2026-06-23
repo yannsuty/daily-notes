@@ -6,6 +6,7 @@ import { setDeferredReplyHandler } from './merlin-pending';
 import { listPendingAgentJobs, registerAgentJobResume } from './merlin-agent-jobs';
 import { resumePendingAgentJobs } from './merlin-agent-resume';
 import { getMeta, saveMeta } from './db';
+import { updateShellLayoutVars } from './viewport';
 import {
   initSyncFromMeta,
   touchVisitMeta,
@@ -198,6 +199,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
   }
 
   tabBar.syncPanels();
+  updateShellLayoutVars();
   merlin?.onTabChange(tabBar.getActiveTab());
 
   const today = todayKey();

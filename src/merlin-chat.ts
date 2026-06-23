@@ -278,20 +278,20 @@ export class MerlinChat {
     bubble.className = `merlin-chat__bubble merlin-chat__bubble--${role}`;
     bubble.dataset.messageId = id;
 
-    const label = document.createElement('span');
-    label.className = 'merlin-chat__label';
-    label.textContent = role === 'user' ? 'Vous' : 'Merlin';
-
     const text = document.createElement('div');
     text.className = 'merlin-chat__text';
     if (role === 'assistant') {
+      const label = document.createElement('span');
+      label.className = 'merlin-chat__label';
+      label.textContent = 'Merlin';
+      bubble.appendChild(label);
+
       text.classList.add('merlin-chat__text--markdown');
       text.innerHTML = renderMarkdownToHtml(content);
     } else {
       text.textContent = content;
     }
 
-    bubble.appendChild(label);
     bubble.appendChild(text);
     this.messagesEl.appendChild(bubble);
   }
