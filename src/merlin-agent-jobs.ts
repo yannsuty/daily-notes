@@ -68,6 +68,17 @@ export function registerAgentJobResume(onResume: () => void): () => void {
   return () => document.removeEventListener('visibilitychange', handler);
 }
 
+/** Reprend les jobs en attente tant que l'app est visible (complément au retour premier plan). */
+export function startPendingJobResumePoll(onResume: () => void, intervalMs = 8000): () => void {
+  const timer = setInterval(() => {
+    if (document.visibilityState === 'visible' && listPendingAgentJobs().length > 0) {
+      onResume();
+    }
+  }, intervalMs);
+
+  return () => clearInterval(timer);
+}
+
 export function latestStep(steps: AgentStep[]): AgentStep | undefined {
   return steps.length > 0 ? steps[steps.length - 1] : undefined;
 }

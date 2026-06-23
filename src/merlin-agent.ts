@@ -19,10 +19,11 @@ import {
   MERLIN_THINKING_PLACEHOLDER,
   savePendingAgentJob,
   shouldStartBackgroundAgentJob,
+  shouldUseBackgroundAgent,
 } from './merlin-agent-jobs';
 import { pollPendingJobUntilDone } from './merlin-agent-resume';
 import { recordShortcutUsage } from './merlin-shortcuts';
-import type { AgentStep } from '../lib/merlin-agent';
+import { assessQueryDepth, type AgentStep } from '../lib/merlin-agent';
 import type { MerlinFact, MerlinMessage } from './types';
 
 const MAX_CONTEXT_MESSAGES = 24;
@@ -330,7 +331,10 @@ export async function handleUserMessage(
 
   void maybeCompressConversation();
 
-  if (shouldStartBackgroundAgentJob()) {
+  if (
+    shouldStartBackgroundAgentJob() ||
+    (shouldUseBackgroundAgent() && assessQueryDepth(trimmed) === 'deep')
+  ) {
     return runBackgroundAgentJobFlow(trimmed, options) as Promise<AgentReply>;
   }
 
