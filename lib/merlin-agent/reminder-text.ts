@@ -8,19 +8,25 @@ function escapeRegex(value: string): string {
 export function cleanReminderActionText(text: string): string {
   let cleaned = text.trim();
 
-  cleaned = cleaned
-    .replace(/^(?:quand|lorsque)\s+je\s+(?:suis|rentre|arrive)\s+(?:de\s+)?/i, '')
-    .replace(/^en\s+rentrant\s+/i, '')
-    .replace(/^je\s+dois\s+/i, '')
-    .replace(/^il\s+faut\s+/i, '')
-    .replace(/^de\s+/i, '');
+  for (let i = 0; i < 5; i += 1) {
+    const prev = cleaned;
+    cleaned = cleaned
+      .replace(/^(?:quand|lorsque)\s+je\s+(?:suis|rentre|arrive)\s+(?:de\s+)?/i, '')
+      .replace(/^en\s+rentrant\s+/i, '')
+      .replace(/\bje\s+dois\s+/gi, '')
+      .replace(/\bil\s+faut\s+/gi, '')
+      .replace(/^de\s+/i, '');
 
-  const phrases = Object.keys(CONTEXT_PHRASES).sort((a, b) => b.length - a.length);
-  for (const phrase of phrases) {
-    cleaned = cleaned.replace(new RegExp(escapeRegex(phrase), 'gi'), '');
+    const phrases = Object.keys(CONTEXT_PHRASES).sort((a, b) => b.length - a.length);
+    for (const phrase of phrases) {
+      cleaned = cleaned.replace(new RegExp(escapeRegex(phrase), 'gi'), '');
+    }
+
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    if (cleaned === prev) break;
   }
 
-  return cleaned.replace(/\s+/g, ' ').replace(/^[,.\s]+|[,.\s]+$/g, '').trim();
+  return cleaned.replace(/^[,.\s]+|[,.\s]+$/g, '').trim();
 }
 
 export interface ReminderArgsInput {
