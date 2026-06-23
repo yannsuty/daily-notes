@@ -2,7 +2,7 @@ import { assessQueryDepth, extractMemoryQueries } from '../../lib/merlin-agent/c
 import { gatherMemory } from '../../lib/merlin-agent/memory.js';
 import { parseJsonFromAi, parseToolCall } from '../../lib/merlin-agent/parse.js';
 import { needsReminderExtraction } from '../../lib/merlin-agent/reminder-extract.js';
-import { buildLocalReminderFallback } from '../../lib/merlin-agent/reminder-text.js';
+import { buildLocalReminderFallback, normalizeReminderArgs } from '../../lib/merlin-agent/reminder-text.js';
 import {
   buildSystemPrompt,
   PLANNER_PROMPT,
@@ -309,10 +309,13 @@ export async function runMerlinAgent(
               ...toolArgs,
               text: local.text,
               contextTags: local.contextTags.join(',') || contextTags,
+              at: local.at ?? toolArgs.at,
+              recurrence: local.recurrence ?? toolArgs.recurrence,
             };
           }
         }
       }
+      toolArgs = normalizeReminderArgs(toolArgs, trimmed);
     }
 
     const toolResult = await store.executeTool(toolCall.name, toolArgs);

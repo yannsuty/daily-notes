@@ -1,6 +1,6 @@
 import { tryParseAddListIntent } from '../lib/merlin-agent/list-fast-path';
 import { likelyReminderIntent } from '../lib/merlin-agent/reminder-extract';
-import { buildLocalReminderFallback } from '../lib/merlin-agent/reminder-text';
+import { buildLocalReminderFallback, normalizeReminderArgs } from '../lib/merlin-agent/reminder-text';
 import { detectContextTags } from './merlin-context';
 import { extractReminderFields } from './merlin-reminder-extract';
 import { executeMerlinTool, type ToolResult } from './merlin-tools';
@@ -35,16 +35,27 @@ function reminderArgsFromLocal(text: string): Record<string, string> | null {
   if (local.contextTags.length > 0) {
     args.contextTags = local.contextTags.join(',');
   }
+  if (local.at) args.at = local.at;
+  if (local.recurrence) args.recurrence = local.recurrence;
   return args;
+}
+
+function finalizeReminderArgs(
+  sourceText: string,
+  args: Record<string, string>,
+): Record<string, string> {
+  return normalizeReminderArgs(args, sourceText);
 }
 
 async function resolveReminderArgs(text: string): Promise<Record<string, string> | null> {
   const extracted = await extractReminderFields(text);
   if (extracted?.isReminder === false) return null;
   if (extracted?.isReminder && extracted.text) {
-    return reminderArgsFromExtract(extracted);
+    return finalizeReminderArgs(text, reminderArgsFromExtract(extracted));
   }
-  return reminderArgsFromLocal(text);
+  const local = reminderArgsFromLocal(text);
+  if (!local) return null;
+  return finalizeReminderArgs(text, local);
 }
 
 export async function tryFastIntent(rawText: string): Promise<IntentResult> {
@@ -144,7 +155,10 @@ export async function tryFastIntent(rawText: string): Promise<IntentResult> {
   );
   if (reminderMatch) {
     const body = reminderMatch[1].trim();
-    const args = (await resolveReminderArgs(body)) ?? { text: body };
+    const args = finalizeReminderArgs(
+      body,
+      (await resolveReminderArgs(body)) ?? { text: body },
+    );
 
     const result = await executeMerlinTool('create_reminder', args);
     return {

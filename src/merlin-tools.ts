@@ -302,6 +302,8 @@ export async function createReminder(args: {
   let desc = `Rappel créé : « ${text} »`;
   if (trigger.kind === 'time' && trigger.timeOfDay) {
     desc += ` (${trigger.recurrence ?? 'once'} à ${trigger.timeOfDay})`;
+  } else if (trigger.kind === 'time' && trigger.at) {
+    desc += ` (${new Date(trigger.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })})`;
   } else if (trigger.kind === 'context') {
     desc += ` (contexte : ${trigger.tags.join(', ')})`;
   }
@@ -471,7 +473,7 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - add_list_item(list, item) — ajouter un article à une liste
 - toggle_list_item(list, item) — cocher/décocher un article
 - show_lists(list?) — afficher les listes ou une liste
-- create_reminder(text, timeOfDay?, recurrence?, contextTags?) — créer un rappel contextuel ou horaire. text = action seule ; contextTags = lieu (travail, maison, courses). Ex. « quand je rentre à la maison je dois sortir les poubelles » → text « sortir les poubelles », contextTags « maison »
+- create_reminder(text, timeOfDay?, at?, recurrence?, contextTags?) — créer un rappel contextuel ou horaire. text = action seule ; at = date/heure ISO pour un rappel ponctuel (ex. dans 1h30, demain) ; contextTags = lieu (travail, maison, courses). Ex. « quand je rentre à la maison je dois sortir les poubelles » → text « sortir les poubelles », contextTags « maison »
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)

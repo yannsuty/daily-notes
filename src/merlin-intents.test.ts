@@ -77,4 +77,22 @@ describe('tryFastIntent — rappels', () => {
     expect(result.handled).toBe(false);
     expect(mocks.executeMerlinTool).not.toHaveBeenCalled();
   });
+
+  it('crée un rappel relatif explicite sans IA', async () => {
+    mocks.extractReminderFields.mockResolvedValue(null);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-23T14:00:00'));
+    try {
+      const result = await tryFastIntent('rappelle-moi dans 1h30 de vider la machine');
+
+      expect(result.handled).toBe(true);
+      expect(mocks.executeMerlinTool).toHaveBeenCalledWith('create_reminder', {
+        text: 'vider la machine',
+        at: new Date('2026-06-23T15:30:00').toISOString(),
+        recurrence: 'once',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildLocalReminderFallback,
   cleanReminderActionText,
@@ -56,5 +56,21 @@ describe('normalizeReminderArgs', () => {
       text: 'faire la vaisselle',
       contextTags: 'maison',
     });
+  });
+
+  it('convertit un rappel relatif en at ISO', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-23T14:00:00'));
+    try {
+      const result = normalizeReminderArgs(
+        { text: 'dans 1h30 de vider la machine' },
+        'dans 1h30 de vider la machine',
+      );
+      expect(result.text).toBe('vider la machine');
+      expect(result.recurrence).toBe('once');
+      expect(Date.parse(result.at!)).toBe(new Date('2026-06-23T14:00:00').getTime() + 90 * 60_000);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
