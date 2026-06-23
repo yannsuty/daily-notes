@@ -139,7 +139,7 @@ public class AppUpdatePlugin extends Plugin {
                 if (status != HttpURLConnection.HTTP_OK) {
                     JSObject payload = new JSObject();
                     payload.put("httpStatus", status);
-                    call.reject("HTTP " + status, null, payload);
+                    call.reject("HTTP " + status, "HTTP_ERROR", payload);
                     return;
                 }
 
