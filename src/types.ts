@@ -116,6 +116,65 @@ export interface MerlinEnvVar {
   updatedAt: number;
 }
 
+/** Type d'espace structuré (comparaison, DIY, plan, recette). */
+export type MerlinSpaceKind = 'comparison' | 'diy' | 'plan' | 'recipe';
+
+export interface MerlinSpaceSection {
+  id: string;
+  title: string;
+  content: string;
+}
+
+export interface MerlinSpaceIngredient {
+  id: string;
+  text: string;
+  quantity?: string;
+  unit?: string;
+}
+
+export interface MerlinSpaceStep {
+  id: string;
+  order: number;
+  text: string;
+}
+
+export interface MerlinSpaceMilestone {
+  id: string;
+  title: string;
+  done: boolean;
+}
+
+export interface MerlinSpaceGitHub {
+  owner: string;
+  repo: string;
+  defaultBranch?: string;
+}
+
+export interface MerlinSpaceData {
+  columns?: string[];
+  rows?: string[][];
+  intro?: string;
+  sections?: MerlinSpaceSection[];
+  listId?: string;
+  goal?: string;
+  milestones?: MerlinSpaceMilestone[];
+  github?: MerlinSpaceGitHub;
+  servings?: number;
+  ingredients?: MerlinSpaceIngredient[];
+  steps?: MerlinSpaceStep[];
+}
+
+export interface MerlinSpace {
+  id: string;
+  kind: MerlinSpaceKind;
+  title: string;
+  recap: string;
+  data: MerlinSpaceData;
+  status: 'active' | 'archived';
+  createdAt: number;
+  updatedAt: number;
+}
+
 export interface MerlinSyncData {
   conversation: MerlinConversation;
   facts: MerlinFact[];
@@ -124,6 +183,7 @@ export interface MerlinSyncData {
   shortcuts?: MerlinShortcut[];
   customTools?: MerlinCustomTool[];
   env?: MerlinEnvVar[];
+  spaces?: MerlinSpace[];
   updatedAt: number;
 }
 

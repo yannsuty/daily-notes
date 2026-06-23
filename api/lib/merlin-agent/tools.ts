@@ -1,4 +1,5 @@
 import { addDays, formatDateLabel, todayKey } from '../../../lib/merlin-agent/dates.js';
+import { formatGitHubSummary, inspectGitHubRepo } from '../../../lib/merlin-agent/github.js';
 import { normalizeReminderArgs } from '../../../lib/merlin-agent/reminder-text.js';
 import type {
   AgentContext,
@@ -8,6 +9,9 @@ import type {
   MerlinList,
   MerlinListItem,
   MerlinReminder,
+  MerlinSpace,
+  MerlinSpaceData,
+  MerlinSpaceKind,
   ToolResult,
 } from '../../../lib/merlin-agent/types.js';
 
@@ -24,6 +28,8 @@ const MUTATION_TOOLS = new Set([
   'trigger_context',
   'delete_list',
   'save_custom_tool',
+  'create_space',
+  'update_space',
 ]);
 
 const PRIMITIVE_TOOLS = new Set([
@@ -40,7 +46,14 @@ const PRIMITIVE_TOOLS = new Set([
   'trigger_context',
   'delete_list',
   'save_custom_tool',
+  'create_space',
+  'update_space',
+  'show_space',
+  'list_spaces',
+  'inspect_github_repo',
 ]);
+
+const SPACE_KINDS = new Set<MerlinSpaceKind>(['comparison', 'diy', 'plan', 'recipe']);
 
 const MAX_CUSTOM_STEPS = 5;
 
@@ -102,12 +115,15 @@ export class AgentStore {
   lists: MerlinList[];
   reminders: MerlinReminder[];
   customTools: MerlinCustomTool[];
+  spaces: MerlinSpace[];
+  githubToken?: string;
 
   private dirtyLists = new Set<string>();
   private dirtyReminders = new Set<string>();
   private dirtyCustomTools = new Set<string>();
+  private dirtySpaces = new Set<string>();
 
-  constructor(context: AgentContext) {
+  constructor(context: AgentContext, options?: { githubToken?: string }) {
     this.days = { ...context.days };
     this.lists = context.lists.map((list) => ({
       ...list,
@@ -118,6 +134,11 @@ export class AgentStore {
       ...t,
       steps: t.steps.map((s) => ({ ...s, args: { ...s.args } })),
     }));
+    this.spaces = (context.spaces ?? []).map((s) => ({
+      ...s,
+      data: JSON.parse(JSON.stringify(s.data)) as MerlinSpaceData,
+    }));
+    this.githubToken = options?.githubToken;
   }
 
   getMutations(): AgentMutations {
@@ -131,7 +152,14 @@ export class AgentStore {
     if (this.dirtyCustomTools.size > 0) {
       mutations.customTools = this.customTools;
     }
+    if (this.dirtySpaces.size > 0) {
+      mutations.spaces = this.spaces;
+    }
     return mutations;
+  }
+
+  private markSpace(space: MerlinSpace): void {
+    this.dirtySpaces.add(space.id);
   }
 
   private markList(list: MerlinList): void {
@@ -455,6 +483,193 @@ export class AgentStore {
     return { ok: true, content: `Liste « ${list.title} » supprimée.`, mutation: 'list_updated' };
   }
 
+  private findSpace(idOrTitle: string): MerlinSpace | undefined {
+    const trimmed = idOrTitle.trim();
+    const byId = this.spaces.find((s) => s.id === trimmed);
+    if (byId) return byId;
+    const n = normalizeTitle(trimmed);
+    return this.spaces.find(
+      (s) => normalizeTitle(s.title) === n || normalizeTitle(s.title).includes(n),
+    );
+  }
+
+  private formatSpaceContent(space: MerlinSpace): string {
+    const lines = [`**${space.title}** (${space.kind})`, space.recap];
+    const { data } = space;
+
+    if (space.kind === 'comparison' && data.columns?.length) {
+      lines.push('\n| ' + data.columns.join(' | ') + ' |');
+      lines.push('| ' + data.columns.map(() => '---').join(' | ') + ' |');
+      for (const row of data.rows ?? []) {
+        lines.push('| ' + row.join(' | ') + ' |');
+      }
+    }
+
+    if (space.kind === 'diy') {
+      if (data.intro) lines.push(`\n${data.intro}`);
+      for (const section of data.sections ?? []) {
+        lines.push(`\n### ${section.title}\n${section.content}`);
+      }
+    }
+
+    if (space.kind === 'plan') {
+      if (data.goal) lines.push(`\nObjectif : ${data.goal}`);
+      if (data.github) lines.push(`Repo : ${data.github.owner}/${data.github.repo}`);
+      for (const m of data.milestones ?? []) {
+        lines.push(`${m.done ? '✓' : '○'} ${m.title}`);
+      }
+    }
+
+    if (space.kind === 'recipe') {
+      if (data.servings) lines.push(`\nPortions : ${data.servings}`);
+      lines.push('\n**Ingrédients**');
+      for (const ing of data.ingredients ?? []) {
+        const qty = [ing.quantity, ing.unit].filter(Boolean).join(' ');
+        lines.push(`- ${qty ? `${qty} ` : ''}${ing.text}`);
+      }
+      lines.push('\n**Étapes**');
+      for (const step of [...(data.steps ?? [])].sort((a, b) => a.order - b.order)) {
+        lines.push(`${step.order}. ${step.text}`);
+      }
+    }
+
+    lines.push(`\n(id: ${space.id})`);
+    return lines.join('\n');
+  }
+
+  createSpace(args: {
+    kind: string;
+    title: string;
+    recap?: string;
+    data_json?: string;
+    create_todo_list?: string;
+  }): ToolResult {
+    const kind = (args.kind ?? '').trim().toLowerCase() as MerlinSpaceKind;
+    if (!SPACE_KINDS.has(kind)) {
+      return { ok: false, content: `Type d'espace invalide : ${args.kind}` };
+    }
+
+    const title = (args.title ?? '').trim();
+    if (!title) return { ok: false, content: 'Titre d\'espace vide.' };
+
+    let data: MerlinSpaceData = {};
+    if (args.data_json?.trim()) {
+      try {
+        data = JSON.parse(args.data_json) as MerlinSpaceData;
+      } catch {
+        return { ok: false, content: 'data_json invalide.' };
+      }
+    }
+
+    if (kind === 'diy' && args.create_todo_list === 'true') {
+      const listResult = this.createList(`DIY — ${title}`);
+      if (listResult.ok) {
+        const list = findListByTitle(this.lists, `DIY — ${title}`);
+        if (list) data.listId = list.id;
+      }
+    }
+
+    const now = Date.now();
+    const space: MerlinSpace = {
+      id: createEntityId(),
+      kind,
+      title,
+      recap: (args.recap ?? '').trim() || title,
+      data,
+      status: 'active',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    this.spaces.push(space);
+    this.markSpace(space);
+
+    return {
+      ok: true,
+      content: `Espace « ${title} » créé (${kind}, id: ${space.id}). Consultez-le dans Galerie → Espaces.`,
+      mutation: 'space_updated',
+    };
+  }
+
+  updateSpace(args: {
+    space_id?: string;
+    title?: string;
+    recap?: string;
+    data_json?: string;
+    status?: string;
+  }): ToolResult {
+    const ref = args.space_id ?? args.title ?? '';
+    const space = this.findSpace(ref);
+    if (!space) return { ok: false, content: `Espace « ${ref} » introuvable.` };
+
+    if (args.recap?.trim()) space.recap = args.recap.trim();
+    if (args.status === 'archived' || args.status === 'active') {
+      space.status = args.status;
+    }
+    if (args.data_json?.trim()) {
+      try {
+        const patch = JSON.parse(args.data_json) as MerlinSpaceData;
+        space.data = { ...space.data, ...patch };
+      } catch {
+        return { ok: false, content: 'data_json invalide.' };
+      }
+    }
+
+    space.updatedAt = Date.now();
+    this.markSpace(space);
+
+    return {
+      ok: true,
+      content: `Espace « ${space.title} » mis à jour.`,
+      mutation: 'space_updated',
+    };
+  }
+
+  showSpace(idOrTitle?: string): ToolResult {
+    if (!idOrTitle?.trim()) {
+      const active = this.spaces.filter((s) => s.status === 'active');
+      if (active.length === 0) {
+        return { ok: true, content: 'Aucun espace actif.' };
+      }
+      return {
+        ok: true,
+        content: active.map((s) => this.formatSpaceContent(s)).join('\n\n---\n\n'),
+      };
+    }
+
+    const space = this.findSpace(idOrTitle);
+    if (!space) return { ok: false, content: `Espace « ${idOrTitle} » introuvable.` };
+    return { ok: true, content: this.formatSpaceContent(space) };
+  }
+
+  listSpaces(kind?: string): ToolResult {
+    let filtered = this.spaces.filter((s) => s.status === 'active');
+    if (kind?.trim()) {
+      const k = kind.trim().toLowerCase() as MerlinSpaceKind;
+      filtered = filtered.filter((s) => s.kind === k);
+    }
+
+    if (filtered.length === 0) {
+      return { ok: true, content: 'Aucun espace enregistré.' };
+    }
+
+    const lines = filtered
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((s) => `• [${s.kind}] ${s.title} — ${s.recap.slice(0, 80)} (id: ${s.id})`);
+
+    return { ok: true, content: `Espaces (${filtered.length}) :\n${lines.join('\n')}` };
+  }
+
+  async inspectGitHubRepo(owner: string, repo: string): Promise<ToolResult> {
+    const o = owner.trim();
+    const r = repo.trim();
+    if (!o || !r) return { ok: false, content: 'owner et repo requis.' };
+
+    const result = await inspectGitHubRepo(o, r, this.githubToken);
+    if (!result.ok) return { ok: false, content: result.error };
+    return { ok: true, content: formatGitHubSummary(result.summary) };
+  }
+
   saveCustomTool(args: Record<string, string>): ToolResult {
     const name = (args.name ?? '').trim().toLowerCase().replace(/\s+/g, '_');
     const description = (args.description ?? args.desc ?? 'Routine personnalisée').trim();
@@ -502,7 +717,7 @@ export class AgentStore {
     return { ok: true, content: `Routine « ${name} » enregistrée.`, mutation: 'list_updated' };
   }
 
-  executeCustomTool(name: string, args: Record<string, string>): ToolResult {
+  async executeCustomTool(name: string, args: Record<string, string>): Promise<ToolResult> {
     const tool = this.customTools.find((t) => t.name.toLowerCase() === name.toLowerCase());
     if (!tool) {
       return { ok: false, content: `Routine « ${name} » introuvable.` };
@@ -520,7 +735,7 @@ export class AgentStore {
         return { ok: false, content: `Étape interdite : ${step.tool}` };
       }
       const stepArgs = resolveArgs(step.args, args);
-      const result = this.executeTool(step.tool, stepArgs);
+      const result = await this.executeTool(step.tool, stepArgs);
       if (!result.ok) return result;
       results.push(result.content);
       if (result.mutation) lastMutation = result.mutation;
@@ -533,7 +748,7 @@ export class AgentStore {
     return { ok: true, content: results.join('\n'), mutation: lastMutation };
   }
 
-  executeTool(name: string, args: Record<string, string>): ToolResult {
+  async executeTool(name: string, args: Record<string, string>): Promise<ToolResult> {
     const custom = this.customTools.find((t) => t.name.toLowerCase() === name.toLowerCase());
     if (custom) {
       return this.executeCustomTool(name, args);
@@ -575,6 +790,28 @@ export class AgentStore {
         return this.deleteList(args.list ?? args.title ?? '');
       case 'save_custom_tool':
         return this.saveCustomTool(args);
+      case 'create_space':
+        return this.createSpace({
+          kind: args.kind ?? '',
+          title: args.title ?? '',
+          recap: args.recap,
+          data_json: args.data_json,
+          create_todo_list: args.create_todo_list,
+        });
+      case 'update_space':
+        return this.updateSpace({
+          space_id: args.space_id ?? args.id,
+          title: args.title,
+          recap: args.recap,
+          data_json: args.data_json,
+          status: args.status,
+        });
+      case 'show_space':
+        return this.showSpace(args.space_id ?? args.title ?? args.id);
+      case 'list_spaces':
+        return this.listSpaces(args.kind);
+      case 'inspect_github_repo':
+        return this.inspectGitHubRepo(args.owner ?? '', args.repo ?? '');
       default:
         return { ok: false, content: `Outil inconnu : ${name}` };
     }

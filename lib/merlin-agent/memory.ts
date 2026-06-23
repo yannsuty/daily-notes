@@ -1,12 +1,12 @@
 import { formatDateLabel } from './dates.js';
-import type { AgentContext, MerlinFact } from './types.js';
+import type { AgentContext, MerlinFact, MerlinSpace } from './types.js';
 
 function escapeRegex(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export interface MemoryHit {
-  source: 'fact' | 'journal';
+  source: 'fact' | 'journal' | 'space';
   label: string;
   content: string;
   score: number;
@@ -77,6 +77,34 @@ export function searchJournalInContext(
   return matches.sort((a, b) => b.score - a.score).slice(0, maxResults);
 }
 
+export function searchSpaces(spaces: MerlinSpace[], query: string, max = 4): MemoryHit[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return [];
+
+  const terms = normalized.split(/\s+/).filter((t) => t.length > 2);
+  const hits: MemoryHit[] = [];
+
+  for (const space of spaces) {
+    if (space.status !== 'active') continue;
+    const hay = `${space.title} ${space.recap} ${space.kind}`.toLowerCase();
+    let score = 0;
+    if (hay.includes(normalized)) score += 5;
+    for (const term of terms) {
+      if (hay.includes(term)) score += 1;
+    }
+    if (score > 0) {
+      hits.push({
+        source: 'space',
+        label: `[${space.kind}] ${space.title}`,
+        content: space.recap.slice(0, 200),
+        score,
+      });
+    }
+  }
+
+  return hits.sort((a, b) => b.score - a.score).slice(0, max);
+}
+
 export function gatherMemory(
   context: AgentContext,
   queries: string[],
@@ -97,6 +125,12 @@ export function gatherMemory(
       seen.add(key);
       hits.push(hit);
     }
+    for (const hit of searchSpaces(context.spaces ?? [], query)) {
+      const key = `space:${hit.label}:${hit.content.slice(0, 40)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      hits.push(hit);
+    }
   }
 
   if (hits.length === 0) {
@@ -106,6 +140,9 @@ export function gatherMemory(
   const lines = hits.map((hit) => {
     if (hit.source === 'fact') {
       return `- [mémoire] ${hit.label} : ${hit.content}`;
+    }
+    if (hit.source === 'space') {
+      return `- [espace ${hit.label}] ${hit.content}`;
     }
     return `- [journal ${hit.label}] ${hit.content}`;
   });

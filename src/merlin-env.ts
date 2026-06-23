@@ -11,6 +11,7 @@ export const MERLIN_ENV = {
   OPENROUTER_API_KEY: 'OPENROUTER_API_KEY',
   OPENROUTER_MODEL: 'OPENROUTER_MODEL',
   OPENROUTER_MODEL_CHAIN: 'OPENROUTER_MODEL_CHAIN',
+  GITHUB_TOKEN: 'GITHUB_TOKEN',
 } as const;
 
 export type MerlinEnvKey = (typeof MERLIN_ENV)[keyof typeof MERLIN_ENV];
@@ -46,6 +47,13 @@ export const BUILTIN_MERLIN_ENV_FIELDS: MerlinEnvFieldDef[] = [
     multiline: true,
     hint: 'Ordre de secours si le modèle principal échoue.',
   },
+  {
+    key: MERLIN_ENV.GITHUB_TOKEN,
+    label: 'Token GitHub (lecture)',
+    placeholder: 'ghp_… ou github_pat_…',
+    secret: true,
+    hint: 'Optionnel. Permet à Merlin d\'analyser vos dépôts (plans de programmation). Scope minimal : lecture des dépôts publics ou repo.',
+  },
 ];
 
 export interface AiClientConfig {
@@ -78,13 +86,14 @@ export async function getAllMerlinEnvMap(): Promise<Record<string, string>> {
   return map;
 }
 
-export async function getAiClientConfig(): Promise<AiClientConfig> {
-  const [apiKey, model, modelChain] = await Promise.all([
+export async function getAiClientConfig(): Promise<AiClientConfig & { githubToken?: string }> {
+  const [apiKey, model, modelChain, githubToken] = await Promise.all([
     getMerlinEnv(MERLIN_ENV.OPENROUTER_API_KEY),
     getMerlinEnv(MERLIN_ENV.OPENROUTER_MODEL),
     getMerlinEnv(MERLIN_ENV.OPENROUTER_MODEL_CHAIN),
+    getMerlinEnv(MERLIN_ENV.GITHUB_TOKEN),
   ]);
-  return { apiKey, model, modelChain };
+  return { apiKey, model, modelChain, githubToken };
 }
 
 /** Pour futurs outils / intégrations — lecture générique d'une variable Merlin. */

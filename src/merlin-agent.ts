@@ -14,6 +14,7 @@ import {
 } from './db';
 import { tryFastIntent } from './merlin-intents';
 import { applyAgentMutations, buildAgentContext } from './merlin-agent-context';
+import { setActiveSpaceId } from './merlin-space-session';
 import { runServerAgent, startBackgroundAgentJob } from './merlin-agent-client';
 import {
   MERLIN_THINKING_PLACEHOLDER,
@@ -168,7 +169,7 @@ export async function rememberExplicitFact(key: string, value: string): Promise<
   });
 }
 
-export type AgentSideEffect = 'list_updated' | 'reminder_created' | 'reminder_completed';
+export type AgentSideEffect = 'list_updated' | 'reminder_created' | 'reminder_completed' | 'space_updated';
 
 export interface AgentReply {
   ok: boolean;
@@ -370,6 +371,12 @@ export async function handleUserMessage(
     }
 
     await applyAgentMutations(agentResult.mutations);
+    if (agentResult.mutations.spaces?.length) {
+      const newest = [...agentResult.mutations.spaces].sort(
+        (a, b) => b.updatedAt - a.updatedAt,
+      )[0];
+      if (newest) setActiveSpaceId(newest.id);
+    }
     await appendExchange(trimmed, agentResult.reply);
     void recordShortcutUsage(trimmed);
     const { syncNow } = await import('./sync');

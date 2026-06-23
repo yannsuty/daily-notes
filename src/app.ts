@@ -64,6 +64,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
 
   const refreshListes = (): void => {
     void gallery?.refreshListes();
+    void gallery?.refreshEspaces();
   };
 
   const settingsCallbacks: SettingsCallbacks = {
@@ -149,6 +150,10 @@ export async function initApp(root: HTMLElement): Promise<void> {
       void merlinChat?.refresh();
       void syncNow().then(() => updateSyncIndicator(syncIndicator));
     },
+    onDiscussSpace: () => {
+      tabBar?.switchTo('merlin');
+      void merlinChat?.refresh();
+    },
   });
 
   tabBar.registerPanel('merlin', merlinPanel);
@@ -183,6 +188,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
       await merlinChat?.refresh();
       if (completed > 0) {
         await gallery?.refreshListes();
+        await gallery?.refreshEspaces();
         merlinChat?.setBackgroundComplete();
         void syncNow().then(() => updateSyncIndicator(syncIndicator));
       }

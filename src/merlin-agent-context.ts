@@ -1,29 +1,39 @@
 import {
   deleteMerlinList,
   deleteMerlinReminder,
+  deleteMerlinSpace,
   getAllDays,
   getMerlinConversation,
   getMerlinCustomTools,
   getMerlinFacts,
   getMerlinLists,
   getMerlinReminders,
+  getMerlinSpaces,
   saveMerlinCustomTool,
   saveMerlinList,
   saveMerlinReminder,
+  saveMerlinSpace,
 } from './db';
+import { getActiveSpaceId } from './merlin-space-session';
 import type { AgentContext, AgentMutations } from '../lib/merlin-agent';
 
 const MAX_CONTEXT_MESSAGES = 24;
 
 export async function buildAgentContext(): Promise<AgentContext> {
-  const [days, facts, lists, reminders, customTools, conv] = await Promise.all([
+  const [days, facts, lists, reminders, customTools, spaces, conv] = await Promise.all([
     getAllDays(),
     getMerlinFacts(),
     getMerlinLists(),
     getMerlinReminders(),
     getMerlinCustomTools(),
+    getMerlinSpaces(),
     getMerlinConversation(),
   ]);
+
+  const activeSpaceId = getActiveSpaceId();
+  const activeSpace = activeSpaceId
+    ? spaces.find((s) => s.id === activeSpaceId) ?? null
+    : null;
 
   return {
     days,
@@ -31,6 +41,9 @@ export async function buildAgentContext(): Promise<AgentContext> {
     lists,
     reminders,
     customTools,
+    spaces,
+    activeSpaceId,
+    activeSpace,
     conversationSummary: conv.summary,
     recentMessages: conv.messages.slice(-MAX_CONTEXT_MESSAGES),
   };
@@ -68,6 +81,19 @@ export async function applyAgentMutations(mutations: AgentMutations): Promise<vo
   if (mutations.customTools) {
     for (const tool of mutations.customTools) {
       await saveMerlinCustomTool(tool);
+    }
+  }
+
+  if (mutations.spaces) {
+    const existing = await getMerlinSpaces();
+    const nextIds = new Set(mutations.spaces.map((s) => s.id));
+    for (const space of existing) {
+      if (!nextIds.has(space.id)) {
+        await deleteMerlinSpace(space.id);
+      }
+    }
+    for (const space of mutations.spaces) {
+      await saveMerlinSpace(space);
     }
   }
 }

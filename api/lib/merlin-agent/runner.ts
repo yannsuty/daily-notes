@@ -27,6 +27,9 @@ const READ_TOOLS = new Set([
   'summarize_period',
   'show_lists',
   'list_reminders',
+  'show_space',
+  'list_spaces',
+  'inspect_github_repo',
 ]);
 
 export type StepCallback = (step: AgentStep) => void;
@@ -58,6 +61,7 @@ function pickSideEffect(store: AgentStore): AgentSideEffect | undefined {
     return 'reminder_created';
   }
   if ((mutations.lists?.length ?? 0) > 0) return 'list_updated';
+  if ((mutations.spaces?.length ?? 0) > 0) return 'space_updated';
   return undefined;
 }
 
@@ -141,7 +145,7 @@ export async function runMerlinAgent(
     detail: depth === 'deep' ? 'Question complexe détectée' : undefined,
   }, onStep);
 
-  const store = new AgentStore(context);
+  const store = new AgentStore(context, { githubToken: config.githubToken });
   let memoryBlock = '';
   let planner: PlannerResult | null = null;
   let memoryQueries = extractMemoryQueries(trimmed);
@@ -292,7 +296,7 @@ export async function runMerlinAgent(
       }
     }
 
-    const toolResult = store.executeTool(toolCall.name, toolArgs);
+    const toolResult = await store.executeTool(toolCall.name, toolArgs);
     if (toolResult.mutation) lastSideEffect = toolResult.mutation;
 
     const template = templateReplyForTool(toolCall.name, toolResult);

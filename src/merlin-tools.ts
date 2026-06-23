@@ -16,7 +16,7 @@ import { addDays, formatDateLabel, todayKey } from './types';
 export interface ToolResult {
   ok: boolean;
   content: string;
-  mutation?: 'list_updated' | 'reminder_created' | 'reminder_completed';
+  mutation?: 'list_updated' | 'reminder_created' | 'reminder_completed' | 'space_updated';
 }
 
 export function createEntityId(): string {
