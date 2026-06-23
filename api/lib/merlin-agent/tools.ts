@@ -1,6 +1,14 @@
 import { addDays, formatDateLabel, todayKey } from '../../../lib/merlin-agent/dates.js';
+import {
+  isPrimitiveTool,
+  isWebTool,
+  MAX_CUSTOM_ROUTINE_STEPS,
+} from '../../../lib/merlin-agent/primitive-tools.js';
+import { mergeWebSources } from '../../../lib/merlin-agent/web.js';
 import { normalizeReminderArgs } from '../../../lib/merlin-agent/reminder-text.js';
+import { runWebTool } from './web-tools.js';
 import type {
+  AgentClientConfig,
   AgentContext,
   AgentMutations,
   AgentSideEffect,
@@ -9,6 +17,7 @@ import type {
   MerlinListItem,
   MerlinReminder,
   ToolResult,
+  WebSource,
 } from '../../../lib/merlin-agent/types.js';
 
 export function createEntityId(): string {
@@ -25,24 +34,6 @@ const MUTATION_TOOLS = new Set([
   'delete_list',
   'save_custom_tool',
 ]);
-
-const PRIMITIVE_TOOLS = new Set([
-  'read_journal',
-  'search_journal',
-  'summarize_period',
-  'create_list',
-  'add_list_item',
-  'toggle_list_item',
-  'show_lists',
-  'create_reminder',
-  'list_reminders',
-  'complete_reminder',
-  'trigger_context',
-  'delete_list',
-  'save_custom_tool',
-]);
-
-const MAX_CUSTOM_STEPS = 5;
 
 export function isMutationTool(name: string): boolean {
   return MUTATION_TOOLS.has(name);
@@ -469,12 +460,12 @@ export class AgentStore {
       return { ok: false, content: 'steps_json invalide.' };
     }
 
-    if (!Array.isArray(steps) || steps.length === 0 || steps.length > MAX_CUSTOM_STEPS) {
+    if (!Array.isArray(steps) || steps.length === 0 || steps.length > MAX_CUSTOM_ROUTINE_STEPS) {
       return { ok: false, content: 'Routine vide ou trop longue.' };
     }
 
     for (const step of steps) {
-      if (!PRIMITIVE_TOOLS.has(step.tool) || step.tool === 'save_custom_tool') {
+      if (!isPrimitiveTool(step.tool) || step.tool === 'save_custom_tool') {
         return { ok: false, content: `Étape interdite : ${step.tool}` };
       }
     }
@@ -502,43 +493,15 @@ export class AgentStore {
     return { ok: true, content: `Routine « ${name} » enregistrée.`, mutation: 'list_updated' };
   }
 
-  executeCustomTool(name: string, args: Record<string, string>): ToolResult {
-    const tool = this.customTools.find((t) => t.name.toLowerCase() === name.toLowerCase());
-    if (!tool) {
-      return { ok: false, content: `Routine « ${name} » introuvable.` };
-    }
-
-    if (tool.steps.length > MAX_CUSTOM_STEPS) {
-      return { ok: false, content: 'Routine trop longue.' };
-    }
-
-    const results: string[] = [];
-    let lastMutation: AgentSideEffect | undefined;
-
-    for (const step of tool.steps) {
-      if (!PRIMITIVE_TOOLS.has(step.tool)) {
-        return { ok: false, content: `Étape interdite : ${step.tool}` };
-      }
-      const stepArgs = resolveArgs(step.args, args);
-      const result = this.executeTool(step.tool, stepArgs);
-      if (!result.ok) return result;
-      results.push(result.content);
-      if (result.mutation) lastMutation = result.mutation;
-    }
-
-    tool.usageCount += 1;
-    tool.updatedAt = Date.now();
-    this.markCustomTool(tool);
-
-    return { ok: true, content: results.join('\n'), mutation: lastMutation };
+  isCustomTool(name: string): boolean {
+    return this.customTools.some((t) => t.name.toLowerCase() === name.toLowerCase());
   }
 
-  executeTool(name: string, args: Record<string, string>): ToolResult {
-    const custom = this.customTools.find((t) => t.name.toLowerCase() === name.toLowerCase());
-    if (custom) {
-      return this.executeCustomTool(name, args);
-    }
+  private findCustomTool(name: string): MerlinCustomTool | undefined {
+    return this.customTools.find((t) => t.name.toLowerCase() === name.toLowerCase());
+  }
 
+  private executeToolSync(name: string, args: Record<string, string>): ToolResult {
     switch (name) {
       case 'read_journal':
         return this.readJournal(args.date ?? todayKey());
@@ -578,5 +541,76 @@ export class AgentStore {
       default:
         return { ok: false, content: `Outil inconnu : ${name}` };
     }
+  }
+
+  private async executeStepAsync(
+    name: string,
+    args: Record<string, string>,
+    config: AgentClientConfig,
+  ): Promise<ToolResult> {
+    if (isWebTool(name)) {
+      return runWebTool(name, args, config);
+    }
+    return this.executeToolSync(name, args);
+  }
+
+  async executeCustomToolAsync(
+    name: string,
+    args: Record<string, string>,
+    config: AgentClientConfig,
+  ): Promise<ToolResult> {
+    const tool = this.findCustomTool(name);
+    if (!tool) {
+      return { ok: false, content: `Routine « ${name} » introuvable.` };
+    }
+
+    if (tool.steps.length > MAX_CUSTOM_ROUTINE_STEPS) {
+      return { ok: false, content: 'Routine trop longue.' };
+    }
+
+    const results: string[] = [];
+    let lastMutation: AgentSideEffect | undefined;
+    let webSources: WebSource[] = [];
+
+    for (const step of tool.steps) {
+      if (!isPrimitiveTool(step.tool) || step.tool === 'save_custom_tool') {
+        return { ok: false, content: `Étape interdite : ${step.tool}` };
+      }
+      const stepArgs = resolveArgs(step.args, args);
+      const result = await this.executeStepAsync(step.tool, stepArgs, config);
+      if (!result.ok) {
+        return { ...result, webSources: mergeWebSources(webSources, result.webSources ?? []) };
+      }
+      results.push(`[${step.tool}]\n${result.content}`);
+      if (result.webSources?.length) {
+        webSources = mergeWebSources(webSources, result.webSources);
+      }
+      if (result.mutation) lastMutation = result.mutation;
+    }
+
+    tool.usageCount += 1;
+    tool.updatedAt = Date.now();
+    this.markCustomTool(tool);
+
+    return {
+      ok: true,
+      content: results.join('\n\n'),
+      mutation: lastMutation,
+      webSources,
+    };
+  }
+
+  async executeToolAsync(
+    name: string,
+    args: Record<string, string>,
+    config: AgentClientConfig,
+  ): Promise<ToolResult> {
+    if (this.isCustomTool(name)) {
+      return this.executeCustomToolAsync(name, args, config);
+    }
+    if (isWebTool(name)) {
+      return runWebTool(name, args, config);
+    }
+    return this.executeToolSync(name, args);
   }
 }

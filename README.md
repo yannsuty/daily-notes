@@ -180,6 +180,8 @@ Configurer **au moins une** des options suivantes :
 
 Les **sources** sont citées automatiquement en fin de réponse Merlin.
 
+Les **routines personnalisées** (`save_custom_tool`) peuvent enchaîner jusqu'à 5 étapes, y compris `web_search` et `fetch_page` (exécution asynchrone côté serveur).
+
 > La recherche s'exécute côté serveur (clés jamais exposées dans l'APK). Sans aucune clé ni scraper, Merlin indique que la recherche web est indisponible.
 
 Pour tester l'API après déploiement : provoquer une erreur 500 (ex. Redis non configuré) ou ajouter temporairement `throw new Error('Sentry test API')` dans une route — l'issue doit apparaître avec `runtime: vercel-node`.

@@ -23,3 +23,11 @@ export type {
 } from './types.js';
 
 export { assessQueryDepth, extractMemoryQueries } from './complexity.js';
+export {
+  isPrimitiveTool,
+  isWebTool,
+  MAX_CUSTOM_ROUTINE_STEPS,
+  PRIMITIVE_TOOL_NAMES,
+  PRIMITIVE_TOOLS,
+  WEB_TOOL_NAMES,
+} from './primitive-tools.js';

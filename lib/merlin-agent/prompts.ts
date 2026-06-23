@@ -20,7 +20,7 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)
-- save_custom_tool(name, description, steps_json) — sauvegarder une routine réutilisable
+- save_custom_tool(name, description, steps_json) — sauvegarder une routine réutilisable (jusqu'à 5 étapes, dont web_search / fetch_page)
 - web_search(query, max_results?) — rechercher sur Internet (actualités, infos factuelles, météo, prix…). N'utilise pas pour le journal personnel
 - fetch_page(url) — lire le contenu textuel d'une page web (après une recherche ou si l'utilisateur donne un lien)`;
 

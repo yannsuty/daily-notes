@@ -1,23 +1,11 @@
 import { getMerlinCustomTools } from './db';
+import {
+  isPrimitiveTool,
+  MAX_CUSTOM_ROUTINE_STEPS,
+} from '../lib/merlin-agent/primitive-tools';
 import type { ToolResult } from './merlin-tools';
 
-const PRIMITIVE_TOOLS = new Set([
-  'read_journal',
-  'search_journal',
-  'summarize_period',
-  'create_list',
-  'add_list_item',
-  'toggle_list_item',
-  'show_lists',
-  'create_reminder',
-  'list_reminders',
-  'complete_reminder',
-  'trigger_context',
-  'delete_list',
-  'save_custom_tool',
-]);
-
-const MAX_CUSTOM_STEPS = 5;
+const MAX_CUSTOM_STEPS = MAX_CUSTOM_ROUTINE_STEPS;
 
 let customToolsCache: Map<string, string> | null = null;
 let customToolsCacheAt = 0;
@@ -72,7 +60,7 @@ export async function executeCustomTool(
   let lastMutation: ToolResult['mutation'];
 
   for (const step of tool.steps) {
-    if (!PRIMITIVE_TOOLS.has(step.tool)) {
+    if (!isPrimitiveTool(step.tool) || step.tool === 'save_custom_tool') {
       return { ok: false, content: `Étape interdite : ${step.tool}` };
     }
     const stepArgs = resolveArgs(step.args, args);

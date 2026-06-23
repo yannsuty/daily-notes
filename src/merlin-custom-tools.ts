@@ -1,6 +1,7 @@
 import { saveMerlinCustomTool } from './db';
 import { invalidateCustomToolCache } from './merlin-tool-registry';
 import { createEntityId, type ToolResult } from './merlin-tools';
+import { isPrimitiveTool, MAX_CUSTOM_ROUTINE_STEPS } from '../lib/merlin-agent/primitive-tools';
 import type { MerlinCustomTool, MerlinToolStep } from './types';
 
 export async function saveCustomToolFromArgs(
@@ -15,8 +16,13 @@ export async function saveCustomToolFromArgs(
   let steps: MerlinToolStep[];
   try {
     steps = JSON.parse(stepsRaw) as MerlinToolStep[];
-    if (!Array.isArray(steps) || steps.length === 0) {
+    if (!Array.isArray(steps) || steps.length === 0 || steps.length > MAX_CUSTOM_ROUTINE_STEPS) {
       return { ok: false, content: 'Steps invalides.' };
+    }
+    for (const step of steps) {
+      if (!isPrimitiveTool(step.tool) || step.tool === 'save_custom_tool') {
+        return { ok: false, content: `Étape interdite : ${step.tool}` };
+      }
     }
   } catch {
     return { ok: false, content: 'JSON steps invalide.' };

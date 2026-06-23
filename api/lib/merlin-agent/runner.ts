@@ -9,7 +9,6 @@ import {
   PLANNER_PROMPT,
   SYNTHESIS_PROMPT,
 } from '../../../lib/merlin-agent/prompts.js';
-import { runWebTool } from './web-tools.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
 import { AgentStore, isMutationTool, templateReplyForTool } from './tools.js';
@@ -33,8 +32,6 @@ const READ_TOOLS = new Set([
   'web_search',
   'fetch_page',
 ]);
-
-const WEB_TOOLS = new Set(['web_search', 'fetch_page']);
 
 export type StepCallback = (step: AgentStep) => void;
 
@@ -305,9 +302,7 @@ export async function runMerlinAgent(
       }
     }
 
-    const toolResult = WEB_TOOLS.has(toolCall.name)
-      ? await runWebTool(toolCall.name, toolArgs, config)
-      : store.executeTool(toolCall.name, toolArgs);
+    const toolResult = await store.executeToolAsync(toolCall.name, toolArgs, config);
     if (toolResult.webSources?.length) {
       webSources = mergeWebSources(webSources, toolResult.webSources);
     }
@@ -329,14 +324,14 @@ export async function runMerlinAgent(
       };
     }
 
-    if (isMutationTool(toolCall.name)) {
+    if (isMutationTool(toolCall.name) || toolResult.mutation) {
       pushStep(steps, {
         phase: 'respond',
         label: 'Action effectuée',
       }, onStep);
       return {
         ok: true,
-        reply: toolResult.content,
+        reply: withWebCitations(toolResult.content, webSources),
         steps,
         mutations: store.getMutations(),
         sideEffects: toolResult.mutation ?? lastSideEffect,
@@ -344,7 +339,11 @@ export async function runMerlinAgent(
       };
     }
 
-    if (READ_TOOLS.has(toolCall.name)) {
+    if (
+      READ_TOOLS.has(toolCall.name) ||
+      toolResult.webSources?.length ||
+      store.isCustomTool(toolCall.name)
+    ) {
       readToolUsed = true;
       toolResultsForSynthesis.push(`[${toolCall.name}]\n${toolResult.content}`);
     }
