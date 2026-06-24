@@ -33,12 +33,15 @@ const activeComparison: MerlinSpace = {
 function makeStore(spaces: MerlinSpace[] = [activeComparison]): AgentStore {
   const context: AgentContext = {
     days: {},
+    facts: [],
     lists: [],
     reminders: [],
     customTools: [],
     spaces,
     activeSpaceId: spaces[0]?.id ?? null,
     activeSpace: spaces[0] ?? null,
+    conversationSummary: '',
+    recentMessages: [],
   };
   return new AgentStore(context);
 }
