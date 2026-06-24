@@ -39,6 +39,21 @@ export function createEntityId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+export interface SerializedAgentStore {
+  days: Record<string, { content: string; updatedAt: number }>;
+  lists: MerlinList[];
+  reminders: MerlinReminder[];
+  customTools: MerlinCustomTool[];
+  spaces: MerlinSpace[];
+  githubToken?: string;
+  activeSpaceId?: string | null;
+  activeSpace?: MerlinSpace | null;
+  dirtyLists: string[];
+  dirtyReminders: string[];
+  dirtyCustomTools: string[];
+  dirtySpaces: string[];
+}
+
 const MUTATION_TOOLS = new Set([
   'create_list',
   'add_list_item',
@@ -234,6 +249,40 @@ export class AgentStore {
 
   hasDirtySpaces(): boolean {
     return this.dirtySpaces.size > 0;
+  }
+
+  toSnapshot(): SerializedAgentStore {
+    return {
+      days: this.days,
+      lists: this.lists,
+      reminders: this.reminders,
+      customTools: this.customTools,
+      spaces: this.spaces,
+      githubToken: this.githubToken,
+      activeSpaceId: this.activeSpaceId ?? null,
+      activeSpace: this.activeSpace ?? null,
+      dirtyLists: [...this.dirtyLists],
+      dirtyReminders: [...this.dirtyReminders],
+      dirtyCustomTools: [...this.dirtyCustomTools],
+      dirtySpaces: [...this.dirtySpaces],
+    };
+  }
+
+  static fromSnapshot(snapshot: SerializedAgentStore): AgentStore {
+    const store = Object.create(AgentStore.prototype) as AgentStore;
+    store.days = snapshot.days;
+    store.lists = snapshot.lists;
+    store.reminders = snapshot.reminders;
+    store.customTools = snapshot.customTools;
+    store.spaces = snapshot.spaces;
+    store.githubToken = snapshot.githubToken;
+    store.activeSpaceId = snapshot.activeSpaceId;
+    store.activeSpace = snapshot.activeSpace;
+    store.dirtyLists = new Set(snapshot.dirtyLists);
+    store.dirtyReminders = new Set(snapshot.dirtyReminders);
+    store.dirtyCustomTools = new Set(snapshot.dirtyCustomTools);
+    store.dirtySpaces = new Set(snapshot.dirtySpaces);
+    return store;
   }
 
   private markList(list: MerlinList): void {

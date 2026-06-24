@@ -13,5 +13,5 @@ export const BACKGROUND_JOB_TIMEOUT_MS =
 /** SSE : se termine un peu avant pour émettre `reconnect` et reprendre le poll. */
 export const JOB_STREAM_MAX_MS = BACKGROUND_JOB_TIMEOUT_MS - 3_000;
 
-/** Job `running` sans activité → marqué en erreur (process tué, réseau, etc.). */
-export const STALE_RUNNING_MS = BACKGROUND_JOB_TIMEOUT_MS + 60_000;
+/** Job `running` sans activité → marqué en erreur (process tué, enchaînement segment interrompu…). */
+export const STALE_RUNNING_MS = BACKGROUND_JOB_TIMEOUT_MS + 180_000;
