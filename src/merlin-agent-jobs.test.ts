@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  appendPendingJobStep,
   isStalePendingJob,
   PENDING_JOB_MAX_MS,
   removeStalePendingAgentJobs,
@@ -55,5 +56,17 @@ describe('pending agent jobs — expiration', () => {
     expect(removed).toHaveLength(1);
     expect(removed[0].jobId).toBe('stale');
     expect(listPendingAgentJobs().map((j) => j.jobId)).toEqual(['fresh']);
+  });
+
+  it('accumule les étapes d’un job pending', () => {
+    savePendingAgentJob({
+      jobId: 'job-1',
+      userText: 'test',
+      placeholderId: 'ph',
+      startedAt: Date.now(),
+    });
+    appendPendingJobStep('job-1', { phase: 'think', label: 'Réflexion…' });
+    appendPendingJobStep('job-1', { phase: 'tool', label: 'Outil : search', detail: 'wifi' });
+    expect(listPendingAgentJobs()[0].steps).toHaveLength(2);
   });
 });

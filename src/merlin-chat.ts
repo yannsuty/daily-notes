@@ -16,8 +16,8 @@ import {
 import { CONTEXT_CHIPS } from './merlin-intents';
 import { getWelcomeMessage, handleUserMessage } from './merlin-agent';
 import { stepLabelForUi } from './merlin-agent-client';
-import { listPendingAgentJobs } from './merlin-agent-jobs';
-import { abandonPendingAgentJobs } from './merlin-agent-resume';
+import { listPendingAgentJobs, appendPendingJobStep } from './merlin-agent-jobs';
+import { abandonPendingAgentJobs, loadPendingJobProgress } from './merlin-agent-resume';
 import { assessQueryDepth } from '../lib/merlin-agent';
 import type { AgentStep } from '../lib/merlin-agent';
 import { getPaletteShortcuts, toggleShortcutPin } from './merlin-shortcuts';
@@ -133,13 +133,29 @@ export class MerlinChat {
   syncBackgroundStatus(): void {
     if (listPendingAgentJobs().length > 0) {
       this.setBackgroundPending();
+      void this.loadBackgroundJobTrace();
     } else {
       this.setBackgroundComplete();
     }
   }
 
+  async loadBackgroundJobTrace(): Promise<void> {
+    const jobs = listPendingAgentJobs();
+    if (jobs.length === 0) {
+      this.clearAgentTrace();
+      return;
+    }
+
+    const job = jobs[jobs.length - 1];
+    await loadPendingJobProgress(job.jobId, {
+      onStepsBatch: (steps) => this.renderAgentSteps(steps),
+      onStep: (step) => this.renderAgentStep(step),
+    });
+  }
+
   private async dismissBackgroundJob(): Promise<void> {
     await abandonPendingAgentJobs();
+    this.clearAgentTrace();
     this.setBackgroundComplete();
     await this.renderMessages();
     this.onConversationUpdate?.();
@@ -408,7 +424,7 @@ export class MerlinChat {
     this.messagesEl.appendChild(bubble);
   }
 
-  private setThinking(active: boolean, message = ''): void {
+  private setThinking(active: boolean, message = '', options?: { keepTrace?: boolean }): void {
     this.thinking = active;
     if (this.sendBtn) this.sendBtn.disabled = active;
     if (this.voiceBtn) this.voiceBtn.disabled = active;
@@ -417,14 +433,14 @@ export class MerlinChat {
       this.statusEl.textContent = message;
       this.statusEl.hidden = !message;
     }
-    if (!active && this.traceEl) {
-      this.traceEl.hidden = true;
-      this.traceEl.innerHTML = '';
+    if (!active && this.traceEl && !options?.keepTrace) {
+      this.clearAgentTrace();
     }
   }
 
   setBackgroundComplete(): void {
-    this.setThinking(false);
+    this.setThinking(false, '', { keepTrace: true });
+    this.clearAgentTrace();
     if (this.backgroundEl) this.backgroundEl.hidden = true;
   }
 
@@ -433,7 +449,7 @@ export class MerlinChat {
     // Ne pas bloquer la saisie : l'utilisateur peut continuer à utiliser Merlin.
   }
 
-  private renderAgentStep(step: AgentStep): void {
+  renderAgentStep(step: AgentStep): void {
     if (!this.traceEl) return;
     this.traceEl.hidden = false;
 
@@ -444,9 +460,37 @@ export class MerlinChat {
     this.traceEl.scrollTop = this.traceEl.scrollHeight;
 
     if (this.statusEl) {
-      this.statusEl.textContent = step.label;
+      this.statusEl.textContent = stepLabelForUi(step);
       this.statusEl.hidden = false;
     }
+  }
+
+  renderAgentSteps(steps: AgentStep[]): void {
+    if (!this.traceEl) return;
+    this.traceEl.innerHTML = '';
+    if (steps.length === 0) {
+      this.traceEl.hidden = true;
+      return;
+    }
+    this.traceEl.hidden = false;
+    for (const step of steps) {
+      const item = document.createElement('div');
+      item.className = `merlin-chat__trace-item merlin-chat__trace-item--${step.phase}`;
+      item.textContent = stepLabelForUi(step);
+      this.traceEl.appendChild(item);
+    }
+    this.traceEl.scrollTop = this.traceEl.scrollHeight;
+    const latest = steps[steps.length - 1];
+    if (this.statusEl && latest) {
+      this.statusEl.textContent = stepLabelForUi(latest);
+      this.statusEl.hidden = false;
+    }
+  }
+
+  clearAgentTrace(): void {
+    if (!this.traceEl) return;
+    this.traceEl.hidden = true;
+    this.traceEl.innerHTML = '';
   }
 
   private setAiBanner(show: boolean): void {
@@ -485,10 +529,19 @@ export class MerlinChat {
     );
 
     const result = await handleUserMessage(trimmed, {
-      onAgentStep: (step) => this.renderAgentStep(step),
+      onAgentStep: (step) => {
+        this.renderAgentStep(step);
+        const jobs = listPendingAgentJobs();
+        const job = jobs[jobs.length - 1];
+        if (job) appendPendingJobStep(job.jobId, step);
+      },
     });
 
-    this.setThinking(false);
+    if (result.backgroundPending) {
+      this.setThinking(false, '', { keepTrace: true });
+    } else {
+      this.setThinking(false);
+    }
 
     if (!result.ok) {
       const errMsg = result.error ?? 'Erreur inconnue';
@@ -506,7 +559,7 @@ export class MerlinChat {
     if (result.backgroundPending) {
       this.setAiBanner(false);
       await this.renderAll();
-      this.setBackgroundPending();
+      this.syncBackgroundStatus();
       return;
     }
 
