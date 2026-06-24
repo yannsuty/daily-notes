@@ -38,6 +38,8 @@ describe('buildSystemPrompt — espaces', () => {
 
     expect(prompt).toContain('Contexte actif');
     expect(prompt).toContain('[Recette] Tarte aux pommes');
+    expect(prompt).toContain('id: recipe-1');
+    expect(prompt).toContain('space_id="recipe-1"');
     expect(prompt).toContain('create_space');
     expect(prompt).toContain('inspect_github_repo');
     expect(prompt).toContain(SPACE_GUIDANCE.trim().slice(0, 30));

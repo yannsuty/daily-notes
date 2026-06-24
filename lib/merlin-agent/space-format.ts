@@ -9,6 +9,7 @@ export const SPACE_KIND_LABELS: Record<MerlinSpaceKind, string> = {
 
 export function formatSpaceForAgent(space: MerlinSpace): string {
   const lines: string[] = [
+    `id: ${space.id}`,
     `[${SPACE_KIND_LABELS[space.kind]}] ${space.title}`,
     `Récap : ${space.recap}`,
   ];
