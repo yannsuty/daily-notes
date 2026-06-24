@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { JOB_STREAM_MAX_MS } from '../lib/merlin-agent/agent-duration.js';
 import {
   appendAgentJobStep,
   BACKGROUND_JOB_TIMEOUT_MS,
@@ -44,7 +45,6 @@ function sleep(ms: number): Promise<void> {
 }
 
 const JOB_STREAM_POLL_MS = 400;
-const JOB_STREAM_MAX_MS = 55_000;
 
 async function streamAgentJob(
   req: VercelRequest,
