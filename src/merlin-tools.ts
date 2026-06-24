@@ -9,6 +9,7 @@ import {
   saveMerlinReminder,
 } from './db';
 import { isCustomToolName } from './merlin-tool-registry';
+import { runWebToolClient } from './merlin-web-client';
 import type { MerlinList, MerlinListItem, MerlinReminder } from './types';
 import { getAllDays } from './db';
 import { addDays, formatDateLabel, todayKey } from './types';
@@ -445,6 +446,9 @@ export async function executeMerlinTool(
       return triggerContext(args.tags ?? args.context ?? '');
     case 'delete_list':
       return deleteList(args.list ?? args.title ?? '');
+    case 'web_search':
+    case 'fetch_page':
+      return runWebToolClient(name, args);
     case 'save_custom_tool': {
       const { saveCustomToolFromArgs } = await import('./merlin-custom-tools');
       return saveCustomToolFromArgs(args);

@@ -2,8 +2,25 @@ import { addDays, formatDateLabel, todayKey } from '../../lib/merlin-agent/dates
 import { formatGitHubSummary, inspectGitHubRepo } from '../../lib/merlin-agent/github.js';
 import { mergeSpaceData } from '../../lib/merlin-agent/space-merge.js';
 import { findSpaceByRef } from '../../lib/merlin-agent/space-match.js';
+import {
+  isWebTool,
+  MAX_CUSTOM_ROUTINE_STEPS,
+} from '../../lib/merlin-agent/primitive-tools.js';
+import {
+  buildRoutineParams,
+  createRoutineContext,
+  formatRoutineParamsHint,
+  parseRoutineParams,
+  parseRoutineSteps,
+  recordRoutineStepResult,
+  resolveRoutineArgs,
+  shouldRunRoutineStep,
+} from '../../lib/merlin-agent/routine.js';
+import { mergeWebSources } from '../../lib/merlin-agent/web.js';
 import { normalizeReminderArgs } from '../../lib/merlin-agent/reminder-text.js';
+import { runWebTool } from './web-tools.js';
 import type {
+  AgentClientConfig,
   AgentContext,
   AgentMutations,
   AgentSideEffect,
@@ -15,6 +32,7 @@ import type {
   MerlinSpaceData,
   MerlinSpaceKind,
   ToolResult,
+  WebSource,
 } from '../../lib/merlin-agent/types.js';
 
 export function createEntityId(): string {
@@ -46,30 +64,7 @@ const IMMEDIATE_REPLY_TOOLS = new Set([
   'save_custom_tool',
 ]);
 
-const PRIMITIVE_TOOLS = new Set([
-  'read_journal',
-  'search_journal',
-  'summarize_period',
-  'create_list',
-  'add_list_item',
-  'toggle_list_item',
-  'show_lists',
-  'create_reminder',
-  'list_reminders',
-  'complete_reminder',
-  'trigger_context',
-  'delete_list',
-  'save_custom_tool',
-  'create_space',
-  'update_space',
-  'show_space',
-  'list_spaces',
-  'inspect_github_repo',
-]);
-
 const SPACE_KINDS = new Set<MerlinSpaceKind>(['comparison', 'diy', 'plan', 'recipe']);
-
-const MAX_CUSTOM_STEPS = 5;
 
 export function isMutationTool(name: string): boolean {
   return MUTATION_TOOLS.has(name);
@@ -145,17 +140,6 @@ function parseTimeOfDay(input: string): string | undefined {
   const h = String(Number(m[1])).padStart(2, '0');
   const min = m[2] ? String(Number(m[2])).padStart(2, '0') : '00';
   return `${h}:${min}`;
-}
-
-function resolveArgs(
-  template: Record<string, string>,
-  params: Record<string, string>,
-): Record<string, string> {
-  const resolved: Record<string, string> = {};
-  for (const [key, value] of Object.entries(template)) {
-    resolved[key] = value.replace(/\{\{(\w+)\}\}/g, (_, param) => params[param] ?? '');
-  }
-  return resolved;
 }
 
 export class AgentStore {
@@ -769,24 +753,16 @@ export class AgentStore {
     const name = (args.name ?? '').trim().toLowerCase().replace(/\s+/g, '_');
     const description = (args.description ?? args.desc ?? 'Routine personnalisée').trim();
     const stepsRaw = args.steps_json ?? args.steps ?? '[]';
+    const paramsRaw = args.params_json ?? args.params ?? '';
 
     if (!name) return { ok: false, content: 'Nom de routine manquant.' };
 
-    let steps: { tool: string; args: Record<string, string> }[];
-    try {
-      steps = JSON.parse(stepsRaw) as { tool: string; args: Record<string, string> }[];
-    } catch {
-      return { ok: false, content: 'steps_json invalide.' };
-    }
+    const parsedSteps = parseRoutineSteps(stepsRaw);
+    if (!parsedSteps.ok) return { ok: false, content: parsedSteps.error };
 
-    if (!Array.isArray(steps) || steps.length === 0 || steps.length > MAX_CUSTOM_STEPS) {
-      return { ok: false, content: 'Routine vide ou trop longue.' };
-    }
-
-    for (const step of steps) {
-      if (!PRIMITIVE_TOOLS.has(step.tool) || step.tool === 'save_custom_tool') {
-        return { ok: false, content: `Étape interdite : ${step.tool}` };
-      }
+    const parsedParams = parseRoutineParams(paramsRaw);
+    if (!Array.isArray(parsedParams)) {
+      return { ok: false, content: parsedParams.error };
     }
 
     const now = Date.now();
@@ -795,7 +771,8 @@ export class AgentStore {
       id: existing?.id ?? createEntityId(),
       name,
       description,
-      steps,
+      steps: parsedSteps.steps,
+      params: parsedParams.length > 0 ? parsedParams : undefined,
       source: 'auto',
       usageCount: existing?.usageCount ?? 0,
       createdAt: existing?.createdAt ?? now,
@@ -809,108 +786,176 @@ export class AgentStore {
     }
     this.markCustomTool(tool);
 
-    return { ok: true, content: `Routine « ${name} » enregistrée.`, mutation: 'list_updated' };
+    return {
+      ok: true,
+      content: `Routine « ${name} » enregistrée (${parsedSteps.steps.length} étape(s)${formatRoutineParamsHint(parsedParams)}).`,
+      mutation: 'list_updated',
+    };
   }
 
-  async executeCustomTool(name: string, args: Record<string, string>): Promise<ToolResult> {
-    const tool = this.customTools.find((t) => t.name.toLowerCase() === name.toLowerCase());
+  isCustomTool(name: string): boolean {
+    return this.customTools.some((t) => t.name.toLowerCase() === name.toLowerCase());
+  }
+
+  private findCustomTool(name: string): MerlinCustomTool | undefined {
+    return this.customTools.find((t) => t.name.toLowerCase() === name.toLowerCase());
+  }
+
+  private executeToolSync(name: string, args: Record<string, string>): ToolResult {
+    switch (name) {
+      case 'read_journal':
+        return this.readJournal(args.date ?? todayKey());
+      case 'search_journal':
+        return this.searchJournal(args.query ?? '');
+      case 'summarize_period':
+        return this.summarizePeriod(
+          args.from ?? addDays(todayKey(), -7),
+          args.to ?? todayKey(),
+        );
+      case 'create_list':
+        return this.createList(args.title ?? args.list ?? '');
+      case 'add_list_item':
+        return this.addListItem(args.list ?? args.title ?? 'courses', args.item ?? args.text ?? '');
+      case 'toggle_list_item':
+        return this.toggleListItem(args.list ?? args.title ?? '', args.item ?? args.text ?? '');
+      case 'show_lists':
+        return this.showLists(args.list ?? args.title);
+      case 'create_reminder':
+        return this.createReminder({
+          text: args.text ?? '',
+          timeOfDay: args.timeOfDay ?? args.time,
+          at: args.at,
+          recurrence: args.recurrence,
+          contextTags: args.contextTags ?? args.tags,
+        });
+      case 'list_reminders':
+        return this.listReminders();
+      case 'complete_reminder':
+        return this.completeReminder(args.text ?? args.item);
+      case 'trigger_context':
+        return this.triggerContext(args.tags ?? args.context ?? '');
+      case 'delete_list':
+        return this.deleteList(args.list ?? args.title ?? '');
+      case 'save_custom_tool':
+        return this.saveCustomTool(args);
+      case 'create_space':
+        return this.createSpace({
+          kind: args.kind ?? '',
+          title: args.title ?? '',
+          recap: args.recap,
+          data_json: args.data_json,
+          create_todo_list: args.create_todo_list,
+        });
+      case 'update_space':
+        return this.updateSpace({
+          space_id: args.space_id ?? args.id,
+          title: args.title,
+          recap: args.recap,
+          data_json: args.data_json,
+          status: args.status,
+          append: args.append,
+        });
+      case 'show_space':
+        return this.showSpace(args.space_id ?? args.title ?? args.id);
+      case 'list_spaces':
+        return this.listSpaces(args.kind);
+      default:
+        return { ok: false, content: `Outil inconnu : ${name}` };
+    }
+  }
+
+  private async executeStepAsync(
+    name: string,
+    args: Record<string, string>,
+    config: AgentClientConfig,
+  ): Promise<ToolResult> {
+    if (isWebTool(name)) {
+      return runWebTool(name, args, config);
+    }
+    if (name === 'inspect_github_repo') {
+      return this.inspectGitHubRepo(args.owner ?? '', args.repo ?? '');
+    }
+    return this.executeToolSync(name, args);
+  }
+
+  async executeCustomToolAsync(
+    name: string,
+    args: Record<string, string>,
+    config: AgentClientConfig,
+  ): Promise<ToolResult> {
+    const tool = this.findCustomTool(name);
     if (!tool) {
       return { ok: false, content: `Routine « ${name} » introuvable.` };
     }
 
-    if (tool.steps.length > MAX_CUSTOM_STEPS) {
+    if (tool.steps.length > MAX_CUSTOM_ROUTINE_STEPS) {
       return { ok: false, content: 'Routine trop longue.' };
     }
 
+    const routineContext = createRoutineContext(buildRoutineParams(tool.params, args));
     const results: string[] = [];
     let lastMutation: AgentSideEffect | undefined;
+    let webSources: WebSource[] = [];
+    let executed = 0;
 
     for (const step of tool.steps) {
-      if (!PRIMITIVE_TOOLS.has(step.tool)) {
-        return { ok: false, content: `Étape interdite : ${step.tool}` };
+      if (!shouldRunRoutineStep(step, routineContext)) {
+        continue;
       }
-      const stepArgs = resolveArgs(step.args, args);
-      const result = await this.executeTool(step.tool, stepArgs);
-      if (!result.ok) return result;
-      results.push(result.content);
+
+      const stepArgs = resolveRoutineArgs(step.args ?? {}, routineContext);
+      const result = await this.executeStepAsync(step.tool, stepArgs, config);
+      recordRoutineStepResult(routineContext, step.tool, result.content, result.ok);
+      if (!result.ok) {
+        return { ...result, webSources: mergeWebSources(webSources, result.webSources ?? []) };
+      }
+      results.push(`[${step.tool}]\n${result.content}`);
+      executed += 1;
+      if (result.webSources?.length) {
+        webSources = mergeWebSources(webSources, result.webSources);
+      }
       if (result.mutation) lastMutation = result.mutation;
+    }
+
+    if (executed === 0) {
+      return { ok: false, content: `Routine « ${name} » : aucune étape exécutée (conditions non remplies).` };
     }
 
     tool.usageCount += 1;
     tool.updatedAt = Date.now();
     this.markCustomTool(tool);
 
-    return { ok: true, content: results.join('\n'), mutation: lastMutation };
+    return {
+      ok: true,
+      content: results.join('\n\n'),
+      mutation: lastMutation,
+      webSources,
+    };
   }
 
-  async executeTool(name: string, args: Record<string, unknown>): Promise<ToolResult> {
-    const normalized = normalizeToolArgs(args);
-    const custom = this.customTools.find((t) => t.name.toLowerCase() === name.toLowerCase());
-    if (custom) {
-      return this.executeCustomTool(name, normalized);
+  async executeToolAsync(
+    name: string,
+    rawArgs: Record<string, unknown>,
+    config: AgentClientConfig,
+  ): Promise<ToolResult> {
+    const args = normalizeToolArgs(rawArgs);
+    if (this.isCustomTool(name)) {
+      return this.executeCustomToolAsync(name, args, config);
     }
+    if (isWebTool(name)) {
+      return runWebTool(name, args, config);
+    }
+    if (name === 'inspect_github_repo') {
+      return this.inspectGitHubRepo(args.owner ?? '', args.repo ?? '');
+    }
+    return this.executeToolSync(name, args);
+  }
 
-    switch (name) {
-      case 'read_journal':
-        return this.readJournal(normalized.date ?? todayKey());
-      case 'search_journal':
-        return this.searchJournal(normalized.query ?? '');
-      case 'summarize_period':
-        return this.summarizePeriod(
-          normalized.from ?? addDays(todayKey(), -7),
-          normalized.to ?? todayKey(),
-        );
-      case 'create_list':
-        return this.createList(normalized.title ?? normalized.list ?? '');
-      case 'add_list_item':
-        return this.addListItem(normalized.list ?? normalized.title ?? 'courses', normalized.item ?? normalized.text ?? '');
-      case 'toggle_list_item':
-        return this.toggleListItem(normalized.list ?? normalized.title ?? '', normalized.item ?? normalized.text ?? '');
-      case 'show_lists':
-        return this.showLists(normalized.list ?? normalized.title);
-      case 'create_reminder':
-        return this.createReminder({
-          text: normalized.text ?? '',
-          timeOfDay: normalized.timeOfDay ?? normalized.time,
-          at: normalized.at,
-          recurrence: normalized.recurrence,
-          contextTags: normalized.contextTags ?? normalized.tags,
-        });
-      case 'list_reminders':
-        return this.listReminders();
-      case 'complete_reminder':
-        return this.completeReminder(normalized.text ?? normalized.item);
-      case 'trigger_context':
-        return this.triggerContext(normalized.tags ?? normalized.context ?? '');
-      case 'delete_list':
-        return this.deleteList(normalized.list ?? normalized.title ?? '');
-      case 'save_custom_tool':
-        return this.saveCustomTool(normalized);
-      case 'create_space':
-        return this.createSpace({
-          kind: normalized.kind ?? '',
-          title: normalized.title ?? '',
-          recap: normalized.recap,
-          data_json: normalized.data_json,
-          create_todo_list: normalized.create_todo_list,
-        });
-      case 'update_space':
-        return this.updateSpace({
-          space_id: normalized.space_id ?? normalized.id,
-          title: normalized.title,
-          recap: normalized.recap,
-          data_json: normalized.data_json,
-          status: normalized.status,
-          append: normalized.append,
-        });
-      case 'show_space':
-        return this.showSpace(normalized.space_id ?? normalized.title ?? normalized.id);
-      case 'list_spaces':
-        return this.listSpaces(normalized.kind);
-      case 'inspect_github_repo':
-        return this.inspectGitHubRepo(normalized.owner ?? '', normalized.repo ?? '');
-      default:
-        return { ok: false, content: `Outil inconnu : ${name}` };
-    }
+  async executeTool(
+    name: string,
+    rawArgs: Record<string, unknown>,
+    config: AgentClientConfig,
+  ): Promise<ToolResult> {
+    return this.executeToolAsync(name, rawArgs, config);
   }
 }

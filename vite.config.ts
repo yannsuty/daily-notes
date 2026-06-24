@@ -29,7 +29,7 @@ interface AgentProxyBody {
   stream?: boolean;
   background?: boolean;
   jobId?: string;
-  config?: { apiKey?: string; modelChain?: string; model?: string };
+  config?: { apiKey?: string; modelChain?: string; model?: string; braveSearchApiKey?: string; tavilyApiKey?: string };
 }
 
 function writeSse(res: ServerResponse, event: string, payload: unknown): void {
@@ -93,6 +93,68 @@ async function streamAgentJobDev(
 
   writeSse(res, 'reconnect', { fromStep: seen });
   res.end();
+}
+
+function createMerlinWebDevProxy() {
+  return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
+    const url = req.url ?? '';
+    if (!url.startsWith('/api/merlin-web')) {
+      next();
+      return;
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      next();
+      return;
+    }
+
+    try {
+      const { runWebTool } = await import('./server/merlin-agent/web-tools');
+      const { isWebTool } = await import('./lib/merlin-agent/primitive-tools');
+      const rawBody = await readRequestBody(req);
+      const parsed = JSON.parse(rawBody) as {
+        tool?: string;
+        args?: Record<string, string>;
+        config?: {
+          braveSearchApiKey?: string;
+          tavilyApiKey?: string;
+        };
+      };
+
+      const tool = parsed.tool?.trim() ?? '';
+      if (!isWebTool(tool)) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: false, content: 'Outil web invalide' }));
+        return;
+      }
+
+      const result = await runWebTool(tool, parsed.args ?? {}, {
+        braveSearchApiKey:
+          parsed.config?.braveSearchApiKey?.trim() || process.env.BRAVE_SEARCH_API_KEY,
+        tavilyApiKey: parsed.config?.tavilyApiKey?.trim() || process.env.TAVILY_API_KEY,
+      });
+
+      res.statusCode = result.ok ? 200 : 503;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      const message = err instanceof Error ? err.message : 'Proxy error';
+      res.end(JSON.stringify({ ok: false, content: message }));
+    }
+  };
 }
 
 function createMerlinAgentDevProxy(fallbackApiKey: string) {
@@ -179,6 +241,9 @@ function createMerlinAgentDevProxy(fallbackApiKey: string) {
         apiKey: parsed.config?.apiKey?.trim() || fallbackApiKey,
         modelChain: parsed.config?.modelChain?.trim() || process.env.OPENROUTER_MODEL_CHAIN,
         model: parsed.config?.model,
+        braveSearchApiKey:
+          parsed.config?.braveSearchApiKey?.trim() || process.env.BRAVE_SEARCH_API_KEY,
+        tavilyApiKey: parsed.config?.tavilyApiKey?.trim() || process.env.TAVILY_API_KEY,
       };
 
       if (parsed.background) {
@@ -343,9 +408,12 @@ export default defineConfig(({ mode }) => {
         configureServer(server) {
           const aiProxy = createOpenRouterDevProxy(env.OPENROUTER_API_KEY ?? '');
           const agentProxy = createMerlinAgentDevProxy(env.OPENROUTER_API_KEY ?? '');
+          const webProxy = createMerlinWebDevProxy();
           server.middlewares.use((req, res, next) => {
-            void agentProxy(req, res, () => {
-              void aiProxy(req, res, next);
+            void webProxy(req, res, () => {
+              void agentProxy(req, res, () => {
+                void aiProxy(req, res, next);
+              });
             });
           });
         },

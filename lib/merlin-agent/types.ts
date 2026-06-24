@@ -56,11 +56,25 @@ export interface MerlinReminder {
 export interface MerlinToolStep {
   tool: string;
   args: Record<string, string>;
+  when?: RoutineCondition;
+  unless?: RoutineCondition;
 }
+
+export type RoutineCondition =
+  | { empty: string }
+  | { exists: string }
+  | { eq: [string, string] }
+  | { neq: [string, string] }
+  | { contains: [string, string] }
+  | { and: RoutineCondition[] }
+  | { or: RoutineCondition[] }
+  | { not: RoutineCondition };
 
 export interface MerlinCustomToolParam {
   name: string;
   description: string;
+  required?: boolean;
+  default?: string;
 }
 
 export interface MerlinCustomTool {
@@ -193,6 +207,10 @@ export interface AgentClientConfig {
   modelChain?: string;
   model?: string;
   githubToken?: string;
+  /** Clé Brave Search API — recherche web (secours : BRAVE_SEARCH_API_KEY côté serveur). */
+  braveSearchApiKey?: string;
+  /** Clé Tavily API — fallback recherche web (secours : TAVILY_API_KEY côté serveur). */
+  tavilyApiKey?: string;
 }
 
 export interface AgentRequestBody {
@@ -228,8 +246,15 @@ export interface AgentJobPollResponse {
   error?: string;
 }
 
+export interface WebSource {
+  title?: string;
+  url: string;
+  kind: 'search' | 'page';
+}
+
 export interface ToolResult {
   ok: boolean;
   content: string;
   mutation?: AgentSideEffect;
+  webSources?: WebSource[];
 }

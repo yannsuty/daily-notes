@@ -1,7 +1,12 @@
 import { saveMerlinCustomTool } from './db';
 import { invalidateCustomToolCache } from './merlin-tool-registry';
 import { createEntityId, type ToolResult } from './merlin-tools';
-import type { MerlinCustomTool, MerlinToolStep } from './types';
+import {
+  formatRoutineParamsHint,
+  parseRoutineParams,
+  parseRoutineSteps,
+} from '../lib/merlin-agent/routine';
+import type { MerlinCustomTool } from './types';
 
 export async function saveCustomToolFromArgs(
   args: Record<string, string>,
@@ -9,18 +14,19 @@ export async function saveCustomToolFromArgs(
   const name = args.name?.trim().toLowerCase().replace(/\s+/g, '_');
   const description = args.description?.trim() ?? '';
   const stepsRaw = args.steps_json ?? args.steps ?? '[]';
+  const paramsRaw = args.params_json ?? args.params ?? '';
 
   if (!name) return { ok: false, content: 'Nom de routine requis.' };
 
-  let steps: MerlinToolStep[];
-  try {
-    steps = JSON.parse(stepsRaw) as MerlinToolStep[];
-    if (!Array.isArray(steps) || steps.length === 0) {
-      return { ok: false, content: 'Steps invalides.' };
-    }
-  } catch {
-    return { ok: false, content: 'JSON steps invalide.' };
+  const parsedSteps = parseRoutineSteps(stepsRaw);
+  if (!parsedSteps.ok) return { ok: false, content: parsedSteps.error };
+
+  const parsedParams = parseRoutineParams(paramsRaw);
+  if (!Array.isArray(parsedParams)) {
+    return { ok: false, content: parsedParams.error };
   }
+
+  const steps = parsedSteps.steps;
 
   const now = Date.now();
   const tool: MerlinCustomTool = {
@@ -28,6 +34,7 @@ export async function saveCustomToolFromArgs(
     name,
     description: description || name,
     steps,
+    params: parsedParams.length > 0 ? parsedParams : undefined,
     source: 'user',
     usageCount: 0,
     createdAt: now,
@@ -39,7 +46,7 @@ export async function saveCustomToolFromArgs(
 
   return {
     ok: true,
-    content: `Routine « ${name} » sauvegardée (${steps.length} étape(s)).`,
+    content: `Routine « ${name} » sauvegardée (${steps.length} étape(s)${formatRoutineParamsHint(parsedParams)}).`,
     mutation: 'list_updated',
   };
 }

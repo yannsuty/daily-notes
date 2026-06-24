@@ -12,6 +12,8 @@ export const MERLIN_ENV = {
   OPENROUTER_MODEL: 'OPENROUTER_MODEL',
   OPENROUTER_MODEL_CHAIN: 'OPENROUTER_MODEL_CHAIN',
   GITHUB_TOKEN: 'GITHUB_TOKEN',
+  BRAVE_SEARCH_API_KEY: 'BRAVE_SEARCH_API_KEY',
+  TAVILY_API_KEY: 'TAVILY_API_KEY',
 } as const;
 
 export type MerlinEnvKey = (typeof MERLIN_ENV)[keyof typeof MERLIN_ENV];
@@ -54,12 +56,29 @@ export const BUILTIN_MERLIN_ENV_FIELDS: MerlinEnvFieldDef[] = [
     secret: true,
     hint: 'Optionnel. Permet à Merlin d\'analyser vos dépôts (plans de programmation). Scope minimal : lecture des dépôts publics ou repo.',
   },
+  {
+    key: MERLIN_ENV.BRAVE_SEARCH_API_KEY,
+    label: 'Clé API Brave Search',
+    placeholder: 'BSA…',
+    secret: true,
+    hint: 'Optionnel. Recherche web principale (gratuit : 2000 req/mois).',
+  },
+  {
+    key: MERLIN_ENV.TAVILY_API_KEY,
+    label: 'Clé API Tavily',
+    placeholder: 'tvly-…',
+    secret: true,
+    hint: 'Optionnel. Fallback si Brave échoue (gratuit : 1000 crédits/mois).',
+  },
 ];
 
 export interface AiClientConfig {
   apiKey?: string;
   model?: string;
   modelChain?: string;
+  githubToken?: string;
+  braveSearchApiKey?: string;
+  tavilyApiKey?: string;
 }
 
 export async function getMerlinEnv(key: string): Promise<string | undefined> {
@@ -86,14 +105,17 @@ export async function getAllMerlinEnvMap(): Promise<Record<string, string>> {
   return map;
 }
 
-export async function getAiClientConfig(): Promise<AiClientConfig & { githubToken?: string }> {
-  const [apiKey, model, modelChain, githubToken] = await Promise.all([
-    getMerlinEnv(MERLIN_ENV.OPENROUTER_API_KEY),
-    getMerlinEnv(MERLIN_ENV.OPENROUTER_MODEL),
-    getMerlinEnv(MERLIN_ENV.OPENROUTER_MODEL_CHAIN),
-    getMerlinEnv(MERLIN_ENV.GITHUB_TOKEN),
-  ]);
-  return { apiKey, model, modelChain, githubToken };
+export async function getAiClientConfig(): Promise<AiClientConfig> {
+  const [apiKey, model, modelChain, githubToken, braveSearchApiKey, tavilyApiKey] =
+    await Promise.all([
+      getMerlinEnv(MERLIN_ENV.OPENROUTER_API_KEY),
+      getMerlinEnv(MERLIN_ENV.OPENROUTER_MODEL),
+      getMerlinEnv(MERLIN_ENV.OPENROUTER_MODEL_CHAIN),
+      getMerlinEnv(MERLIN_ENV.GITHUB_TOKEN),
+      getMerlinEnv(MERLIN_ENV.BRAVE_SEARCH_API_KEY),
+      getMerlinEnv(MERLIN_ENV.TAVILY_API_KEY),
+    ]);
+  return { apiKey, model, modelChain, githubToken, braveSearchApiKey, tavilyApiKey };
 }
 
 /** Pour futurs outils / intégrations — lecture générique d'une variable Merlin. */

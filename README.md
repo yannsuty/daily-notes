@@ -160,6 +160,35 @@ VITE_SENTRY_DSN=https://<key>@o<org>.ingest.sentry.io/<project>
 
 Sans DSN, Sentry reste désactivé — l'app et l'API fonctionnent normalement.
 
+### Recherche web (Merlin)
+
+Merlin peut interroger Internet via deux outils serveur :
+
+- `web_search` — résultats Brave Search, avec **fallback Tavily** puis scraper personnalisé
+- `fetch_page` — lecture textuelle d'une page publique
+
+**Cache court** (15 min recherche, 20 min page) via Redis Upstash si disponible, sinon mémoire serveur.
+
+Configurer **au moins une** des options suivantes :
+
+| Variable / réglage | Rôle |
+|--------------------|------|
+| `BRAVE_SEARCH_API_KEY` | Fournisseur principal ([Brave](https://brave.com/search/api/), 2000 req/mois) |
+| `TAVILY_API_KEY` | Fallback ([Tavily](https://tavily.com/), 1000 crédits/mois) |
+| `WEB_SEARCH_SCRAPER_URL` | Votre scraper (POST JSON `{ query, max_results }` → `{ results: [{ title, url, snippet }] }`) |
+| Réglages Merlin | Clés Brave / Tavily optionnelles côté client (sync chiffrée) |
+
+Les **sources** sont citées automatiquement en fin de réponse Merlin.
+
+Les **routines personnalisées** (`save_custom_tool`) supportent :
+
+- **Paramètres** : `params_json` avec `name`, `description`, `required`, `default`
+- **Variables** dans les args : `{{ville}}`, `{{ville|Paris}}`, `{{today}}`, `{{prev.url}}`, `{{steps.0.content}}`
+- **Conditions** par étape : `when` / `unless` (JSON : `exists`, `empty`, `eq`, `contains`, `and`, `or`, `not`)
+- **Invocation** : `/routine meteo ville=Lyon` ou `routine meteo Lyon`
+
+> La recherche s'exécute côté serveur (clés jamais exposées dans l'APK). Sans aucune clé ni scraper, Merlin indique que la recherche web est indisponible.
+
 Pour tester l'API après déploiement : provoquer une erreur 500 (ex. Redis non configuré) ou ajouter temporairement `throw new Error('Sentry test API')` dans une route — l'issue doit apparaître avec `runtime: vercel-node`.
 
 Pour des stack traces lisibles en production, uploader les source maps :

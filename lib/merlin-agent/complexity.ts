@@ -4,6 +4,7 @@ const DEEP_PATTERNS = [
   /\b(pourquoi|comment|analyse|analyser|compare|comparer|explique|expliquer|réfléch|reflech|synthèse|synthese|plan|stratég|strateg|avis|recommand|pense|évalue|evalue|détail|detail|approfond|contexte)\b/i,
   /\b(journal|notes|souviens|dernière|derniere|semaine|mois|historique|souvenir|rappelle-toi|rappelle toi)\b/i,
   /\b(résume|resume|raconte|qu'est-ce que|quest ce que|dis-moi ce que|dis moi ce que)\b/i,
+  /\b(internet|web|actualité|actualite|actu|météo|meteo|news|recherche sur|cherche sur|trouve sur|google|wikipédia|wikipedia)\b/i,
 ];
 
 export function assessQueryDepth(text: string): QueryDepth {

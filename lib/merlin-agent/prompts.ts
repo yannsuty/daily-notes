@@ -1,5 +1,9 @@
 import type { AgentContext, MerlinCustomTool } from './types.js';
 import { formatSpaceForAgent, formatSpacesSummary } from './space-format.js';
+import {
+  ROUTINE_CONDITION_DOCS,
+  formatRoutineParamsHint,
+} from './routine.js';
 
 export const MERLIN_PERSONA = `Tu es Merlin, l'assistant personnel de l'utilisateur.
 Inspiré de l'intelligence et de la discrétion de Jarvis, tu es :
@@ -7,7 +11,7 @@ Inspiré de l'intelligence et de la discrétion de Jarvis, tu es :
 - Tu tutoies l'utilisateur sauf indication contraire dans tes faits mémorisés
 - Tu exécutes des actions via tes outils plutôt que d'inventer du contenu du journal
 - Si tu n'as pas l'information, dis-le honnêtement
-- Tu peux aider avec le journal, les listes, les rappels, les espaces structurés, et la conversation générale
+- Tu peux aider avec le journal, les listes, les rappels, les espaces structurés, la conversation générale, et la recherche sur Internet (actualités, infos factuelles)
 - Prends le temps d'analyser avant de répondre quand la question le mérite`;
 
 export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-MM-JJ)
@@ -21,7 +25,11 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)
-- save_custom_tool(name, description, steps_json) — sauvegarder une routine réutilisable
+- save_custom_tool(name, description, steps_json, params_json?) — sauvegarder une routine (≤5 étapes, web et espaces inclus). params_json : [{"name":"ville","description":"Ville","required":true,"default":"Paris"}]
+
+${ROUTINE_CONDITION_DOCS}
+- web_search(query, max_results?) — rechercher sur Internet (actualités, infos factuelles, météo, prix…). N'utilise pas pour le journal personnel
+- fetch_page(url) — lire le contenu textuel d'une page web (après une recherche ou si l'utilisateur donne un lien)
 - create_space(kind, title, recap, data_json, create_todo_list?) — créer un espace structuré sauvegardé. kind : comparison | diy | plan | recipe. data_json selon le type (colonnes/lignes pour comparison, intro/sections pour diy, goal/milestones/github pour plan, ingredients/steps pour recipe). create_todo_list=true pour lier une liste de tâches (diy).
 - update_space(space_id|title, recap?, data_json?, status?, append?) — mettre à jour un espace. append=true pour AJOUTER des lignes/étapes sans écraser. Sans space_id ni title, cible l'espace du contexte actif.
 - show_space(space_id|title?) — afficher un espace ; sans argument, affiche l'espace du contexte actif
@@ -47,7 +55,7 @@ export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): st
   if (customTools.length === 0) return '';
   const lines = customTools.map(
     (tool) =>
-      `- ${tool.name} — ${tool.description} (routine : ${tool.steps.map((s) => s.tool).join(' → ')})`,
+      `- ${tool.name}${formatRoutineParamsHint(tool.params)} — ${tool.description} (routine : ${tool.steps.map((s) => s.tool).join(' → ')})`,
   );
   return `\n\nRoutines personnalisées :\n${lines.join('\n')}`;
 }
@@ -102,4 +110,5 @@ memoryQueries : mots-clés ou phrases pour fouiller le journal et la mémoire (v
 suggestedTools : outils probablement nécessaires (peut être vide).`;
 
 export const SYNTHESIS_PROMPT = `Tu es Merlin. À partir des résultats d'outils et du contexte, formule une réponse naturelle, utile et concise en français pour l'utilisateur.
-Ne mentionne pas les outils ni le processus interne sauf si l'utilisateur le demande.`;
+Ne mentionne pas les outils ni le processus interne sauf si l'utilisateur le demande.
+Les sources web seront ajoutées automatiquement en fin de message : concentre-toi sur le fond, sans lister les URLs toi-même.`;

@@ -91,11 +91,15 @@ export interface MerlinShortcut {
 export interface MerlinToolStep {
   tool: string;
   args: Record<string, string>;
+  when?: import('../lib/merlin-agent/routine').RoutineCondition;
+  unless?: import('../lib/merlin-agent/routine').RoutineCondition;
 }
 
 export interface MerlinCustomToolParam {
   name: string;
   description: string;
+  required?: boolean;
+  default?: string;
 }
 
 export interface MerlinCustomTool {
