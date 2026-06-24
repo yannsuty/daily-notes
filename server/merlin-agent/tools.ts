@@ -936,7 +936,7 @@ export class AgentStore {
   async executeToolAsync(
     name: string,
     rawArgs: Record<string, unknown>,
-    config: AgentClientConfig,
+    config: AgentClientConfig = {},
   ): Promise<ToolResult> {
     const args = normalizeToolArgs(rawArgs);
     if (this.isCustomTool(name)) {
@@ -954,7 +954,7 @@ export class AgentStore {
   async executeTool(
     name: string,
     rawArgs: Record<string, unknown>,
-    config: AgentClientConfig,
+    config: AgentClientConfig = {},
   ): Promise<ToolResult> {
     return this.executeToolAsync(name, rawArgs, config);
   }

@@ -385,15 +385,13 @@ export async function runMerlinAgent(
       label: 'Synthèse de la réponse…',
     }, onStep);
 
-    const reply = withWebCitations(
-      await synthesizeReply(
-        trimmed,
-        toolResultsForSynthesis.join('\n\n'),
-        config,
-        options?.referer,
-      ),
-      webSources,
+    const synthesized = await synthesizeReply(
+      trimmed,
+      toolResultsForSynthesis.join('\n\n'),
+      config,
+      options?.referer,
     );
+    const reply = withWebCitations(synthesized, webSources) ?? synthesized;
 
     const autoSaved = await ensureSpacePersisted(
       store,
