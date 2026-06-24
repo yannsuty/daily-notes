@@ -45,6 +45,16 @@ export function isComparisonExtensionRequest(text: string): boolean {
   );
 }
 
+/** L'espace actif doit être enrichi plutôt qu'un nouvel espace créé. */
+export function shouldExtendActiveSpace(
+  userMessage: string,
+  activeKind: MerlinSpaceKind,
+): boolean {
+  if (shouldUpdateActiveSpace(userMessage, activeKind)) return true;
+  const kind = detectSpaceKind(userMessage);
+  return kind === activeKind && !isExplicitNewSpaceIntent(userMessage);
+}
+
 export function shouldUpdateActiveSpace(
   userMessage: string,
   activeKind: MerlinSpaceKind,
