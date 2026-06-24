@@ -17,6 +17,7 @@ import { CONTEXT_CHIPS } from './merlin-intents';
 import { getWelcomeMessage, handleUserMessage } from './merlin-agent';
 import { stepLabelForUi } from './merlin-agent-client';
 import { listPendingAgentJobs } from './merlin-agent-jobs';
+import { abandonPendingAgentJobs } from './merlin-agent-resume';
 import { assessQueryDepth } from '../lib/merlin-agent';
 import type { AgentStep } from '../lib/merlin-agent';
 import { getPaletteShortcuts, toggleShortcutPin } from './merlin-shortcuts';
@@ -44,6 +45,7 @@ export class MerlinChat {
   private statusEl: HTMLElement | null = null;
   private traceEl: HTMLElement | null = null;
   private contextEl: HTMLElement | null = null;
+  private backgroundEl: HTMLElement | null = null;
   private thinking = false;
 
   constructor(options: MerlinChatOptions) {
@@ -64,6 +66,10 @@ export class MerlinChat {
       </details>
       <div class="merlin-chat__messages" role="log" aria-live="polite" aria-label="Conversation avec Merlin"></div>
       <div class="merlin-chat__palette" role="toolbar" aria-label="Actions rapides"></div>
+      <div class="merlin-chat__background" hidden role="status">
+        <span class="merlin-chat__background-text">Merlin réfléchit en arrière-plan…</span>
+        <button type="button" class="merlin-chat__background-dismiss">Ignorer</button>
+      </div>
       <div class="merlin-chat__status" aria-live="polite"></div>
       <div class="merlin-chat__trace" hidden aria-live="polite"></div>
       <form class="merlin-chat__composer">
@@ -87,7 +93,12 @@ export class MerlinChat {
     this.sendBtn = this.container.querySelector('.merlin-chat__send');
     this.voiceBtn = this.container.querySelector('.merlin-chat__voice');
     this.statusEl = this.container.querySelector('.merlin-chat__status');
+    this.backgroundEl = this.container.querySelector('.merlin-chat__background');
     this.traceEl = this.container.querySelector('.merlin-chat__trace');
+
+    this.container.querySelector('.merlin-chat__background-dismiss')?.addEventListener('click', () => {
+      void this.dismissBackgroundJob();
+    });
 
     const form = this.container.querySelector('.merlin-chat__composer') as HTMLFormElement;
     form.addEventListener('submit', (e) => {
@@ -116,9 +127,22 @@ export class MerlinChat {
 
   async refresh(): Promise<void> {
     await this.renderAll();
+    this.syncBackgroundStatus();
+  }
+
+  syncBackgroundStatus(): void {
     if (listPendingAgentJobs().length > 0) {
       this.setBackgroundPending();
+    } else {
+      this.setBackgroundComplete();
     }
+  }
+
+  private async dismissBackgroundJob(): Promise<void> {
+    await abandonPendingAgentJobs();
+    this.setBackgroundComplete();
+    await this.renderMessages();
+    this.onConversationUpdate?.();
   }
 
   private async renderAll(): Promise<void> {
@@ -401,10 +425,12 @@ export class MerlinChat {
 
   setBackgroundComplete(): void {
     this.setThinking(false);
+    if (this.backgroundEl) this.backgroundEl.hidden = true;
   }
 
   setBackgroundPending(): void {
-    this.setThinking(true, 'Merlin réfléchit en arrière-plan…');
+    if (this.backgroundEl) this.backgroundEl.hidden = false;
+    // Ne pas bloquer la saisie : l'utilisateur peut continuer à utiliser Merlin.
   }
 
   private renderAgentStep(step: AgentStep): void {
@@ -478,10 +504,9 @@ export class MerlinChat {
     }
 
     if (result.backgroundPending) {
-      this.setThinking(false);
       this.setAiBanner(false);
       await this.renderAll();
-      this.setThinking(true, 'Merlin réfléchit en arrière-plan…');
+      this.setBackgroundPending();
       return;
     }
 
