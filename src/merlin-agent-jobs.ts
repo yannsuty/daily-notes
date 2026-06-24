@@ -14,7 +14,11 @@ export interface PendingAgentJob {
 
 export interface AgentJobCallbacks {
   onStep?: (step: AgentStep) => void;
+  onJobFinished?: () => void;
 }
+
+/** Aligné sur le TTL Redis des jobs serveur (1 h). */
+export const PENDING_JOB_MAX_MS = 60 * 60 * 1000;
 
 function readJobs(): PendingAgentJob[] {
   try {
@@ -47,6 +51,18 @@ export function removePendingAgentJob(jobId: string): void {
 
 export function listPendingAgentJobs(): PendingAgentJob[] {
   return readJobs();
+}
+
+export function isStalePendingJob(job: PendingAgentJob, now = Date.now()): boolean {
+  return now - job.startedAt > PENDING_JOB_MAX_MS;
+}
+
+export function removeStalePendingAgentJobs(now = Date.now()): PendingAgentJob[] {
+  const stale = readJobs().filter((job) => isStalePendingJob(job, now));
+  if (stale.length === 0) return [];
+  const staleIds = new Set(stale.map((job) => job.jobId));
+  writeJobs(readJobs().filter((job) => !staleIds.has(job.jobId)));
+  return stale;
 }
 
 export function shouldUseBackgroundAgent(): boolean {

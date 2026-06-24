@@ -5,9 +5,12 @@ import { getAgentJobStatus, watchAgentJob } from './merlin-agent-client';
 import type { AgentReply, AgentSideEffect } from './merlin-agent';
 import {
   getActivePollController,
+  isStalePendingJob,
   listPendingAgentJobs,
   releaseActivePoll,
   removePendingAgentJob,
+  removeStalePendingAgentJobs,
+  stopAllAgentJobPolls,
   stopPollingAgentJob,
   type AgentJobCallbacks,
   type PendingAgentJob,
@@ -30,15 +33,59 @@ function isJobExpiredError(err: unknown): boolean {
   return message.includes('introuvable') || message.includes('expiré');
 }
 
-async function failPendingJob(job: PendingAgentJob, message: string): Promise<void> {
+async function failPendingJob(
+  job: PendingAgentJob,
+  message: string,
+  callbacks?: AgentJobCallbacks,
+): Promise<void> {
   removePendingAgentJob(job.jobId);
   await stopNativeAgentJobWatch();
   await updateMerlinMessageContent(job.placeholderId, message);
+  notifyJobFinished(callbacks);
+}
+
+function notifyJobFinished(callbacks?: AgentJobCallbacks): void {
+  callbacks?.onJobFinished?.();
+}
+
+function watchJobInBackground(
+  job: PendingAgentJob,
+  callbacks?: AgentJobCallbacks,
+): void {
+  const controller = getActivePollController(job.jobId);
+  void watchAgentJob(job.jobId, {
+    onStep: callbacks?.onStep,
+    signal: controller.signal,
+  })
+    .then((result) => applyAgentJobResult(job, result, callbacks))
+    .catch(async (err) => {
+      if (isAbortError(err) || isJobExpiredError(err)) return;
+      await startNativeAgentJobWatch(job.jobId);
+    })
+    .finally(() => {
+      releaseActivePoll(job.jobId);
+    });
+}
+
+export async function abandonPendingAgentJobs(
+  message = 'Réflexion interrompue dans l’app. Merlin peut encore répondre en notification.',
+): Promise<void> {
+  const jobs = listPendingAgentJobs();
+  if (jobs.length === 0) return;
+
+  stopAllAgentJobPolls();
+  await stopNativeAgentJobWatch();
+
+  for (const job of jobs) {
+    removePendingAgentJob(job.jobId);
+    await updateMerlinMessageContent(job.placeholderId, message);
+  }
 }
 
 export async function applyAgentJobResult(
   job: PendingAgentJob,
   result: AgentRunResult,
+  callbacks?: AgentJobCallbacks,
 ): Promise<AgentReply> {
   removePendingAgentJob(job.jobId);
   await stopNativeAgentJobWatch();
@@ -58,6 +105,7 @@ export async function applyAgentJobResult(
     void recordShortcutUsage(job.userText);
     const { syncNow } = await import('./sync');
     await syncNow();
+    notifyJobFinished(callbacks);
     return {
       ok: true,
       content: replyText,
@@ -69,6 +117,7 @@ export async function applyAgentJobResult(
 
   const err = result.error ?? 'Merlin n\'a pas pu terminer sa réflexion.';
   await updateMerlinMessageContent(job.placeholderId, err);
+  notifyJobFinished(callbacks);
   return {
     ok: false,
     error: err,
@@ -81,9 +130,10 @@ export async function applyAgentJobResult(
 async function tryApplyFinishedJobStatus(
   job: PendingAgentJob,
   status: Awaited<ReturnType<typeof getAgentJobStatus>>,
+  callbacks?: AgentJobCallbacks,
 ): Promise<AgentReply | null> {
   if (status.status === 'done' && status.result) {
-    return applyAgentJobResult(job, status.result);
+    return applyAgentJobResult(job, status.result, callbacks);
   }
 
   if (status.status === 'error') {
@@ -93,7 +143,7 @@ async function tryApplyFinishedJobStatus(
       steps: status.steps ?? [],
       mutations: {},
       depth: 'standard',
-    });
+    }, callbacks);
   }
 
   return null;
@@ -108,51 +158,54 @@ export async function resumePendingAgentJobs(
   let completed = 0;
 
   try {
+    for (const stale of removeStalePendingAgentJobs()) {
+      await failPendingJob(stale, 'La réflexion de Merlin a expiré.', callbacks);
+      completed += 1;
+    }
+
     for (const job of listPendingAgentJobs()) {
+      if (isStalePendingJob(job)) {
+        await failPendingJob(job, 'La réflexion de Merlin a expiré.', callbacks);
+        completed += 1;
+        continue;
+      }
+
       stopPollingAgentJob(job.jobId);
-      const controller = getActivePollController(job.jobId);
 
       try {
         try {
           const status = await getAgentJobStatus(job.jobId);
-          const applied = await tryApplyFinishedJobStatus(job, status);
+          const applied = await tryApplyFinishedJobStatus(job, status, callbacks);
           if (applied) {
             completed += 1;
+            continue;
+          }
+
+          if (status.status === 'pending' || status.status === 'running') {
+            await startNativeAgentJobWatch(job.jobId);
+            watchJobInBackground(job, callbacks);
             continue;
           }
         } catch (statusErr) {
           if (isJobExpiredError(statusErr)) {
             const message =
               statusErr instanceof Error ? statusErr.message : 'Job expiré';
-            await failPendingJob(job, message);
+            await failPendingJob(job, message, callbacks);
             completed += 1;
             continue;
           }
-          // Erreur réseau transitoire — on tente le flux SSE ci-dessous.
         }
 
-        const result = await watchAgentJob(job.jobId, {
-          onStep: callbacks?.onStep,
-          signal: controller.signal,
-        });
-        await applyAgentJobResult(job, result);
-        completed += 1;
+        watchJobInBackground(job, callbacks);
       } catch (err) {
-        if (isAbortError(err)) {
-          continue;
-        }
-
         if (isJobExpiredError(err)) {
           const message = err instanceof Error ? err.message : 'Job expiré';
-          await failPendingJob(job, message);
+          await failPendingJob(job, message, callbacks);
           completed += 1;
           continue;
         }
 
-        // Réseau instable ou SSE coupé — conserver le job et relancer la surveillance native.
         await startNativeAgentJobWatch(job.jobId);
-      } finally {
-        releaseActivePoll(job.jobId);
       }
     }
   } finally {
@@ -181,7 +234,7 @@ export async function watchPendingJobUntilDone(
       onStep: callbacks?.onStep,
       signal: controller.signal,
     });
-    return applyAgentJobResult(job, result);
+    return applyAgentJobResult(job, result, callbacks);
   } catch (err) {
     if (isAbortError(err)) {
       releaseActivePoll(job.jobId);
@@ -191,7 +244,7 @@ export async function watchPendingJobUntilDone(
 
     if (isJobExpiredError(err)) {
       const message = err instanceof Error ? err.message : 'Job expiré';
-      await failPendingJob(job, message);
+      await failPendingJob(job, message, callbacks);
       return { ok: false, error: message, aiUnavailable: true };
     }
 

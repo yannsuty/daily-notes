@@ -182,14 +182,22 @@ export async function initApp(root: HTMLElement): Promise<void> {
   });
 
   const resumeAgentJobs = (): void => {
-    if (listPendingAgentJobs().length === 0) return;
-
-    void resumePendingAgentJobs().then(async (completed) => {
+    void resumePendingAgentJobs({
+      onJobFinished: () => {
+        void (async () => {
+          await merlinChat?.refresh();
+          merlinChat?.syncBackgroundStatus();
+          await gallery?.refreshListes();
+          await gallery?.refreshEspaces();
+          void syncNow().then(() => updateSyncIndicator(syncIndicator));
+        })();
+      },
+    }).then(async (completed) => {
       await merlinChat?.refresh();
+      merlinChat?.syncBackgroundStatus();
       if (completed > 0) {
         await gallery?.refreshListes();
         await gallery?.refreshEspaces();
-        merlinChat?.setBackgroundComplete();
         void syncNow().then(() => updateSyncIndicator(syncIndicator));
       }
     });
@@ -199,7 +207,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
   startPendingJobResumePoll(resumeAgentJobs);
   if (listPendingAgentJobs().length > 0) {
     void merlinChat?.refresh();
-    merlinChat?.setBackgroundPending();
+    merlinChat?.syncBackgroundStatus();
     resumeAgentJobs();
   }
 
