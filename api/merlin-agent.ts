@@ -1,22 +1,30 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { MAX_AGENT_SEGMENTS } from '../lib/merlin-agent/agent-checkpoint.js';
 import { JOB_STREAM_MAX_MS } from '../lib/merlin-agent/agent-duration.js';
 import {
   appendAgentJobStep,
-  BACKGROUND_JOB_TIMEOUT_MS,
   createJobId,
   expireStaleRunningJob,
   failAgentJob,
   finishAgentJob,
   getAgentJob,
   saveAgentJob,
+  saveAgentJobCheckpoint,
+  touchAgentJob,
 } from '../server/agent-jobs.js';
+import {
+  advanceAgentRun,
+  createBootstrapCheckpoint,
+} from '../server/merlin-agent/runner-segment.js';
+import { scheduleBackground } from '../server/wait-until.js';
 import {
   runMerlinAgent,
   type AgentRequestBody,
   type AgentRunResult,
   type AgentStep,
 } from '../server/merlin-agent/index.js';
-import { scheduleBackground } from '../server/wait-until.js';
+
+const JOB_HEARTBEAT_MS = 25_000;
 
 function cors(res: VercelResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -109,34 +117,68 @@ async function processBackgroundJob(
   jobId: string,
   body: AgentRequestBody,
 ): Promise<void> {
+  const heartbeat = setInterval(() => {
+    void touchAgentJob(jobId);
+  }, JOB_HEARTBEAT_MS);
+
   try {
-    await saveAgentJob(jobId, {
-      status: 'running',
-      steps: [],
-      updatedAt: Date.now(),
+    const job = await getAgentJob(jobId);
+    if (!job) return;
+
+    const segmentCount = job.segmentCount ?? 0;
+    if (segmentCount >= MAX_AGENT_SEGMENTS) {
+      await failAgentJob(
+        jobId,
+        'La réflexion a nécessité trop d\'étapes. Réessayez avec une demande plus ciblée.',
+      );
+      return;
+    }
+
+    if (job.status === 'pending') {
+      await saveAgentJob(jobId, {
+        ...job,
+        status: 'running',
+        updatedAt: Date.now(),
+      });
+    }
+
+    const checkpoint = job.checkpoint ?? createBootstrapCheckpoint(body);
+
+    const outcome = await advanceAgentRun(checkpoint, {
+      referer: referer(),
+      onStep: (step) => {
+        void appendAgentJobStep(jobId, step);
+      },
     });
 
-    const result = await Promise.race([
-      runMerlinAgent(body.message, body.context, body.config ?? {}, {
-        referer: referer(),
-        onStep: (step) => {
-          void appendAgentJobStep(jobId, step);
-        },
-      }),
-      new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('JOB_TIMEOUT')), BACKGROUND_JOB_TIMEOUT_MS);
-      }),
-    ]);
+    if (outcome.status === 'done') {
+      const current = await getAgentJob(jobId);
+      await finishAgentJob(jobId, {
+        ...outcome.result,
+        steps: current?.steps.length ? current.steps : outcome.result.steps,
+      });
+      return;
+    }
 
-    await finishAgentJob(jobId, result);
+    if (outcome.status === 'failed') {
+      await failAgentJob(jobId, outcome.result.error ?? 'Agent error');
+      return;
+    }
+
+    const current = await getAgentJob(jobId);
+    await saveAgentJobCheckpoint(jobId, {
+      status: 'running',
+      steps: current?.steps ?? [],
+      checkpoint: outcome.checkpoint,
+      segmentCount: segmentCount + 1,
+    });
+
+    scheduleBackground(() => processBackgroundJob(jobId, body));
   } catch (err) {
-    const message =
-      err instanceof Error && err.message === 'JOB_TIMEOUT'
-        ? 'La réflexion a pris trop de temps. Rouvrez Merlin ou réessayez.'
-        : err instanceof Error
-          ? err.message
-          : 'Agent error';
+    const message = err instanceof Error ? err.message : 'Agent error';
     await failAgentJob(jobId, message);
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 

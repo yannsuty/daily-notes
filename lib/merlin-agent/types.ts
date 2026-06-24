@@ -223,6 +223,8 @@ export interface AgentRequestBody {
   jobId?: string;
 }
 
+import type { AgentJobCheckpoint } from './agent-checkpoint.js';
+
 export type AgentJobStatus = 'pending' | 'running' | 'done' | 'error';
 
 export interface AgentJobRecord {
@@ -231,6 +233,8 @@ export interface AgentJobRecord {
   result?: AgentRunResult;
   error?: string;
   updatedAt: number;
+  checkpoint?: AgentJobCheckpoint;
+  segmentCount?: number;
 }
 
 export interface AgentJobStartResponse {

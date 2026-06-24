@@ -52,6 +52,30 @@ export async function appendAgentJobStep(jobId: string, step: AgentStep): Promis
   });
 }
 
+/** Rafraîchit l'activité du job (heartbeat pendant LLM / outils longs). */
+export async function touchAgentJob(jobId: string): Promise<void> {
+  const current = await getAgentJob(jobId);
+  if (!current) return;
+  if (current.status !== 'pending' && current.status !== 'running') return;
+  await saveAgentJob(jobId, {
+    ...current,
+    updatedAt: Date.now(),
+  });
+}
+
+export async function saveAgentJobCheckpoint(
+  jobId: string,
+  patch: Pick<AgentJobRecord, 'checkpoint' | 'segmentCount' | 'steps' | 'status'>,
+): Promise<void> {
+  const current = await getAgentJob(jobId);
+  if (!current) return;
+  await saveAgentJob(jobId, {
+    ...current,
+    ...patch,
+    updatedAt: Date.now(),
+  });
+}
+
 export async function finishAgentJob(
   jobId: string,
   result: AgentRunResult,
