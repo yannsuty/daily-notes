@@ -8,6 +8,15 @@ import type { AgentClientConfig, MerlinSpace } from '../../lib/merlin-agent/type
 import { extractSpaceData, extractSpaceUpdate } from './space-extract.js';
 import type { AgentStore } from './tools.js';
 
+function shouldExtendActiveSpace(
+  userMessage: string,
+  active: MerlinSpace,
+): boolean {
+  if (shouldUpdateActiveSpace(userMessage, active.kind)) return true;
+  const kind = detectSpaceKind(userMessage);
+  return kind === active.kind && !isExplicitNewSpaceIntent(userMessage);
+}
+
 export async function ensureSpacePersisted(
   store: AgentStore,
   userMessage: string,
@@ -20,8 +29,20 @@ export async function ensureSpacePersisted(
 
   const active = activeSpace ?? store.getActiveSpace() ?? null;
 
-  if (active && shouldUpdateActiveSpace(userMessage, active.kind)) {
-    const extracted = await extractSpaceUpdate(active, userMessage, reply, config, referer);
+  if (active && shouldExtendActiveSpace(userMessage, active)) {
+    let extracted = await extractSpaceUpdate(active, userMessage, reply, config, referer);
+
+    if (!extracted?.data) {
+      const fallback = await extractSpaceData(active.kind, userMessage, reply, config, referer);
+      if (fallback?.data) {
+        extracted = {
+          title: active.title,
+          recap: fallback.recap,
+          data: fallback.data,
+        };
+      }
+    }
+
     if (!extracted?.data) return false;
 
     const preview = mergeSpaceData(active.kind, active.data, extracted.data, { append: true });

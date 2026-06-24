@@ -528,14 +528,24 @@ export class MerlinChat {
       depth === 'deep' ? 'Merlin analyse en profondeur…' : 'Merlin réfléchit…',
     );
 
-    const result = await handleUserMessage(trimmed, {
-      onAgentStep: (step) => {
-        this.renderAgentStep(step);
-        const jobs = listPendingAgentJobs();
-        const job = jobs[jobs.length - 1];
-        if (job) appendPendingJobStep(job.jobId, step);
-      },
-    });
+    let result: Awaited<ReturnType<typeof handleUserMessage>>;
+    try {
+      result = await handleUserMessage(trimmed, {
+        onAgentStep: (step) => {
+          this.renderAgentStep(step);
+          const jobs = listPendingAgentJobs();
+          const job = jobs[jobs.length - 1];
+          if (job) appendPendingJobStep(job.jobId, step);
+        },
+      });
+    } catch (err) {
+      this.setThinking(false);
+      const message = err instanceof Error ? err.message : 'Erreur inattendue';
+      this.setAiBanner(true);
+      this.showError(message);
+      await this.renderMessages();
+      return;
+    }
 
     if (result.backgroundPending) {
       this.setThinking(false, '', { keepTrace: true });
@@ -560,6 +570,13 @@ export class MerlinChat {
       this.setAiBanner(false);
       await this.renderAll();
       this.syncBackgroundStatus();
+      return;
+    }
+
+    if (!result.content?.trim()) {
+      this.setAiBanner(true);
+      this.showError('Merlin n\'a pas renvoyé de réponse. Réessayez ou vérifiez votre connexion.');
+      await this.renderMessages();
       return;
     }
 

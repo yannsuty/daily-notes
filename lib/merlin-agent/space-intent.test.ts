@@ -10,6 +10,9 @@ import {
 describe('detectSpaceKind', () => {
   it('détecte une comparaison de ventilateurs', () => {
     expect(detectSpaceKind('Compare des ventilateurs de plafond silencieux')).toBe('comparison');
+    expect(detectSpaceKind('Je veux bien que tu compares avec d\'autres ventilateurs')).toBe(
+      'comparison',
+    );
   });
 
   it('détecte une recette', () => {
@@ -43,6 +46,12 @@ describe('shouldUpdateActiveSpace', () => {
     expect(shouldUpdateActiveSpace('Quel modèle pour une chambre de 20 m² ?', 'comparison')).toBe(
       false,
     );
+    expect(
+      shouldUpdateActiveSpace(
+        'Je veux bien que tu compares avec d\'autres ventilateur de plafond',
+        'comparison',
+      ),
+    ).toBe(true);
   });
 
   it('ne confond pas comparaison initiale et mise à jour', () => {

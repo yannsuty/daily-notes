@@ -1,7 +1,10 @@
 import type { MerlinSpaceKind } from './types.js';
 
 const SPACE_INTENT: { kind: MerlinSpaceKind; pattern: RegExp }[] = [
-  { kind: 'comparison', pattern: /\b(compare|comparer|comparaison|versus|vs\.?)\b/i },
+  {
+    kind: 'comparison',
+    pattern: /\b(compare[rzs]?|comparons|comparer|comparaison|versus|vs\.?)\b/i,
+  },
   { kind: 'recipe', pattern: /\b(recette|cuisine|ingrédients?|ingredients?)\b/i },
   { kind: 'diy', pattern: /\b(diy|bricolage|construire|fabriquer|fabrique)\b/i },
   { kind: 'plan', pattern: /\b(plan\s+(de|pour)|planif|refacto|programm|architecture)\b/i },
@@ -30,6 +33,18 @@ export function detectSpaceUpdateIntent(text: string): boolean {
   );
 }
 
+/** Extension d'une comparaison existante (autres produits, élargir le tableau). */
+export function isComparisonExtensionRequest(text: string): boolean {
+  return (
+    /\b(compare[rzs]?|comparer)\b[\s\S]{0,40}\b(autres?|d'autres|plus|encore)\b/i.test(text) ||
+    /\b(autres?|d'autres)\b[\s\S]{0,40}\b(ventilateur|modèle|produit)/i.test(text) ||
+    /\b(étoffe|enrichi|élargi|complète|compléter)\b[\s\S]{0,30}\b(comparaison|tableau)/i.test(
+      text,
+    ) ||
+    /\bje veux bien que tu compares\b/i.test(text)
+  );
+}
+
 export function shouldUpdateActiveSpace(
   userMessage: string,
   activeKind: MerlinSpaceKind,
@@ -37,8 +52,16 @@ export function shouldUpdateActiveSpace(
   if (isExplicitNewSpaceIntent(userMessage)) return false;
   if (detectSpaceUpdateIntent(userMessage)) return true;
 
+  if (activeKind === 'comparison' && isComparisonExtensionRequest(userMessage)) {
+    return true;
+  }
+
   const kind = detectSpaceKind(userMessage);
   if (kind !== activeKind) return false;
+
+  if (kind === activeKind && !isExplicitNewSpaceIntent(userMessage)) {
+    return true;
+  }
 
   return /\b(aussi|également|encore|en plus|autre modèle|un modèle de plus)\b/i.test(userMessage);
 }
