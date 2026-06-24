@@ -1,0 +1,92 @@
+import { test, expect } from '@playwright/test';
+import { installAgentMock } from './helpers/agent-mock';
+import { resetAppStorage } from './helpers/storage';
+import {
+  clearActiveContext,
+  countComparisonDataRows,
+  expectContextBar,
+  expectLastAssistantMessage,
+  openEspacesGallery,
+  openSpaceDetail,
+  sendMerlinMessage,
+  waitForThinkingDone,
+} from './helpers/merlin-chat';
+
+test.describe('Espaces — parcours comparaison (agent mocké)', () => {
+  test.beforeEach(async ({ page }) => {
+    await resetAppStorage(page);
+    await installAgentMock(page);
+  });
+
+  test('création : compare des ventilateurs → espace actif + carte Galerie', async ({ page }) => {
+    await sendMerlinMessage(page, 'Compare des ventilateurs de plafond silencieux');
+    await waitForThinkingDone(page);
+
+    await expectLastAssistantMessage(page, /Alpha|Beta|comparaison/i);
+    await expectContextBar(page, /Ventilateurs de plafond/i);
+
+    await openEspacesGallery(page);
+    await expect(page.locator('.espaces-page__card-title', { hasText: 'Ventilateurs de plafond' })).toBeVisible();
+    await openSpaceDetail(page, 'Ventilateurs de plafond');
+    await expect(page.locator('.espaces-page__table')).toContainText('Alpha');
+  });
+
+  test('extension : compares avec d’autres ventilateurs → même espace enrichi', async ({ page }) => {
+    await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
+    await waitForThinkingDone(page);
+    await expectContextBar(page, /Ventilateurs/i);
+
+    await sendMerlinMessage(
+      page,
+      'Je veux bien que tu compares avec d’autres ventilateurs de plafond',
+    );
+    await waitForThinkingDone(page);
+
+    await expectLastAssistantMessage(page, /Gamma/i);
+    await expectContextBar(page, /Ventilateurs/i);
+
+    await openEspacesGallery(page);
+    await openSpaceDetail(page, 'Ventilateurs de plafond');
+    await expect(page.locator('.espaces-page__table')).toContainText('Gamma');
+    expect(await countComparisonDataRows(page)).toBe(3);
+  });
+
+  test('conseil : question sans extension → pas de nouvelle ligne dans l’espace', async ({ page }) => {
+    await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
+    await waitForThinkingDone(page);
+
+    await sendMerlinMessage(page, 'Quel modèle pour une chambre de 20 m² ?');
+    await waitForThinkingDone(page);
+
+    await expectLastAssistantMessage(page, /20 m²|silencieux/i);
+
+    await openEspacesGallery(page);
+    await openSpaceDetail(page, 'Ventilateurs de plafond');
+    expect(await countComparisonDataRows(page)).toBe(2);
+  });
+
+  test('changement de sujet : recette → nouvel espace actif', async ({ page }) => {
+    await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
+    await waitForThinkingDone(page);
+    await expectContextBar(page, /Ventilateurs/i);
+
+    await sendMerlinMessage(page, 'Recette de crêpes pour 4 personnes');
+    await waitForThinkingDone(page);
+
+    await expectLastAssistantMessage(page, /crêpes/i);
+    await expectContextBar(page, /Crêpes/i);
+
+    await openEspacesGallery(page);
+    await expect(page.locator('.espaces-page__card-title', { hasText: 'Crêpes pour 4' })).toBeVisible();
+    await expect(page.locator('.espaces-page__card-title', { hasText: 'Ventilateurs de plafond' })).toBeVisible();
+  });
+
+  test('quitter le contexte actif', async ({ page }) => {
+    await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
+    await waitForThinkingDone(page);
+    await expectContextBar(page, /Ventilateurs/i);
+
+    await clearActiveContext(page);
+    await expect(page.locator('.merlin-chat__context')).toBeHidden();
+  });
+});

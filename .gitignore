@@ -7,3 +7,6 @@ dist-ssr
 .vercel
 *.keystore
 ios/
+test-results/
+playwright-report/
+blob-report/
