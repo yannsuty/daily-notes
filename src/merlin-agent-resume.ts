@@ -10,6 +10,7 @@ import {
   releaseActivePoll,
   removePendingAgentJob,
   removeStalePendingAgentJobs,
+  setPendingJobSteps,
   stopAllAgentJobPolls,
   stopPollingAgentJob,
   type AgentJobCallbacks,
@@ -20,7 +21,7 @@ import {
   stopNativeAgentJobWatch,
 } from './merlin-agent-native-watch';
 import { recordShortcutUsage } from './merlin-shortcuts';
-import type { AgentRunResult } from '../lib/merlin-agent';
+import type { AgentRunResult, AgentStep } from '../lib/merlin-agent';
 
 let resumeInFlight = false;
 
@@ -48,14 +49,29 @@ function notifyJobFinished(callbacks?: AgentJobCallbacks): void {
   callbacks?.onJobFinished?.();
 }
 
+function emitJobSteps(steps: AgentStep[], callbacks?: AgentJobCallbacks): void {
+  if (steps.length === 0) return;
+  if (callbacks?.onStepsBatch) {
+    callbacks.onStepsBatch(steps);
+    return;
+  }
+  for (const step of steps) {
+    callbacks?.onStep?.(step);
+  }
+}
+
 function watchJobInBackground(
   job: PendingAgentJob,
   callbacks?: AgentJobCallbacks,
+  fromStep = 0,
 ): void {
   const controller = getActivePollController(job.jobId);
   void watchAgentJob(job.jobId, {
-    onStep: callbacks?.onStep,
+    onStep: (step) => {
+      callbacks?.onStep?.(step);
+    },
     signal: controller.signal,
+    fromStep,
   })
     .then((result) => applyAgentJobResult(job, result, callbacks))
     .catch(async (err) => {
@@ -149,6 +165,24 @@ async function tryApplyFinishedJobStatus(
   return null;
 }
 
+/** Charge l'état courant d'un job en cours (étapes déjà effectuées). */
+export async function loadPendingJobProgress(
+  jobId: string,
+  callbacks?: AgentJobCallbacks,
+): Promise<AgentStep[]> {
+  try {
+    const status = await getAgentJobStatus(jobId);
+    const steps = status.steps ?? [];
+    setPendingJobSteps(jobId, steps);
+    emitJobSteps(steps, callbacks);
+    return steps;
+  } catch {
+    const cached = listPendingAgentJobs().find((j) => j.jobId === jobId)?.steps ?? [];
+    emitJobSteps(cached, callbacks);
+    return cached;
+  }
+}
+
 export async function resumePendingAgentJobs(
   callbacks?: AgentJobCallbacks,
 ): Promise<number> {
@@ -181,9 +215,13 @@ export async function resumePendingAgentJobs(
             continue;
           }
 
+          const steps = status.steps ?? [];
+          setPendingJobSteps(job.jobId, steps);
+          emitJobSteps(steps, callbacks);
+
           if (status.status === 'pending' || status.status === 'running') {
             await startNativeAgentJobWatch(job.jobId);
-            watchJobInBackground(job, callbacks);
+            watchJobInBackground(job, callbacks, steps.length);
             continue;
           }
         } catch (statusErr) {

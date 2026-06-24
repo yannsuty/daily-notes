@@ -3,7 +3,8 @@ import { Journal, resetSessionScroll } from './journal';
 import { Merlin } from './merlin';
 import { MerlinChat } from './merlin-chat';
 import { setDeferredReplyHandler } from './merlin-pending';
-import { listPendingAgentJobs, registerAgentJobResume, startPendingJobResumePoll } from './merlin-agent-jobs';
+import { listPendingAgentJobs, registerAgentJobResume, startPendingJobResumePoll, appendPendingJobStep } from './merlin-agent-jobs';
+import type { AgentStep } from '../lib/merlin-agent';
 import { resumePendingAgentJobs } from './merlin-agent-resume';
 import { getMeta, saveMeta } from './db';
 import { updateShellLayoutVars } from './viewport';
@@ -181,18 +182,29 @@ export async function initApp(root: HTMLElement): Promise<void> {
     void syncNow().then(() => updateSyncIndicator(syncIndicator));
   });
 
+  const agentJobCallbacks = {
+    onStepsBatch: (steps: AgentStep[]) => {
+      merlinChat?.renderAgentSteps(steps);
+    },
+    onStep: (step: AgentStep) => {
+      merlinChat?.renderAgentStep(step);
+      const jobs = listPendingAgentJobs();
+      const job = jobs[jobs.length - 1];
+      if (job) appendPendingJobStep(job.jobId, step);
+    },
+    onJobFinished: () => {
+      void (async () => {
+        await merlinChat?.refresh();
+        merlinChat?.syncBackgroundStatus();
+        await gallery?.refreshListes();
+        await gallery?.refreshEspaces();
+        void syncNow().then(() => updateSyncIndicator(syncIndicator));
+      })();
+    },
+  };
+
   const resumeAgentJobs = (): void => {
-    void resumePendingAgentJobs({
-      onJobFinished: () => {
-        void (async () => {
-          await merlinChat?.refresh();
-          merlinChat?.syncBackgroundStatus();
-          await gallery?.refreshListes();
-          await gallery?.refreshEspaces();
-          void syncNow().then(() => updateSyncIndicator(syncIndicator));
-        })();
-      },
-    }).then(async (completed) => {
+    void resumePendingAgentJobs(agentJobCallbacks).then(async (completed) => {
       await merlinChat?.refresh();
       merlinChat?.syncBackgroundStatus();
       if (completed > 0) {

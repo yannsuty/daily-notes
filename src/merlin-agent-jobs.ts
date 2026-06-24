@@ -10,10 +10,13 @@ export interface PendingAgentJob {
   userText: string;
   placeholderId: string;
   startedAt: number;
+  steps?: AgentStep[];
 }
 
 export interface AgentJobCallbacks {
   onStep?: (step: AgentStep) => void;
+  /** Étapes déjà effectuées côté serveur (reprise au retour dans l'app). */
+  onStepsBatch?: (steps: AgentStep[]) => void;
   onJobFinished?: () => void;
 }
 
@@ -40,8 +43,32 @@ function writeJobs(jobs: PendingAgentJob[]): void {
 }
 
 export function savePendingAgentJob(job: PendingAgentJob): void {
-  const jobs = readJobs().filter((j) => j.jobId !== job.jobId);
-  jobs.push(job);
+  const jobs = readJobs();
+  const existing = jobs.find((j) => j.jobId === job.jobId);
+  const next = jobs.filter((j) => j.jobId !== job.jobId);
+  next.push({
+    ...existing,
+    ...job,
+    steps: job.steps ?? existing?.steps,
+  });
+  writeJobs(next);
+}
+
+export function appendPendingJobStep(jobId: string, step: AgentStep): void {
+  const jobs = readJobs();
+  const index = jobs.findIndex((j) => j.jobId === jobId);
+  if (index < 0) return;
+  const job = jobs[index];
+  const steps = [...(job.steps ?? []), step];
+  jobs[index] = { ...job, steps };
+  writeJobs(jobs);
+}
+
+export function setPendingJobSteps(jobId: string, steps: AgentStep[]): void {
+  const jobs = readJobs();
+  const index = jobs.findIndex((j) => j.jobId === jobId);
+  if (index < 0) return;
+  jobs[index] = { ...jobs[index], steps };
   writeJobs(jobs);
 }
 
