@@ -4,6 +4,11 @@ import { agentJobKey, getRedis } from './redis.js';
 const JOB_TTL_SECONDS = 60 * 60;
 const memoryJobs = new Map<string, AgentJobRecord>();
 
+/** Sans activité (étape / statut) depuis ce délai, le job est considéré mort côté serveur. */
+export const STALE_RUNNING_MS = 120_000;
+
+export const BACKGROUND_JOB_TIMEOUT_MS = 58_000;
+
 export function createJobId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -68,4 +73,21 @@ export async function failAgentJob(jobId: string, error: string): Promise<void> 
     error,
     updatedAt: Date.now(),
   });
+}
+
+export function isStaleRunningJob(record: AgentJobRecord, now = Date.now()): boolean {
+  if (record.status !== 'pending' && record.status !== 'running') return false;
+  return now - record.updatedAt > STALE_RUNNING_MS;
+}
+
+/** Marque un job bloqué en « running » comme erreur (timeout Vercel, process tué, etc.). */
+export async function expireStaleRunningJob(jobId: string): Promise<AgentJobRecord | null> {
+  const job = await getAgentJob(jobId);
+  if (!job) return null;
+  if (!isStaleRunningJob(job)) return job;
+  await failAgentJob(
+    jobId,
+    'La réflexion de Merlin a expiré côté serveur. Rouvrez l’app ou réessayez.',
+  );
+  return getAgentJob(jobId);
 }

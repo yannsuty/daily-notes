@@ -18,6 +18,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class MerlinAgentJobService extends Service {
@@ -29,6 +30,8 @@ public class MerlinAgentJobService extends Service {
     private static final int NOTIFICATION_PROGRESS_ID = 42002;
     private static final int NOTIFICATION_REPLY_BASE = 43000;
     private static final long POLL_INTERVAL_MS = 2000;
+    private static final int MAX_POLL_FAILURES = 30;
+    private static final long MAX_WATCH_MS = 15 * 60 * 1000L;
     private static final String PREFS_NAME = "merlin_agent_job";
     private static final String PREF_JOB_ID = "job_id";
     private static final String PREF_POLL_URL = "poll_url";
@@ -40,6 +43,9 @@ public class MerlinAgentJobService extends Service {
     private String jobId;
     private String pollUrl;
     private volatile boolean shouldRun = false;
+    private int consecutiveFailures = 0;
+    private long watchStartedAt = 0;
+    private String progressDetail = "";
 
     public static boolean isRunning() {
         return running;
@@ -74,7 +80,17 @@ public class MerlinAgentJobService extends Service {
             persistWatch(jobId, pollUrl);
         }
 
+        if (!pollUrl.startsWith("http://") && !pollUrl.startsWith("https://")) {
+            MerlinAgentJobBridge.deliverJobFinished(jobId);
+            showReplyNotification("Configuration API invalide. Réinstallez la dernière version.");
+            finishService();
+            return START_NOT_STICKY;
+        }
+
         shouldRun = true;
+        consecutiveFailures = 0;
+        watchStartedAt = System.currentTimeMillis();
+        progressDetail = getString(R.string.merlin_agent_job_text);
         Notification notification = buildProgressNotification();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -98,12 +114,28 @@ public class MerlinAgentJobService extends Service {
                 return;
             }
 
+            if (System.currentTimeMillis() - watchStartedAt > MAX_WATCH_MS) {
+                MerlinAgentJobBridge.deliverJobFinished(jobId);
+                showReplyNotification("La réflexion de Merlin a pris trop de temps.");
+                finishService();
+                return;
+            }
+
             try {
                 JobPollResult result = pollJobStatus();
                 if (result == null) {
-                    workerHandler.postDelayed(this, POLL_INTERVAL_MS);
+                    consecutiveFailures += 1;
+                    if (consecutiveFailures >= MAX_POLL_FAILURES) {
+                        MerlinAgentJobBridge.deliverJobFinished(jobId);
+                        showReplyNotification("Merlin n'a pas pu joindre le serveur. Rouvrez l'app.");
+                        finishService();
+                    } else {
+                        workerHandler.postDelayed(this, POLL_INTERVAL_MS);
+                    }
                     return;
                 }
+
+                consecutiveFailures = 0;
 
                 if ("done".equals(result.status)) {
                     MerlinAgentJobBridge.deliverJobFinished(jobId);
@@ -121,8 +153,19 @@ public class MerlinAgentJobService extends Service {
                     finishService();
                     return;
                 }
+
+                if (result.progressDetail != null && !result.progressDetail.isEmpty()) {
+                    progressDetail = result.progressDetail;
+                    updateProgressNotification();
+                }
             } catch (Exception ignored) {
-                // Réseau instable — on réessaie.
+                consecutiveFailures += 1;
+                if (consecutiveFailures >= MAX_POLL_FAILURES) {
+                    MerlinAgentJobBridge.deliverJobFinished(jobId);
+                    showReplyNotification("Merlin n'a pas pu joindre le serveur. Rouvrez l'app.");
+                    finishService();
+                    return;
+                }
             }
 
             workerHandler.postDelayed(this, POLL_INTERVAL_MS);
@@ -162,6 +205,19 @@ public class MerlinAgentJobService extends Service {
         JSONObject json = new JSONObject(body.toString());
         String status = json.optString("status", "");
         String reply = null;
+        String stepDetail = null;
+
+        JSONArray steps = json.optJSONArray("steps");
+        if (steps != null && steps.length() > 0) {
+            JSONObject last = steps.optJSONObject(steps.length() - 1);
+            if (last != null) {
+                stepDetail = last.optString("label", null);
+                String detail = last.optString("detail", null);
+                if (detail != null && !detail.isEmpty()) {
+                    stepDetail = stepDetail + " — " + detail;
+                }
+            }
+        }
 
         if ("done".equals(status)) {
             JSONObject result = json.optJSONObject("result");
@@ -175,21 +231,20 @@ public class MerlinAgentJobService extends Service {
             reply = json.optString("error", "Merlin n'a pas pu répondre.");
         }
 
-        return new JobPollResult(status, reply);
+        return new JobPollResult(status, reply, stepDetail);
     }
 
     private Notification buildProgressNotification() {
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                CHANNEL_PROGRESS,
-                getString(R.string.merlin_agent_job_channel),
-                NotificationManager.IMPORTANCE_LOW
-            );
-            channel.setDescription(getString(R.string.merlin_agent_job_channel_desc));
-            manager.createNotificationChannel(channel);
-        }
+        ensureProgressChannel();
+        return buildProgressNotification(progressDetail);
+    }
 
+    private void updateProgressNotification() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        manager.notify(NOTIFICATION_PROGRESS_ID, buildProgressNotification(progressDetail));
+    }
+
+    private Notification buildProgressNotification(String detail) {
         Intent openIntent = new Intent(this, MainActivity.class);
         openIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent pendingIntent = PendingIntent.getActivity(
@@ -201,7 +256,7 @@ public class MerlinAgentJobService extends Service {
 
         return new NotificationCompat.Builder(this, CHANNEL_PROGRESS)
             .setContentTitle(getString(R.string.merlin_agent_job_title))
-            .setContentText(getString(R.string.merlin_agent_job_text))
+            .setContentText(detail)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -210,13 +265,26 @@ public class MerlinAgentJobService extends Service {
             .build();
     }
 
+    private void ensureProgressChannel() {
+        NotificationManager manager = getSystemService(NotificationManager.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                CHANNEL_PROGRESS,
+                getString(R.string.merlin_agent_job_channel),
+                NotificationManager.IMPORTANCE_LOW
+            );
+            channel.setDescription(getString(R.string.merlin_agent_job_channel_desc));
+            manager.createNotificationChannel(channel);
+        }
+    }
+
     private void showReplyNotification(String body) {
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_REPLY,
                 getString(R.string.merlin_agent_reply_channel),
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             );
             channel.setDescription(getString(R.string.merlin_agent_reply_channel_desc));
             manager.createNotificationChannel(channel);
@@ -239,6 +307,7 @@ public class MerlinAgentJobService extends Service {
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .build();
 
@@ -286,10 +355,12 @@ public class MerlinAgentJobService extends Service {
     private static final class JobPollResult {
         final String status;
         final String reply;
+        final String progressDetail;
 
-        JobPollResult(String status, String reply) {
+        JobPollResult(String status, String reply, String progressDetail) {
             this.status = status;
             this.reply = reply;
+            this.progressDetail = progressDetail;
         }
     }
 }

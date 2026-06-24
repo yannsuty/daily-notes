@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import {
   appendAgentJobStep,
+  BACKGROUND_JOB_TIMEOUT_MS,
   createJobId,
+  expireStaleRunningJob,
   failAgentJob,
   finishAgentJob,
   getAgentJob,
@@ -69,21 +71,28 @@ async function streamAgentJob(
       return;
     }
 
-    for (let i = seen; i < job.steps.length; i += 1) {
-      writeSse(res, 'step', { step: job.steps[i] });
-    }
-    seen = job.steps.length;
-
-    if (job.status === 'done' && job.result) {
-      writeSse(res, 'done', { result: job.result });
+    const current = await expireStaleRunningJob(jobId);
+    if (!current) {
+      writeSse(res, 'error', { error: 'Job not found' });
       res.end();
       return;
     }
 
-    if (job.status === 'error') {
+    for (let i = seen; i < current.steps.length; i += 1) {
+      writeSse(res, 'step', { step: current.steps[i] });
+    }
+    seen = current.steps.length;
+
+    if (current.status === 'done' && current.result) {
+      writeSse(res, 'done', { result: current.result });
+      res.end();
+      return;
+    }
+
+    if (current.status === 'error') {
       writeSse(res, 'error', {
-        error: job.error ?? 'Erreur agent',
-        steps: job.steps,
+        error: current.error ?? 'Erreur agent',
+        steps: current.steps,
       });
       res.end();
       return;
@@ -107,16 +116,26 @@ async function processBackgroundJob(
       updatedAt: Date.now(),
     });
 
-    const result = await runMerlinAgent(body.message, body.context, body.config ?? {}, {
-      referer: referer(),
-      onStep: (step) => {
-        void appendAgentJobStep(jobId, step);
-      },
-    });
+    const result = await Promise.race([
+      runMerlinAgent(body.message, body.context, body.config ?? {}, {
+        referer: referer(),
+        onStep: (step) => {
+          void appendAgentJobStep(jobId, step);
+        },
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('JOB_TIMEOUT')), BACKGROUND_JOB_TIMEOUT_MS);
+      }),
+    ]);
 
     await finishAgentJob(jobId, result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Agent error';
+    const message =
+      err instanceof Error && err.message === 'JOB_TIMEOUT'
+        ? 'La réflexion a pris trop de temps. Rouvrez Merlin ou réessayez.'
+        : err instanceof Error
+          ? err.message
+          : 'Agent error';
     await failAgentJob(jobId, message);
   }
 }
@@ -150,7 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return;
       }
 
-      const job = await getAgentJob(jobId);
+      const job = await expireStaleRunningJob(jobId);
       if (!job) {
         return res.status(404).json({ error: 'Job not found' });
       }

@@ -24,10 +24,20 @@ export function agentJobPollUrl(jobId: string): string {
 export async function startNativeAgentJobWatch(jobId: string): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
 
+  const pollUrl = agentJobPollUrl(jobId);
+  if (!pollUrl.startsWith('http')) {
+    logger.error(
+      'merlin-agent-native-watch',
+      'pollUrl invalide (VITE_API_BASE_URL manquant ?)',
+      pollUrl,
+    );
+    return;
+  }
+
   try {
     await MerlinAgentWatch.watchAgentJob({
       jobId,
-      pollUrl: agentJobPollUrl(jobId),
+      pollUrl,
     });
   } catch (err) {
     logger.warn('merlin-agent-native-watch', 'startNativeAgentJobWatch failed', err);
