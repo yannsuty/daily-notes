@@ -1,13 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { MAX_AGENT_SEGMENTS } from '../lib/merlin-agent/agent-checkpoint.js';
-import { JOB_STREAM_MAX_MS } from '../lib/merlin-agent/agent-duration.js';
+import type { AgentJobCheckpoint } from '../lib/merlin-agent/agent-checkpoint.js';
 import {
   appendAgentJobStep,
+  acquireSegmentLease,
   createJobId,
   expireStaleRunningJob,
   failAgentJob,
   finishAgentJob,
   getAgentJob,
+  releaseSegmentLease,
   saveAgentJob,
   saveAgentJobCheckpoint,
   touchAgentJob,
@@ -25,6 +27,20 @@ import {
 } from '../server/merlin-agent/index.js';
 
 const JOB_HEARTBEAT_MS = 25_000;
+
+function bodyFromCheckpoint(jobId: string, checkpoint: AgentJobCheckpoint): AgentRequestBody {
+  return {
+    message: checkpoint.userMessage,
+    context: checkpoint.context,
+    config: checkpoint.config,
+    background: true,
+    jobId,
+  };
+}
+
+function kickSegmentContinuation(jobId: string, checkpoint: AgentJobCheckpoint): void {
+  scheduleBackground(() => processBackgroundJob(jobId, bodyFromCheckpoint(jobId, checkpoint)));
+}
 
 function cors(res: VercelResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -72,6 +88,11 @@ async function streamAgentJob(
       return;
     }
 
+    const jobBeforeStale = await getAgentJob(jobId);
+    if (jobBeforeStale?.status === 'running' && jobBeforeStale.checkpoint) {
+      kickSegmentContinuation(jobId, jobBeforeStale.checkpoint);
+    }
+
     const job = await getAgentJob(jobId);
     if (!job) {
       writeSse(res, 'error', { error: 'Job not found' });
@@ -117,6 +138,9 @@ async function processBackgroundJob(
   jobId: string,
   body: AgentRequestBody,
 ): Promise<void> {
+  const leased = await acquireSegmentLease(jobId);
+  if (!leased) return;
+
   const heartbeat = setInterval(() => {
     void touchAgentJob(jobId);
   }, JOB_HEARTBEAT_MS);
@@ -173,12 +197,13 @@ async function processBackgroundJob(
       segmentCount: segmentCount + 1,
     });
 
-    scheduleBackground(() => processBackgroundJob(jobId, body));
+    // Le segment suivant est repris par le poll Android (nouvelle invocation Vercel).
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Agent error';
     await failAgentJob(jobId, message);
   } finally {
     clearInterval(heartbeat);
+    await releaseSegmentLease(jobId);
   }
 }
 
@@ -207,8 +232,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
       if (stream) {
+        const jobBeforeStale = await getAgentJob(jobId);
+        if (jobBeforeStale?.status === 'running' && jobBeforeStale.checkpoint) {
+          kickSegmentContinuation(jobId, jobBeforeStale.checkpoint);
+        }
         await streamAgentJob(req, res, jobId, fromStep);
         return;
+      }
+
+      const jobBeforeStale = await getAgentJob(jobId);
+      if (jobBeforeStale?.status === 'running' && jobBeforeStale.checkpoint) {
+        kickSegmentContinuation(jobId, jobBeforeStale.checkpoint);
       }
 
       const job = await expireStaleRunningJob(jobId);
