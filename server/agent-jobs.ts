@@ -1,13 +1,14 @@
+import {
+  BACKGROUND_JOB_TIMEOUT_MS,
+  STALE_RUNNING_MS,
+} from '../lib/merlin-agent/agent-duration.js';
 import type { AgentJobRecord, AgentRunResult, AgentStep } from '../lib/merlin-agent/types.js';
 import { agentJobKey, getRedis } from './redis.js';
 
+export { BACKGROUND_JOB_TIMEOUT_MS, STALE_RUNNING_MS };
+
 const JOB_TTL_SECONDS = 60 * 60;
 const memoryJobs = new Map<string, AgentJobRecord>();
-
-/** Sans activité (étape / statut) depuis ce délai, le job est considéré mort côté serveur. */
-export const STALE_RUNNING_MS = 120_000;
-
-export const BACKGROUND_JOB_TIMEOUT_MS = 58_000;
 
 export function createJobId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;

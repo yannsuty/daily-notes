@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { JOB_STREAM_MAX_MS } from './lib/merlin-agent/agent-duration';
 import {
   callOpenRouterWithFallback,
   OPENROUTER_FREE_ROUTER,
@@ -56,7 +57,7 @@ async function streamAgentJobDev(
   const started = Date.now();
   let seen = fromStep;
 
-  while (Date.now() - started < 55_000) {
+  while (Date.now() - started < JOB_STREAM_MAX_MS) {
     if (req.socket?.destroyed) {
       return;
     }
