@@ -23,8 +23,8 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)
 - save_custom_tool(name, description, steps_json) — sauvegarder une routine réutilisable
 - create_space(kind, title, recap, data_json, create_todo_list?) — créer un espace structuré sauvegardé. kind : comparison | diy | plan | recipe. data_json selon le type (colonnes/lignes pour comparison, intro/sections pour diy, goal/milestones/github pour plan, ingredients/steps pour recipe). create_todo_list=true pour lier une liste de tâches (diy).
-- update_space(space_id|title, recap?, data_json?, status?) — mettre à jour un espace
-- show_space(space_id|title?) — afficher un espace ou tous les espaces actifs
+- update_space(space_id|title, recap?, data_json?, status?, append?) — mettre à jour un espace. append=true pour AJOUTER des lignes/étapes sans écraser. Sans space_id ni title, cible l'espace du contexte actif.
+- show_space(space_id|title?) — afficher un espace ; sans argument, affiche l'espace du contexte actif
 - list_spaces(kind?) — lister les espaces enregistrés
 - inspect_github_repo(owner, repo) — analyser un dépôt GitHub (nécessite GITHUB_TOKEN en réglages pour les dépôts privés)`;
 
@@ -36,10 +36,12 @@ Espaces structurés — quand créer quoi :
 - Recette → kind=recipe : recap court, ingredients[] ({text, quantity?, unit?}), steps[] ({order, text})
 
 Workflow comparaison / espace riche :
-1. Tu DOIS appeler create_space (données complètes dans data_json) pour toute comparaison, recette, DIY ou plan
-2. Si create_space a été appelé, termine par une réponse naturelle (résumé, recommandation)
-3. Ne jamais se limiter à une réponse texte sans create_space pour ces demandes
-Après création, mentionner Galerie → Espaces.`;
+1. Tu DOIS appeler create_space (données complètes dans data_json) pour toute nouvelle comparaison, recette, DIY ou plan
+2. Si un contexte actif est injecté et l'utilisateur demande d'ajouter/enrichir (ex. « ajoute ce modèle »), utilise update_space avec l'id du contexte actif et append=true (nouvelles lignes uniquement dans data_json)
+3. Si create_space ou update_space a été appelé, termine par une réponse naturelle (résumé, recommandation)
+4. Ne jamais se limiter à une réponse texte sans outil pour ces demandes de sauvegarde
+5. Questions complexes dans un contexte actif (conseil, choix, explication) : réponds en texte sans recréer un espace
+Après création ou mise à jour, mentionner Galerie → Espaces.`;
 
 export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): string {
   if (customTools.length === 0) return '';

@@ -1,5 +1,6 @@
 import { addDays, formatDateLabel, todayKey } from '../../lib/merlin-agent/dates.js';
 import { formatGitHubSummary, inspectGitHubRepo } from '../../lib/merlin-agent/github.js';
+import { mergeSpaceData } from '../../lib/merlin-agent/space-merge.js';
 import { normalizeReminderArgs } from '../../lib/merlin-agent/reminder-text.js';
 import type {
   AgentContext,
@@ -163,6 +164,7 @@ export class AgentStore {
   customTools: MerlinCustomTool[];
   spaces: MerlinSpace[];
   githubToken?: string;
+  private activeSpaceId?: string | null;
 
   private dirtyLists = new Set<string>();
   private dirtyReminders = new Set<string>();
@@ -184,7 +186,19 @@ export class AgentStore {
       ...s,
       data: JSON.parse(JSON.stringify(s.data)) as MerlinSpaceData,
     }));
+    this.activeSpaceId = context.activeSpaceId ?? context.activeSpace?.id ?? null;
     this.githubToken = options?.githubToken;
+  }
+
+  getActiveSpace(): MerlinSpace | undefined {
+    if (!this.activeSpaceId) return undefined;
+    return this.spaces.find((s) => s.id === this.activeSpaceId);
+  }
+
+  private resolveSpace(idOrTitle?: string): MerlinSpace | undefined {
+    const trimmed = idOrTitle?.trim();
+    if (trimmed) return this.findSpace(trimmed);
+    return this.getActiveSpace();
   }
 
   getMutations(): AgentMutations {
@@ -645,10 +659,14 @@ export class AgentStore {
     recap?: string;
     data_json?: string;
     status?: string;
+    append?: string;
   }): ToolResult {
-    const ref = args.space_id ?? args.title ?? '';
-    const space = this.findSpace(ref);
-    if (!space) return { ok: false, content: `Espace « ${ref} » introuvable.` };
+    const ref = args.space_id ?? args.title;
+    const space = this.resolveSpace(ref);
+    if (!space) {
+      const label = ref?.trim() || 'contexte actif';
+      return { ok: false, content: `Espace « ${label} » introuvable.` };
+    }
 
     if (args.recap?.trim()) space.recap = args.recap.trim();
     if (args.status === 'archived' || args.status === 'active') {
@@ -659,7 +677,8 @@ export class AgentStore {
       if (patch === null) {
         return { ok: false, content: 'data_json invalide.' };
       }
-      space.data = { ...space.data, ...patch };
+      const append = args.append === 'true' || args.append === '1';
+      space.data = mergeSpaceData(space.kind, space.data, patch, { append });
     }
 
     space.updatedAt = Date.now();
@@ -674,17 +693,22 @@ export class AgentStore {
 
   showSpace(idOrTitle?: string): ToolResult {
     if (!idOrTitle?.trim()) {
-      const active = this.spaces.filter((s) => s.status === 'active');
-      if (active.length === 0) {
+      const active = this.getActiveSpace();
+      if (active) {
+        return { ok: true, content: this.formatSpaceContent(active) };
+      }
+
+      const allActive = this.spaces.filter((s) => s.status === 'active');
+      if (allActive.length === 0) {
         return { ok: true, content: 'Aucun espace actif.' };
       }
       return {
         ok: true,
-        content: active.map((s) => this.formatSpaceContent(s)).join('\n\n---\n\n'),
+        content: allActive.map((s) => this.formatSpaceContent(s)).join('\n\n---\n\n'),
       };
     }
 
-    const space = this.findSpace(idOrTitle);
+    const space = this.resolveSpace(idOrTitle);
     if (!space) return { ok: false, content: `Espace « ${idOrTitle} » introuvable.` };
     return { ok: true, content: this.formatSpaceContent(space) };
   }
@@ -853,6 +877,7 @@ export class AgentStore {
           recap: normalized.recap,
           data_json: normalized.data_json,
           status: normalized.status,
+          append: normalized.append,
         });
       case 'show_space':
         return this.showSpace(normalized.space_id ?? normalized.title ?? normalized.id);
