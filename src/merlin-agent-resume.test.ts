@@ -266,6 +266,22 @@ describe('resumePendingAgentJobs', () => {
     expect(onStepsBatch).toHaveBeenCalledWith(steps);
     expect(mocks.startNativeAgentJobWatch).toHaveBeenCalledWith('job-1');
   });
+
+  it('réessaie le statut serveur après une erreur réseau transitoire', async () => {
+    mocks.listPendingAgentJobs.mockReturnValue([job]);
+    mocks.getAgentJobStatus
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockResolvedValue({
+        status: 'done',
+        result: doneResult,
+        steps: [],
+      });
+
+    const completed = await resumePendingAgentJobs();
+
+    expect(completed).toBe(1);
+    expect(mocks.getAgentJobStatus).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('abandonPendingAgentJobs', () => {

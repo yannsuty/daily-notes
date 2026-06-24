@@ -24,6 +24,7 @@ import { recordShortcutUsage } from './merlin-shortcuts';
 import type { AgentRunResult, AgentStep } from '../lib/merlin-agent';
 
 let resumeInFlight = false;
+let resumeQueued = false;
 
 function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError';
@@ -75,12 +76,43 @@ function watchJobInBackground(
   })
     .then((result) => applyAgentJobResult(job, result, callbacks))
     .catch(async (err) => {
-      if (isAbortError(err) || isJobExpiredError(err)) return;
+      if (isJobExpiredError(err)) {
+        const message = err instanceof Error ? err.message : 'Job expiré';
+        await failPendingJob(job, message, callbacks);
+        return;
+      }
+      if (isAbortError(err)) {
+        await startNativeAgentJobWatch(job.jobId);
+        return;
+      }
       await startNativeAgentJobWatch(job.jobId);
     })
     .finally(() => {
       releaseActivePoll(job.jobId);
     });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchJobStatusWithRetry(
+  jobId: string,
+  attempts = 4,
+): Promise<Awaited<ReturnType<typeof getAgentJobStatus>>> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await getAgentJobStatus(jobId);
+    } catch (err) {
+      lastErr = err;
+      if (isJobExpiredError(err)) throw err;
+      if (i < attempts - 1) {
+        await sleep(400 * (i + 1));
+      }
+    }
+  }
+  throw lastErr;
 }
 
 export async function abandonPendingAgentJobs(
@@ -186,7 +218,10 @@ export async function loadPendingJobProgress(
 export async function resumePendingAgentJobs(
   callbacks?: AgentJobCallbacks,
 ): Promise<number> {
-  if (resumeInFlight) return 0;
+  if (resumeInFlight) {
+    resumeQueued = true;
+    return 0;
+  }
   resumeInFlight = true;
 
   let completed = 0;
@@ -208,7 +243,7 @@ export async function resumePendingAgentJobs(
 
       try {
         try {
-          const status = await getAgentJobStatus(job.jobId);
+          const status = await fetchJobStatusWithRetry(job.jobId);
           const applied = await tryApplyFinishedJobStatus(job, status, callbacks);
           if (applied) {
             completed += 1;
@@ -248,6 +283,10 @@ export async function resumePendingAgentJobs(
     }
   } finally {
     resumeInFlight = false;
+    if (resumeQueued) {
+      resumeQueued = false;
+      void resumePendingAgentJobs(callbacks);
+    }
   }
 
   return completed;

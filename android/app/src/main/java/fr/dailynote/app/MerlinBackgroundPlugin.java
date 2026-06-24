@@ -28,6 +28,7 @@ public class MerlinBackgroundPlugin extends Plugin {
         super.load();
         instance = this;
         MerlinWakeBridge.flushPendingWake();
+        MerlinAgentJobBridge.flushPending();
     }
 
     @Override
@@ -47,6 +48,16 @@ public class MerlinBackgroundPlugin extends Plugin {
         payload.put("type", type);
         payload.put("query", query != null ? query : "");
         notifyListeners("wakeDetected", payload);
+    }
+
+    public void emitAgentJobFinished(String jobId) {
+        JSObject payload = new JSObject();
+        payload.put("jobId", jobId);
+        notifyListeners("agentJobFinished", payload);
+    }
+
+    public void emitAppForeground() {
+        notifyListeners("appForeground", new JSObject());
     }
 
     @PluginMethod

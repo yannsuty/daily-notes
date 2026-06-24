@@ -6,6 +6,7 @@ import { setDeferredReplyHandler } from './merlin-pending';
 import { listPendingAgentJobs, registerAgentJobResume, startPendingJobResumePoll, appendPendingJobStep } from './merlin-agent-jobs';
 import type { AgentStep } from '../lib/merlin-agent';
 import { resumePendingAgentJobs } from './merlin-agent-resume';
+import { registerNativeAgentJobResume } from './merlin-agent-native-watch';
 import { getMeta, saveMeta } from './db';
 import { updateShellLayoutVars } from './viewport';
 import {
@@ -217,6 +218,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
 
   registerAgentJobResume(resumeAgentJobs);
   startPendingJobResumePoll(resumeAgentJobs);
+  void registerNativeAgentJobResume(resumeAgentJobs);
   if (listPendingAgentJobs().length > 0) {
     void merlinChat?.refresh();
     merlinChat?.syncBackgroundStatus();

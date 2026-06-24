@@ -118,7 +118,7 @@ export function registerAgentJobResume(onResume: () => void): () => void {
 }
 
 /** Reprend les jobs en attente tant que l'app est visible (complément au retour premier plan). */
-export function startPendingJobResumePoll(onResume: () => void, intervalMs = 8000): () => void {
+export function startPendingJobResumePoll(onResume: () => void, intervalMs = 4000): () => void {
   const timer = setInterval(() => {
     if (document.visibilityState === 'visible' && listPendingAgentJobs().length > 0) {
       onResume();

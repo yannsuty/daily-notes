@@ -29,8 +29,8 @@ Les scénarios **Espaces** et **agent** mockent `POST /api/merlin-agent` — pas
 
 ## Hors périmètre web
 
-- Jobs agent en arrière-plan Android (natif uniquement)
+- Jobs agent en arrière-plan Android (natif uniquement) — tests unitaires + `MerlinAgentJobService`
 - Speech / notifications Capacitor
 - Sync chiffrée Vercel
 
-Ces flux restent couverts par les tests unitaires Vitest.
+Le scénario **verrouillage téléphone + reprise job** n'est pas simulable en Playwright web.

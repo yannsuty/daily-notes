@@ -20,6 +20,12 @@ public class MainActivity extends BridgeActivity {
         handleMerlinWakeIntent(intent);
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        MerlinAgentJobBridge.deliverAppForeground();
+    }
+
     private void handleMerlinWakeIntent(Intent intent) {
         if (intent == null) {
             return;

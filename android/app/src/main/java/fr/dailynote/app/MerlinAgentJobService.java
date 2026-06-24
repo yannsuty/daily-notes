@@ -105,13 +105,18 @@ public class MerlinAgentJobService extends Service {
                     return;
                 }
 
-                if ("done".equals(result.status) && result.reply != null && !result.reply.isEmpty()) {
-                    showReplyNotification(result.reply);
+                if ("done".equals(result.status)) {
+                    MerlinAgentJobBridge.deliverJobFinished(jobId);
+                    String text = result.reply != null && !result.reply.isEmpty()
+                        ? result.reply
+                        : "Merlin a terminé sa réponse.";
+                    showReplyNotification(text);
                     finishService();
                     return;
                 }
 
                 if ("error".equals(result.status)) {
+                    MerlinAgentJobBridge.deliverJobFinished(jobId);
                     showReplyNotification(result.reply != null ? result.reply : "Merlin n'a pas pu répondre.");
                     finishService();
                     return;
@@ -134,6 +139,7 @@ public class MerlinAgentJobService extends Service {
         int code = connection.getResponseCode();
         if (code == 404) {
             connection.disconnect();
+            MerlinAgentJobBridge.deliverJobFinished(jobId);
             showReplyNotification("La réflexion de Merlin a expiré.");
             finishService();
             return null;

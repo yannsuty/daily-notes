@@ -1,10 +1,18 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { apiUrl } from './api-base';
 import { logger } from './logger';
 
 export interface MerlinAgentWatchPlugin {
   watchAgentJob(options: { jobId: string; pollUrl: string }): Promise<{ ok: boolean }>;
   stopAgentJobWatch(): Promise<void>;
+  addListener(
+    eventName: 'agentJobFinished',
+    listenerFunc: (event: { jobId: string }) => void,
+  ): Promise<PluginListenerHandle>;
+  addListener(
+    eventName: 'appForeground',
+    listenerFunc: () => void,
+  ): Promise<PluginListenerHandle>;
 }
 
 const MerlinAgentWatch = registerPlugin<MerlinAgentWatchPlugin>('MerlinBackground');
@@ -34,4 +42,35 @@ export async function stopNativeAgentJobWatch(): Promise<void> {
   } catch (err) {
     logger.warn('merlin-agent-native-watch', 'stopNativeAgentJobWatch failed', err);
   }
+}
+
+let nativeResumeHandles: PluginListenerHandle[] = [];
+
+/** Reprise quand le service Android signale la fin d'un job ou le retour au premier plan. */
+export async function registerNativeAgentJobResume(
+  onResume: () => void,
+): Promise<() => void> {
+  if (!Capacitor.isNativePlatform()) {
+    return () => {};
+  }
+
+  for (const handle of nativeResumeHandles) {
+    await handle.remove();
+  }
+  nativeResumeHandles = [];
+
+  const finished = await MerlinAgentWatch.addListener('agentJobFinished', () => {
+    onResume();
+  });
+  const foreground = await MerlinAgentWatch.addListener('appForeground', () => {
+    onResume();
+  });
+  nativeResumeHandles = [finished, foreground];
+
+  return async () => {
+    for (const handle of nativeResumeHandles) {
+      await handle.remove();
+    }
+    nativeResumeHandles = [];
+  };
 }
