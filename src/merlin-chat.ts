@@ -14,7 +14,7 @@ import {
   setActiveSpaceId,
 } from './merlin-space-session';
 import { CONTEXT_CHIPS } from './merlin-intents';
-import { getWelcomeMessage, handleUserMessage } from './merlin-agent';
+import { getWelcomeMessage, createMessageId, handleUserMessage } from './merlin-agent';
 import { stepLabelForUi } from './merlin-agent-client';
 import { listPendingAgentJobs, appendPendingJobStep } from './merlin-agent-jobs';
 import { abandonPendingAgentJobs, loadPendingJobProgress } from './merlin-agent-resume';
@@ -520,7 +520,8 @@ export class MerlinChat {
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    this.appendBubble('user', trimmed, `pending-${Date.now()}`);
+    const userMessageId = createMessageId();
+    this.appendBubble('user', trimmed, userMessageId);
     this.scrollToBottom();
     const depth = assessQueryDepth(trimmed);
     this.setThinking(
@@ -531,6 +532,7 @@ export class MerlinChat {
     let result: Awaited<ReturnType<typeof handleUserMessage>>;
     try {
       result = await handleUserMessage(trimmed, {
+        userMessageId,
         onAgentStep: (step) => {
           this.renderAgentStep(step);
           const jobs = listPendingAgentJobs();
@@ -542,8 +544,8 @@ export class MerlinChat {
       this.setThinking(false);
       const message = err instanceof Error ? err.message : 'Erreur inattendue';
       this.setAiBanner(true);
-      this.showError(message);
       await this.renderMessages();
+      this.showError(message);
       return;
     }
 
@@ -557,12 +559,12 @@ export class MerlinChat {
       const errMsg = result.error ?? 'Erreur inconnue';
       const offline = !navigator.onLine;
       this.setAiBanner(!!result.aiUnavailable);
+      await this.renderMessages();
       this.showError(
         offline
           ? 'Hors ligne — connectez-vous pour discuter avec Merlin.'
           : errMsg,
       );
-      await this.renderMessages();
       return;
     }
 
@@ -575,8 +577,8 @@ export class MerlinChat {
 
     if (!result.content?.trim()) {
       this.setAiBanner(true);
-      this.showError('Merlin n\'a pas renvoyé de réponse. Réessayez ou vérifiez votre connexion.');
       await this.renderMessages();
+      this.showError('Merlin n\'a pas renvoyé de réponse. Réessayez ou vérifiez votre connexion.');
       return;
     }
 

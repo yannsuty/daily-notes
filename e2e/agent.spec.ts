@@ -29,7 +29,11 @@ test.describe('Agent — trace et retry (agent mocké)', () => {
 
     await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
     await waitForThinkingDone(page);
-    await expect(page.locator('.merlin-chat__banner')).toContainText(/indisponible/i);
+    const log = page.getByRole('log', { name: 'Conversation avec Merlin' });
+    await expect(log.locator('.merlin-chat__bubble--user')).toContainText(
+      'Compare des ventilateurs de plafond',
+    );
+    await expect(page.locator('.merlin-chat__error')).toContainText(/indisponible/i);
 
     await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
     await waitForThinkingDone(page);

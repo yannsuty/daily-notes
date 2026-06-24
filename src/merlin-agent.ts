@@ -187,6 +187,8 @@ export interface AgentReply {
 
 export interface HandleUserMessageOptions {
   onAgentStep?: (step: AgentStep) => void;
+  /** Id aligné sur la bulle optimiste du chat (évite le flash à renderMessages). */
+  userMessageId?: string;
 }
 
 async function runBackgroundAgentJobFlow(
@@ -241,6 +243,7 @@ async function appendExchange(userText: string, reply: string): Promise<void> {
   await appendMerlinMessage(assistantMsg);
 
   await noteAgentReplyForFacts(userText, reply);
+  void maybeCompressConversation();
 }
 
 export async function noteAgentReplyForFacts(userText: string, reply: string): Promise<void> {
@@ -260,18 +263,19 @@ export async function handleUserMessage(
     return { ok: false, error: 'Message vide.' };
   }
 
+  const userMsg: MerlinMessage = {
+    id: options?.userMessageId ?? createMessageId(),
+    role: 'user',
+    content: trimmed,
+    createdAt: Date.now(),
+  };
+  await appendMerlinMessage(userMsg);
+
   const explicitMatch = trimmed.match(
     /^(?:merlin[, ]+)?(?:retiens que|souviens[- ]toi que|rappelle[- ]toi que)\s+(.+)/i,
   );
   if (explicitMatch) {
     const factText = explicitMatch[1].trim();
-    const userMsg: MerlinMessage = {
-      id: createMessageId(),
-      role: 'user',
-      content: trimmed,
-      createdAt: Date.now(),
-    };
-    await appendMerlinMessage(userMsg);
 
     let reply = "C'est noté, je m'en souviendrai.";
 
@@ -310,13 +314,6 @@ export async function handleUserMessage(
   const fast = await tryFastIntent(trimmed);
   if (fast.handled) {
     const reply = fast.reply?.trim() || 'C\'est fait.';
-    const userMsg: MerlinMessage = {
-      id: createMessageId(),
-      role: 'user',
-      content: trimmed,
-      createdAt: Date.now(),
-    };
-    await appendMerlinMessage(userMsg);
     await appendExchange(trimmed, reply);
     void recordShortcutUsage(trimmed);
     void import('./sync').then(({ syncNow }) => syncNow());
@@ -327,16 +324,6 @@ export async function handleUserMessage(
       fastPath: true,
     };
   }
-
-  const userMsg: MerlinMessage = {
-    id: createMessageId(),
-    role: 'user',
-    content: trimmed,
-    createdAt: Date.now(),
-  };
-  await appendMerlinMessage(userMsg);
-
-  void maybeCompressConversation();
 
   if (shouldUseBackgroundAgent()) {
     return runBackgroundAgentJobFlow(trimmed, options) as Promise<AgentReply>;
