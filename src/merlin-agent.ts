@@ -1,4 +1,3 @@
-import { Capacitor } from '@capacitor/core';
 import {
   chatCompletion,
   LLM_UNAVAILABLE_MSG,
@@ -19,12 +18,14 @@ import { runServerAgent, startBackgroundAgentJob } from './merlin-agent-client';
 import {
   MERLIN_THINKING_PLACEHOLDER,
   savePendingAgentJob,
-  shouldStartBackgroundAgentJob,
   shouldUseBackgroundAgent,
 } from './merlin-agent-jobs';
+import {
+  startNativeAgentJobWatch,
+} from './merlin-agent-native-watch';
 import { pollPendingJobUntilDone } from './merlin-agent-resume';
 import { recordShortcutUsage } from './merlin-shortcuts';
-import { assessQueryDepth, type AgentStep } from '../lib/merlin-agent';
+import { type AgentStep } from '../lib/merlin-agent';
 import type { MerlinFact, MerlinMessage } from './types';
 
 const MAX_CONTEXT_MESSAGES = 24;
@@ -209,6 +210,10 @@ async function runBackgroundAgentJobFlow(
     startedAt: Date.now(),
   });
 
+  if (shouldUseBackgroundAgent()) {
+    void startNativeAgentJobWatch(started.jobId);
+  }
+
   const polled = await pollPendingJobUntilDone(
     {
       jobId: started.jobId,
@@ -333,72 +338,45 @@ export async function handleUserMessage(
 
   void maybeCompressConversation();
 
-  if (
-    shouldStartBackgroundAgentJob() ||
-    (shouldUseBackgroundAgent() && assessQueryDepth(trimmed) === 'deep')
-  ) {
+  if (shouldUseBackgroundAgent()) {
     return runBackgroundAgentJobFlow(trimmed, options) as Promise<AgentReply>;
   }
 
   const context = await buildAgentContext();
-  const useNativeAbortFallback = Capacitor.isNativePlatform();
-  const controller = useNativeAbortFallback ? new AbortController() : undefined;
+  const agentResult = await runServerAgent(trimmed, context, {
+    onStep: options?.onAgentStep,
+    stream: !!options?.onAgentStep,
+  });
 
-  const onVisibility = (): void => {
-    if (useNativeAbortFallback && document.visibilityState === 'hidden') {
-      controller?.abort();
-    }
-  };
-  if (useNativeAbortFallback) {
-    document.addEventListener('visibilitychange', onVisibility);
-  }
-
-  try {
-    const agentResult = await runServerAgent(trimmed, context, {
-      onStep: options?.onAgentStep,
-      stream: !!options?.onAgentStep,
-      signal: controller?.signal,
-    });
-
-    if (!agentResult.ok || !agentResult.reply) {
-      return {
-        ok: false,
-        error: agentResult.error ?? LLM_UNAVAILABLE_MSG,
-        aiUnavailable: true,
-        steps: agentResult.steps,
-        depth: agentResult.depth,
-      };
-    }
-
-    await applyAgentMutations(agentResult.mutations);
-    if (agentResult.mutations.spaces?.length) {
-      const newest = [...agentResult.mutations.spaces].sort(
-        (a, b) => b.updatedAt - a.updatedAt,
-      )[0];
-      if (newest) setActiveSpaceId(newest.id);
-    }
-    await appendExchange(trimmed, agentResult.reply);
-    void recordShortcutUsage(trimmed);
-    const { syncNow } = await import('./sync');
-    await syncNow();
-
+  if (!agentResult.ok || !agentResult.reply) {
     return {
-      ok: true,
-      content: agentResult.reply,
-      sideEffects: agentResult.sideEffects,
+      ok: false,
+      error: agentResult.error ?? LLM_UNAVAILABLE_MSG,
+      aiUnavailable: true,
       steps: agentResult.steps,
       depth: agentResult.depth,
     };
-  } catch (err) {
-    if (useNativeAbortFallback && err instanceof DOMException && err.name === 'AbortError') {
-      return runBackgroundAgentJobFlow(trimmed, options) as Promise<AgentReply>;
-    }
-    throw err;
-  } finally {
-    if (useNativeAbortFallback) {
-      document.removeEventListener('visibilitychange', onVisibility);
-    }
   }
+
+  await applyAgentMutations(agentResult.mutations);
+  if (agentResult.mutations.spaces?.length) {
+    const newest = [...agentResult.mutations.spaces].sort(
+      (a, b) => b.updatedAt - a.updatedAt,
+    )[0];
+    if (newest) setActiveSpaceId(newest.id);
+  }
+  await appendExchange(trimmed, agentResult.reply);
+  void recordShortcutUsage(trimmed);
+  const { syncNow } = await import('./sync');
+  await syncNow();
+
+  return {
+    ok: true,
+    content: agentResult.reply,
+    sideEffects: agentResult.sideEffects,
+    steps: agentResult.steps,
+    depth: agentResult.depth,
+  };
 }
 
 export async function getWelcomeMessage(): Promise<string> {
