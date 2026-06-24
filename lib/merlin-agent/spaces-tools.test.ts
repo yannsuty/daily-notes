@@ -177,6 +177,36 @@ describe('AgentStore — espaces', () => {
     expect(contextualStore.spaces[0].data.rows).toHaveLength(2);
   });
 
+  it('résout update_space avec un titre inventé par le LLM', async () => {
+    const comparison = {
+      id: 'cmp-salon',
+      kind: 'comparison' as const,
+      title: 'Comparaison — ventilateurs de plafond salon',
+      recap: 'Modèles silencieux',
+      data: {
+        columns: ['Modèle', 'Bruit'],
+        rows: [['Alpha', '30 dB']],
+      },
+      status: 'active' as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const contextualStore = new AgentStore(
+      emptyContext({ spaces: [comparison], activeSpaceId: 'cmp-salon', activeSpace: comparison }),
+    );
+
+    const result = await contextualStore.executeTool('update_space', {
+      title: 'Comparaison ventilateurs de plafond salon',
+      append: 'true',
+      data_json: { rows: [['Beta', '28 dB']] },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.content).not.toContain('introuvable');
+    expect(contextualStore.spaces[0].data.rows).toHaveLength(2);
+  });
+
   it('show_space sans id affiche le contexte actif', async () => {
     const plan = {
       id: 'plan-1',

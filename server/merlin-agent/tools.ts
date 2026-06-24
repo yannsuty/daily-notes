@@ -1,6 +1,7 @@
 import { addDays, formatDateLabel, todayKey } from '../../lib/merlin-agent/dates.js';
 import { formatGitHubSummary, inspectGitHubRepo } from '../../lib/merlin-agent/github.js';
 import { mergeSpaceData } from '../../lib/merlin-agent/space-merge.js';
+import { findSpaceByRef } from '../../lib/merlin-agent/space-match.js';
 import { normalizeReminderArgs } from '../../lib/merlin-agent/reminder-text.js';
 import type {
   AgentContext,
@@ -165,6 +166,7 @@ export class AgentStore {
   spaces: MerlinSpace[];
   githubToken?: string;
   private activeSpaceId?: string | null;
+  private activeSpace?: MerlinSpace | null;
 
   private dirtyLists = new Set<string>();
   private dirtyReminders = new Set<string>();
@@ -187,17 +189,41 @@ export class AgentStore {
       data: JSON.parse(JSON.stringify(s.data)) as MerlinSpaceData,
     }));
     this.activeSpaceId = context.activeSpaceId ?? context.activeSpace?.id ?? null;
+    this.activeSpace = context.activeSpace ?? null;
+
+    if (
+      context.activeSpace &&
+      !this.spaces.some((s) => s.id === context.activeSpace!.id)
+    ) {
+      this.spaces.push({
+        ...context.activeSpace,
+        data: JSON.parse(JSON.stringify(context.activeSpace.data)) as MerlinSpaceData,
+      });
+    }
+
     this.githubToken = options?.githubToken;
   }
 
   getActiveSpace(): MerlinSpace | undefined {
-    if (!this.activeSpaceId) return undefined;
-    return this.spaces.find((s) => s.id === this.activeSpaceId);
+    if (this.activeSpaceId) {
+      const inStore = this.spaces.find((s) => s.id === this.activeSpaceId);
+      if (inStore) return inStore;
+    }
+    if (this.activeSpace) {
+      const inStore = this.spaces.find((s) => s.id === this.activeSpace!.id);
+      if (inStore) return inStore;
+      return this.activeSpace;
+    }
+    return undefined;
   }
 
   private resolveSpace(idOrTitle?: string): MerlinSpace | undefined {
     const trimmed = idOrTitle?.trim();
-    if (trimmed) return this.findSpace(trimmed);
+    if (trimmed) {
+      const found = this.findSpace(trimmed);
+      if (found) return found;
+      return this.getActiveSpace();
+    }
     return this.getActiveSpace();
   }
 
@@ -548,13 +574,11 @@ export class AgentStore {
   }
 
   private findSpace(idOrTitle: string): MerlinSpace | undefined {
-    const trimmed = idOrTitle.trim();
-    const byId = this.spaces.find((s) => s.id === trimmed);
-    if (byId) return byId;
-    const n = normalizeTitle(trimmed);
-    return this.spaces.find(
-      (s) => normalizeTitle(s.title) === n || normalizeTitle(s.title).includes(n),
-    );
+    const active = this.getActiveSpace();
+    return findSpaceByRef(this.spaces, idOrTitle, {
+      activeSpaceId: this.activeSpaceId ?? active?.id,
+      kindHint: active?.kind,
+    });
   }
 
   private formatSpaceContent(space: MerlinSpace): string {

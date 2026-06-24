@@ -29,6 +29,7 @@ describe('formatSpaceForAgent', () => {
     );
 
     expect(text).toContain('[Comparaison] Téléphones photo');
+    expect(text).toContain('id: space-1');
     expect(text).toContain('Modèle | Prix');
     expect(text).toContain('iPhone | 999 €');
   });

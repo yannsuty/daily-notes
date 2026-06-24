@@ -70,6 +70,7 @@ export function buildSystemPrompt(context: AgentContext, memoryBlock = ''): stri
 
   if (context.activeSpace) {
     prompt += `\n\nContexte actif (l'utilisateur discute sur cet espace — priorise-le, mais tu peux toujours consulter le journal et la mémoire globale) :\n${formatSpaceForAgent(context.activeSpace)}`;
+    prompt += `\nPour update_space ou show_space sur cet espace : utilise space_id="${context.activeSpace.id}" (ne reformule pas le titre).`;
   }
 
   const spacesSummary = formatSpacesSummary(context.spaces ?? []);
