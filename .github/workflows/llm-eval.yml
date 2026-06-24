@@ -17,6 +17,34 @@ jobs:
 
       - run: npm ci
       - run: npm test
-      - run: npm run test:llm
+
+      - name: Vérifier la clé OpenRouter
+        id: openrouter
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -z "${OPENROUTER_API_KEY// }" ]; then
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::OPENROUTER_API_KEY absent — évaluations LLM ignorées (secret GitHub requis pour les exécuter)"
+            exit 0
+          fi
+          status=$(curl -sS -o /tmp/openrouter-preflight.json -w "%{http_code}" \
+            -X POST https://openrouter.ai/api/v1/chat/completions \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${OPENROUTER_API_KEY}" \
+            -H "HTTP-Referer: https://merlin.app" \
+            -H "X-Title: Merlin" \
+            -d '{"model":"openrouter/free","messages":[{"role":"user","content":"ping"}],"temperature":0,"max_tokens":1}')
+          if [ "$status" = "200" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::OPENROUTER_API_KEY invalide ou refusée (HTTP ${status}) — évaluations LLM ignorées"
+            head -c 300 /tmp/openrouter-preflight.json || true
+          fi
+
+      - name: Évaluations LLM
+        if: steps.openrouter.outputs.available == 'true'
+        run: npm run test:llm
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}

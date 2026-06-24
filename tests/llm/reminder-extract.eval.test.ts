@@ -5,6 +5,10 @@ import {
   REMINDER_EXTRACT_PROMPT,
   parseReminderExtractPayload,
 } from '../../lib/merlin-agent/reminder-extract.js';
+import {
+  checkOpenRouterPreflight,
+  preflightSkipReason,
+} from './openrouter-preflight.js';
 
 interface GoldenCase {
   input: string;
@@ -52,12 +56,7 @@ function contentFromOpenRouterPayload(payload: string): string | null {
   }
 }
 
-async function extractViaLlm(input: string) {
-  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY manquant.');
-  }
-
+async function extractViaLlm(apiKey: string, input: string) {
   const result = await callOpenRouterWithFallback(
     apiKey,
     {
@@ -81,9 +80,16 @@ async function extractViaLlm(input: string) {
   return parseReminderExtractPayload(json);
 }
 
-describe('évaluation LLM — extraction rappels', () => {
+const preflight = await checkOpenRouterPreflight();
+const skipReason = preflightSkipReason(preflight);
+if (skipReason) {
+  console.warn(`[llm-eval] ${skipReason}`);
+}
+const apiKey = preflight.status === 'ok' ? preflight.apiKey : '';
+
+describe.skipIf(preflight.status !== 'ok')('évaluation LLM — extraction rappels', () => {
   it.each(GOLDEN_CASES)('« $input »', async (golden) => {
-    const extracted = await extractViaLlm(golden.input);
+    const extracted = await extractViaLlm(apiKey, golden.input);
     expect(extracted?.isReminder).toBe(golden.isReminder);
 
     if (!golden.isReminder) return;
