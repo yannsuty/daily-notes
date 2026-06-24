@@ -65,7 +65,13 @@ export function registerAgentJobResume(onResume: () => void): () => void {
     }
   };
   document.addEventListener('visibilitychange', handler);
-  return () => document.removeEventListener('visibilitychange', handler);
+  window.addEventListener('focus', handler);
+  window.addEventListener('pageshow', handler);
+  return () => {
+    document.removeEventListener('visibilitychange', handler);
+    window.removeEventListener('focus', handler);
+    window.removeEventListener('pageshow', handler);
+  };
 }
 
 /** Reprend les jobs en attente tant que l'app est visible (complément au retour premier plan). */

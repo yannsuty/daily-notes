@@ -183,16 +183,21 @@ export async function watchPendingJobUntilDone(
     });
     return applyAgentJobResult(job, result);
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
+    if (isAbortError(err)) {
       releaseActivePoll(job.jobId);
       await startNativeAgentJobWatch(job.jobId);
       return { backgroundPending: true };
     }
-    removePendingAgentJob(job.jobId);
-    await stopNativeAgentJobWatch();
-    const message = err instanceof Error ? err.message : 'Erreur réseau';
-    await updateMerlinMessageContent(job.placeholderId, message);
-    return { ok: false, error: message, aiUnavailable: true };
+
+    if (isJobExpiredError(err)) {
+      const message = err instanceof Error ? err.message : 'Job expiré';
+      await failPendingJob(job, message);
+      return { ok: false, error: message, aiUnavailable: true };
+    }
+
+    // Réseau instable ou SSE coupé — conserver le job pour reprise au retour.
+    await startNativeAgentJobWatch(job.jobId);
+    return { backgroundPending: true };
   } finally {
     document.removeEventListener('visibilitychange', onVisibility);
     releaseActivePoll(job.jobId);

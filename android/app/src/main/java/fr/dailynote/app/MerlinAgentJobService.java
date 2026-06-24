@@ -1,5 +1,6 @@
 package fr.dailynote.app;
 
+import android.content.SharedPreferences;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -28,6 +29,9 @@ public class MerlinAgentJobService extends Service {
     private static final int NOTIFICATION_PROGRESS_ID = 42002;
     private static final int NOTIFICATION_REPLY_BASE = 43000;
     private static final long POLL_INTERVAL_MS = 2000;
+    private static final String PREFS_NAME = "merlin_agent_job";
+    private static final String PREF_JOB_ID = "job_id";
+    private static final String PREF_POLL_URL = "poll_url";
 
     private static volatile boolean running = false;
 
@@ -53,15 +57,21 @@ public class MerlinAgentJobService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-
-        jobId = intent.getStringExtra(EXTRA_JOB_ID);
-        pollUrl = intent.getStringExtra(EXTRA_POLL_URL);
-        if (jobId == null || jobId.isEmpty() || pollUrl == null || pollUrl.isEmpty()) {
-            stopSelf();
-            return START_NOT_STICKY;
+            SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+            jobId = prefs.getString(PREF_JOB_ID, null);
+            pollUrl = prefs.getString(PREF_POLL_URL, null);
+            if (jobId == null || jobId.isEmpty() || pollUrl == null || pollUrl.isEmpty()) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+        } else {
+            jobId = intent.getStringExtra(EXTRA_JOB_ID);
+            pollUrl = intent.getStringExtra(EXTRA_POLL_URL);
+            if (jobId == null || jobId.isEmpty() || pollUrl == null || pollUrl.isEmpty()) {
+                stopSelf();
+                return START_NOT_STICKY;
+            }
+            persistWatch(jobId, pollUrl);
         }
 
         shouldRun = true;
@@ -232,9 +242,22 @@ public class MerlinAgentJobService extends Service {
     private void finishService() {
         shouldRun = false;
         workerHandler.removeCallbacksAndMessages(null);
+        clearWatchPrefs();
         stopForeground(STOP_FOREGROUND_REMOVE);
         running = false;
         stopSelf();
+    }
+
+    private void persistWatch(String watchedJobId, String watchedPollUrl) {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putString(PREF_JOB_ID, watchedJobId)
+            .putString(PREF_POLL_URL, watchedPollUrl)
+            .apply();
+    }
+
+    private void clearWatchPrefs() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit().clear().apply();
     }
 
     @Override
