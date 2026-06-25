@@ -21,6 +21,7 @@ import {
   MERLIN_THINKING_PLACEHOLDER,
   createAgentJobId,
   listPendingAgentJobs,
+  markPendingJobPostComplete,
   removePendingAgentJob,
   savePendingAgentJob,
   shouldUseBackgroundAgent,
@@ -216,6 +217,8 @@ async function runBackgroundAgentJobFlow(
     userText: trimmed,
     placeholderId,
     startedAt: Date.now(),
+    postPending: true,
+    serverRegistered: false,
   };
 
   logAgentDev('agent', 'background_flow_start', {
@@ -234,15 +237,22 @@ async function runBackgroundAgentJobFlow(
 
   try {
     const started = await startBackgroundAgentJob(trimmed, context, jobId);
+    markPendingJobPostComplete(jobId, true);
     if (started.jobId !== jobId) {
       removePendingAgentJob(jobId);
-      savePendingAgentJob({ ...pendingJob, jobId: started.jobId });
+      savePendingAgentJob({
+        ...pendingJob,
+        jobId: started.jobId,
+        postPending: false,
+        serverRegistered: true,
+      });
       rememberAgentJobId(started.jobId);
       if (shouldUseBackgroundAgent()) {
         void startNativeAgentJobWatch(started.jobId);
       }
     }
   } catch (err) {
+    markPendingJobPostComplete(jobId, false);
     const message = err instanceof Error ? err.message : 'Impossible de joindre le serveur.';
     logAgentDev('agent', 'background_start_failed', { message }, jobId);
     removePendingAgentJob(jobId);

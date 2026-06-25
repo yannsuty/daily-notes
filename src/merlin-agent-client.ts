@@ -1,6 +1,11 @@
 import { apiUrl } from './api-base';
 import { isAgentDevLogEnabled, logAgentDev } from './agent-dev-log';
 import { getAiClientConfig } from './merlin-env';
+import {
+  isJobNotFoundError,
+  isRetryableJobNotFound,
+  JOB_NOT_FOUND_MESSAGE,
+} from '../lib/merlin-agent/job-poll';
 import type {
   AgentContext,
   AgentJobPollResponse,
@@ -10,6 +15,10 @@ import type {
 } from '../lib/merlin-agent';
 
 const START_BACKGROUND_TIMEOUT_MS = 45_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export interface RunServerAgentOptions {
   onStep?: (step: AgentStep) => void;
@@ -239,7 +248,7 @@ export async function getAgentJobStatus(jobId: string): Promise<AgentJobPollResp
 
   if (response.status === 404) {
     logAgentDev('agent-client', 'poll_404', { jobId }, jobId);
-    throw new Error('Job introuvable ou expiré');
+    throw new Error(JOB_NOT_FOUND_MESSAGE);
   }
 
   if (!response.ok) {
@@ -272,9 +281,12 @@ export async function watchAgentJob(
     onStep?: (step: AgentStep) => void;
     signal?: AbortSignal;
     fromStep?: number;
+    /** Ne pas abandonner sur 404 tant que le POST peut être en cours. */
+    pollGrace?: { startedAt: number; postPending?: boolean; serverRegistered?: boolean };
   },
 ): Promise<AgentRunResult> {
   let fromStep = options?.fromStep ?? 0;
+  let notFoundAttempts = 0;
 
   while (!options?.signal?.aborted) {
     const response = await fetch(
@@ -288,8 +300,21 @@ export async function watchAgentJob(
     );
 
     if (response.status === 404) {
-      throw new Error('Job introuvable ou expiré');
+      notFoundAttempts += 1;
+      const grace = options?.pollGrace;
+      if (
+        grace &&
+        isRetryableJobNotFound({ ...grace, now: Date.now() }) &&
+        notFoundAttempts < 40
+      ) {
+        logAgentDev('agent-client', 'poll_404_retry', { jobId, notFoundAttempts }, jobId);
+        await sleep(500 + Math.min(notFoundAttempts, 10) * 200);
+        continue;
+      }
+      throw new Error(JOB_NOT_FOUND_MESSAGE);
     }
+
+    notFoundAttempts = 0;
 
     if (!response.ok) {
       let detail = `Erreur serveur (${response.status})`;

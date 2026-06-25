@@ -11,6 +11,10 @@ export interface PendingAgentJob {
   placeholderId: string;
   startedAt: number;
   steps?: AgentStep[];
+  /** POST /merlin-agent encore en cours (jobId client, pas encore sur Redis). */
+  postPending?: boolean;
+  /** POST accepté par le serveur. */
+  serverRegistered?: boolean;
 }
 
 export interface AgentJobCallbacks {
@@ -94,6 +98,21 @@ export function removeStalePendingAgentJobs(now = Date.now()): PendingAgentJob[]
 
 export function createAgentJobId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function markPendingJobPostComplete(
+  jobId: string,
+  serverRegistered: boolean,
+): void {
+  const jobs = readJobs();
+  const index = jobs.findIndex((j) => j.jobId === jobId);
+  if (index < 0) return;
+  jobs[index] = {
+    ...jobs[index],
+    postPending: false,
+    serverRegistered,
+  };
+  writeJobs(jobs);
 }
 
 export function shouldUseBackgroundAgent(): boolean {
