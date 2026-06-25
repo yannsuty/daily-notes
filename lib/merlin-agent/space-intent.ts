@@ -1,4 +1,5 @@
-import type { MerlinSpaceKind } from './types.js';
+import type { MerlinSpace, MerlinSpaceKind } from './types.js';
+import { findSpaceByRef } from './space-match.js';
 
 const SPACE_INTENT: { kind: MerlinSpaceKind; pattern: RegExp }[] = [
   {
@@ -74,6 +75,56 @@ export function shouldUpdateActiveSpace(
   }
 
   return /\b(aussi|également|encore|en plus|autre modèle|un modèle de plus)\b/i.test(userMessage);
+}
+
+export function isInformationalSpaceQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (/\b(compare[rzs]?|comparaison|versus|vs\.?|tableau comparatif)\b/i.test(trimmed)) {
+    return false;
+  }
+  if (detectSpaceUpdateIntent(trimmed)) return false;
+  return /^(quel|quelle|quels|quelles|comment|pourquoi|c'est quoi|dis[- ]moi|parle[- ]moi|explique|tu en penses quoi|avis sur|des infos sur|renseigne)/i.test(
+    trimmed,
+  );
+}
+
+/** Cherche un espace existant lié au sujet (sans espace actif en session). */
+export function findRelatedSpace(
+  spaces: MerlinSpace[],
+  userMessage: string,
+  kind?: MerlinSpaceKind | null,
+): MerlinSpace | undefined {
+  const kindHint = kind ?? detectSpaceKind(userMessage) ?? undefined;
+  if (!kindHint) return undefined;
+
+  const byRef = findSpaceByRef(spaces, userMessage, { kindHint });
+  if (byRef) return byRef;
+
+  const normalizedMsg = userMessage
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '');
+
+  return spaces
+    .filter((s) => s.kind === kindHint && s.status === 'active')
+    .find((s) => {
+      const title = s.title
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '')
+        .replace(/^comparaison\s*[—–-]\s*/i, '')
+        .replace(/^comparaison\s+/i, '');
+      if (title.length > 3 && normalizedMsg.includes(title)) return true;
+
+      const titleWords = title.split(/\s+/).filter((w) => w.length > 3);
+      const msgWords = new Set(normalizedMsg.split(/\s+/).filter((w) => w.length > 3));
+      if (titleWords.length === 0) return false;
+      const hits = titleWords.filter((w) => msgWords.has(w)).length;
+      return hits >= Math.min(2, titleWords.length);
+    });
 }
 
 export function inferSpaceTitle(userMessage: string, kind: MerlinSpaceKind): string {

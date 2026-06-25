@@ -192,12 +192,59 @@ describe('ensureSpacePersisted', () => {
     expect((store.getMutations().spaces ?? []).length).toBeGreaterThan(0);
   });
 
-  it('ne crée pas de doublon si même kind sans intention nouvelle', async () => {
+  it('réutilise un espace existant sans espace actif en session', async () => {
+    const context: AgentContext = {
+      days: {},
+      facts: [],
+      lists: [],
+      reminders: [],
+      customTools: [],
+      spaces: [activeComparison],
+      activeSpaceId: null,
+      activeSpace: null,
+      conversationSummary: '',
+      recentMessages: [],
+    };
+    const store = new AgentStore(context);
+    extractMocks.extractSpaceUpdate.mockResolvedValue({
+      title: activeComparison.title,
+      recap: 'Avec Beta',
+      data: { rows: [['Beta', '190 €']] },
+    });
+
+    const ok = await ensureSpacePersisted(
+      store,
+      'Compare des ventilateurs de plafond silencieux',
+      'Voici Beta.',
+      config,
+    );
+
+    expect(ok).toBe(true);
+    expect(extractMocks.extractSpaceData).not.toHaveBeenCalled();
+    expect(store.spaces).toHaveLength(1);
+    expect(store.spaces[0].data.rows).toHaveLength(2);
+  });
+
+  it('ne crée pas d’espace pour une question informative', async () => {
+    const store = makeStore([]);
+
+    const ok = await ensureSpacePersisted(
+      store,
+      'Quel ventilateur de plafond pour une chambre de 20 m² ?',
+      'Voici quelques critères.',
+      config,
+    );
+
+    expect(ok).toBe(false);
+    expect(extractMocks.extractSpaceData).not.toHaveBeenCalled();
+  });
+
+  it('enrichit l’espace actif au lieu de créer un doublon', async () => {
     const store = makeStore();
-    extractMocks.extractSpaceData.mockResolvedValue({
-      title: 'Autre comparaison',
-      recap: '…',
-      data: { rows: [['X']] },
+    extractMocks.extractSpaceUpdate.mockResolvedValue({
+      title: activeComparison.title,
+      recap: 'Silencieux',
+      data: { rows: [['Silencieux X', '220 €']] },
     });
 
     const ok = await ensureSpacePersisted(
@@ -209,8 +256,9 @@ describe('ensureSpacePersisted', () => {
       activeComparison,
     );
 
-    expect(ok).toBe(false);
+    expect(ok).toBe(true);
     expect(extractMocks.extractSpaceData).not.toHaveBeenCalled();
+    expect(store.getActiveSpace()?.data.rows).toHaveLength(2);
   });
 
   it('crée un nouvel espace si l’utilisateur le demande explicitement', async () => {

@@ -4,6 +4,7 @@ import {
   detectSpaceUpdateIntent,
   inferSpaceTitle,
   isExplicitNewSpaceIntent,
+  isInformationalSpaceQuestion,
   shouldUpdateActiveSpace,
 } from './space-intent.js';
 
@@ -21,6 +22,14 @@ describe('detectSpaceKind', () => {
 
   it('retourne null hors sujet', () => {
     expect(detectSpaceKind('Quel temps fait-il ?')).toBeNull();
+  });
+});
+
+describe('isInformationalSpaceQuestion', () => {
+  it('détecte une question sans demande de tableau', () => {
+    expect(isInformationalSpaceQuestion('Quel ventilateur de plafond pour 20 m² ?')).toBe(true);
+    expect(isInformationalSpaceQuestion('Parle-moi des ventilateurs de plafond')).toBe(true);
+    expect(isInformationalSpaceQuestion('Compare des ventilateurs silencieux')).toBe(false);
   });
 });
 

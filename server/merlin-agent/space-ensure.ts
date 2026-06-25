@@ -1,12 +1,28 @@
 import {
   detectSpaceKind,
+  findRelatedSpace,
   isExplicitNewSpaceIntent,
+  isInformationalSpaceQuestion,
   shouldExtendActiveSpace,
 } from '../../lib/merlin-agent/space-intent.js';
 import { mergeSpaceData } from '../../lib/merlin-agent/space-merge.js';
 import type { AgentClientConfig, MerlinSpace } from '../../lib/merlin-agent/types.js';
 import { extractSpaceData, extractSpaceUpdate } from './space-extract.js';
 import type { AgentStore } from './tools.js';
+
+function resolveTargetSpace(
+  store: AgentStore,
+  userMessage: string,
+  activeSpace?: MerlinSpace | null,
+): MerlinSpace | null {
+  const fromSession = activeSpace ?? store.getActiveSpace() ?? null;
+  if (fromSession) return fromSession;
+
+  const kind = detectSpaceKind(userMessage);
+  if (!kind) return null;
+
+  return findRelatedSpace(store.spaces, userMessage, kind) ?? null;
+}
 
 export async function ensureSpacePersisted(
   store: AgentStore,
@@ -18,7 +34,7 @@ export async function ensureSpacePersisted(
 ): Promise<boolean> {
   if (store.hasDirtySpaces()) return false;
 
-  const active = activeSpace ?? store.getActiveSpace() ?? null;
+  const active = resolveTargetSpace(store, userMessage, activeSpace);
 
   if (active && shouldExtendActiveSpace(userMessage, active.kind)) {
     let extracted = await extractSpaceUpdate(active, userMessage, reply, config, referer);
@@ -51,8 +67,37 @@ export async function ensureSpacePersisted(
   const kind = detectSpaceKind(userMessage);
   if (!kind) return false;
 
+  if (isInformationalSpaceQuestion(userMessage)) return false;
+
   if (active && kind === active.kind && !isExplicitNewSpaceIntent(userMessage)) {
     return false;
+  }
+
+  const existing = findRelatedSpace(store.spaces, userMessage, kind);
+  if (existing && !isExplicitNewSpaceIntent(userMessage)) {
+    let extracted = await extractSpaceUpdate(existing, userMessage, reply, config, referer);
+    if (!extracted?.data) {
+      extracted = await extractSpaceData(kind, userMessage, reply, config, referer);
+      if (extracted?.data) {
+        extracted = {
+          title: existing.title,
+          recap: extracted.recap,
+          data: extracted.data,
+        };
+      }
+    }
+    if (!extracted?.data) return false;
+
+    const preview = mergeSpaceData(existing.kind, existing.data, extracted.data, { append: true });
+    if (JSON.stringify(preview) === JSON.stringify(existing.data)) return false;
+
+    const result = store.updateSpace({
+      space_id: existing.id,
+      recap: extracted.recap,
+      data_json: JSON.stringify(extracted.data),
+      append: 'true',
+    });
+    return result.ok;
   }
 
   const extracted = await extractSpaceData(kind, userMessage, reply, config, referer);
