@@ -7,6 +7,12 @@ import {
   saveMerlinSpace,
 } from './db';
 import { normalizeComparisonData } from '../lib/merlin-agent/space-merge';
+import {
+  getIgnoredComparisonRows,
+  getVisibleComparisonRows,
+  ignoreComparisonRow,
+  restoreComparisonRow,
+} from '../lib/merlin-agent/comparison-items';
 import { SPACE_KIND_LABELS } from './merlin-space-format';
 import { getActiveSpaceId, setActiveSpaceId } from './merlin-space-session';
 import { renderMarkdownToHtml } from './markdown';
@@ -36,6 +42,7 @@ export class EspacesPage {
   private onDiscuss?: (spaceId: string) => void;
   private filter: MerlinSpaceKind | 'all' = 'all';
   private viewingId: string | null = null;
+  private comparisonItemIndex = 0;
 
   constructor(container: HTMLElement, options: EspacesPageOptions = {}) {
     this.container = container;
@@ -95,8 +102,9 @@ export class EspacesPage {
     await this.render();
   }
 
-  openSpace(spaceId: string): void {
+  openSpace(spaceId: string, itemIndex = 0): void {
     this.viewingId = spaceId;
+    this.comparisonItemIndex = itemIndex;
     void this.render();
   }
 
@@ -114,6 +122,15 @@ export class EspacesPage {
         if (JSON.stringify(repaired) !== JSON.stringify(space.data)) {
           space = { ...space, data: repaired, updatedAt: Date.now() };
           await saveMerlinSpace(space);
+        }
+        const visibleCount = getVisibleComparisonRows(space.data).length;
+        if (visibleCount > 0) {
+          this.comparisonItemIndex = Math.min(
+            Math.max(0, this.comparisonItemIndex),
+            visibleCount - 1,
+          );
+        } else {
+          this.comparisonItemIndex = 0;
         }
       }
       this.scrollEl.hidden = true;
@@ -209,7 +226,7 @@ export class EspacesPage {
     ];
 
     if (space.kind === 'comparison') {
-      parts.push(this.renderComparisonTable(space));
+      parts.push(this.renderComparisonReader(space));
     }
     if (space.kind === 'diy') {
       parts.push(await this.renderDiyDetail(space));
@@ -224,25 +241,127 @@ export class EspacesPage {
     return parts.join('');
   }
 
-  private renderComparisonTable(space: MerlinSpace): string {
+  private renderComparisonReader(space: MerlinSpace): string {
+    const { columns = [] } = normalizeComparisonData(space.data);
+    if (columns.length === 0) {
+      return '<p class="espaces-page__empty-section">Tableau en cours de génération…</p>';
+    }
+
+    const visible = getVisibleComparisonRows(space.data);
+    const ignored = getIgnoredComparisonRows(space.data);
+
+    if (visible.length === 0 && ignored.length > 0) {
+      return `
+        <section class="espaces-page__section espaces-page__comparison">
+          <p class="espaces-page__empty-section">Tous les articles ont été ignorés.</p>
+          ${this.renderIgnoredRowsSection(ignored)}
+          ${this.renderComparisonTable(space, { hideIgnored: true })}
+        </section>
+      `;
+    }
+
+    if (visible.length === 0) {
+      return '<p class="espaces-page__empty-section">Aucun article à comparer.</p>';
+    }
+
+    const idx = Math.min(this.comparisonItemIndex, visible.length - 1);
+    const entry = visible[idx];
+    const nameCol = columns[0] ?? 'Article';
+    const name = entry.row[0]?.trim() || `Article ${idx + 1}`;
+    const details = columns
+      .slice(1)
+      .map((col, i) => {
+        const value = entry.row[i + 1]?.trim();
+        if (!value) return '';
+        return `<div class="espaces-page__comparison-prop"><dt>${escapeHtml(col)}</dt><dd>${escapeHtml(value)}</dd></div>`;
+      })
+      .filter(Boolean)
+      .join('');
+
+    const nav = `
+      <nav class="espaces-page__comparison-nav" aria-label="Navigation entre articles">
+        <button type="button" class="btn btn--ghost btn--sm" data-action="prev-item" ${idx <= 0 ? 'disabled' : ''} aria-label="Article précédent">‹ Précédent</button>
+        <span class="espaces-page__comparison-pager">${idx + 1} / ${visible.length}</span>
+        <button type="button" class="btn btn--ghost btn--sm" data-action="next-item" ${idx >= visible.length - 1 ? 'disabled' : ''} aria-label="Article suivant">Suivant ›</button>
+      </nav>
+    `;
+
+    return `
+      <section class="espaces-page__section espaces-page__comparison">
+        <div class="espaces-page__comparison-header">
+          <h4>Articles comparés</h4>
+          ${ignored.length > 0 ? `<span class="espaces-page__comparison-meta">${ignored.length} ignoré${ignored.length > 1 ? 's' : ''}</span>` : ''}
+        </div>
+        <article class="espaces-page__comparison-card" data-row-key="${escapeHtml(entry.key)}">
+          <p class="espaces-page__comparison-label">${escapeHtml(nameCol)}</p>
+          <h5 class="espaces-page__comparison-name">${escapeHtml(name)}</h5>
+          ${details ? `<dl class="espaces-page__comparison-props">${details}</dl>` : ''}
+        </article>
+        ${nav}
+        <div class="espaces-page__comparison-actions">
+          <button type="button" class="btn btn--ghost btn--sm espaces-page__ignore-btn" data-action="ignore-item" data-row-key="${escapeHtml(entry.key)}">Ignorer cet article</button>
+        </div>
+        ${this.renderIgnoredRowsSection(ignored)}
+        <details class="espaces-page__table-details">
+          <summary>Tableau complet</summary>
+          ${this.renderComparisonTable(space, { hideIgnored: true })}
+        </details>
+      </section>
+    `;
+  }
+
+  private renderIgnoredRowsSection(
+    ignored: ReturnType<typeof getIgnoredComparisonRows>,
+  ): string {
+    if (ignored.length === 0) return '';
+    const items = ignored
+      .map(
+        (entry) =>
+          `<li class="espaces-page__ignored-item">
+            <span>${escapeHtml(entry.row[0] ?? 'Article')}</span>
+            <button type="button" class="btn btn--ghost btn--sm" data-action="restore-item" data-row-key="${escapeHtml(entry.key)}">Rétablir</button>
+          </li>`,
+      )
+      .join('');
+    return `
+      <details class="espaces-page__ignored-details">
+        <summary>${ignored.length} article${ignored.length > 1 ? 's' : ''} ignoré${ignored.length > 1 ? 's' : ''}</summary>
+        <ul class="espaces-page__ignored-list">${items}</ul>
+      </details>
+    `;
+  }
+
+  private renderComparisonTable(
+    space: MerlinSpace,
+    options?: { hideIgnored?: boolean },
+  ): string {
     const { columns = [], rows = [] } = normalizeComparisonData(space.data);
     if (columns.length === 0) {
       return '<p class="espaces-page__empty-section">Tableau en cours de génération…</p>';
     }
+
+    const ignoredKeys = options?.hideIgnored
+      ? new Set((space.data.ignoredRows ?? []).map((k) => k.trim().toLowerCase()))
+      : null;
+
+    const visibleRows = ignoredKeys
+      ? rows.filter((row) => {
+          const key = (row[0] ?? '').trim().toLowerCase();
+          return !key || !ignoredKeys.has(key);
+        })
+      : rows;
+
     const head = `<tr>${columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
-    const body = rows
+    const body = visibleRows
       .map(
         (row) =>
           `<tr>${columns.map((_, i) => `<td>${escapeHtml(row[i] ?? '')}</td>`).join('')}</tr>`,
       )
       .join('');
     return `
-      <section class="espaces-page__section">
-        <h4>Tableau comparatif</h4>
-        <div class="espaces-page__table-wrap">
-          <table class="espaces-page__table">${head}${body}</table>
-        </div>
-      </section>
+      <div class="espaces-page__table-wrap">
+        <table class="espaces-page__table">${head}${body}</table>
+      </div>
     `;
   }
 
@@ -383,6 +502,29 @@ export class EspacesPage {
         void this.handleToggleMilestone(space.id, (btn as HTMLElement).dataset.milestoneId!);
       });
     });
+
+    this.detailEl.querySelector('[data-action="prev-item"]')?.addEventListener('click', () => {
+      if (this.comparisonItemIndex > 0) {
+        this.comparisonItemIndex -= 1;
+        void this.render();
+      }
+    });
+
+    this.detailEl.querySelector('[data-action="next-item"]')?.addEventListener('click', () => {
+      this.comparisonItemIndex += 1;
+      void this.render();
+    });
+
+    this.detailEl.querySelector('[data-action="ignore-item"]')?.addEventListener('click', (e) => {
+      const key = (e.currentTarget as HTMLElement).dataset.rowKey;
+      if (key) void this.handleIgnoreRow(space.id, key);
+    });
+
+    this.detailEl.querySelectorAll('[data-action="restore-item"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        void this.handleRestoreRow(space.id, (btn as HTMLElement).dataset.rowKey!);
+      });
+    });
   }
 
   private async handleToggleTodo(listId: string, itemId: string): Promise<void> {
@@ -396,6 +538,42 @@ export class EspacesPage {
     await saveMerlinList(list);
     if (this.viewingId) await this.render();
     this.onUpdate?.();
+  }
+
+  private async handleIgnoreRow(spaceId: string, rowKey: string): Promise<void> {
+    const space = await getMerlinSpace(spaceId);
+    if (!space || space.kind !== 'comparison') return;
+
+    const visibleBefore = getVisibleComparisonRows(space.data).length;
+    const nextData = ignoreComparisonRow(space.data, rowKey);
+    if (nextData === space.data) return;
+
+    const visibleAfter = getVisibleComparisonRows(nextData).length;
+    if (this.comparisonItemIndex >= visibleAfter && visibleAfter > 0) {
+      this.comparisonItemIndex = visibleAfter - 1;
+    }
+
+    await saveMerlinSpace({ ...space, data: nextData, updatedAt: Date.now() });
+    if (this.viewingId) await this.render();
+    this.onUpdate?.();
+    void syncNow();
+
+    if (visibleBefore > 0 && visibleAfter === 0) {
+      this.comparisonItemIndex = 0;
+    }
+  }
+
+  private async handleRestoreRow(spaceId: string, rowKey: string): Promise<void> {
+    const space = await getMerlinSpace(spaceId);
+    if (!space || space.kind !== 'comparison') return;
+
+    const nextData = restoreComparisonRow(space.data, rowKey);
+    if (nextData === space.data) return;
+
+    await saveMerlinSpace({ ...space, data: nextData, updatedAt: Date.now() });
+    if (this.viewingId) await this.render();
+    this.onUpdate?.();
+    void syncNow();
   }
 
   private async handleToggleMilestone(spaceId: string, milestoneId: string): Promise<void> {
