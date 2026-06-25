@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 import { apiUrl } from './api-base';
+import { logAgentDev } from './agent-dev-log';
 import { logger } from './logger';
 
 export interface MerlinAgentWatchPlugin {
@@ -35,6 +36,7 @@ export async function startNativeAgentJobWatch(jobId: string): Promise<void> {
   }
 
   try {
+    logAgentDev('native-watch', 'start', { pollUrl }, jobId);
     await MerlinAgentWatch.watchAgentJob({
       jobId,
       pollUrl,
@@ -69,10 +71,12 @@ export async function registerNativeAgentJobResume(
   }
   nativeResumeHandles = [];
 
-  const finished = await MerlinAgentWatch.addListener('agentJobFinished', () => {
+  const finished = await MerlinAgentWatch.addListener('agentJobFinished', (event) => {
+    logAgentDev('native-watch', 'job_finished', { jobId: event.jobId }, event.jobId);
     onResume();
   });
   const foreground = await MerlinAgentWatch.addListener('appForeground', () => {
+    logAgentDev('native-watch', 'app_foreground');
     onResume();
   });
   nativeResumeHandles = [finished, foreground];

@@ -13,6 +13,7 @@ import {
 } from './db';
 import { tryFastIntent } from './merlin-intents';
 import { applyAgentMutations, buildAgentContext } from './merlin-agent-context';
+import { logAgentDev } from './agent-dev-log';
 import { setActiveSpaceId } from './merlin-space-session';
 import { runServerAgent, startBackgroundAgentJob } from './merlin-agent-client';
 import {
@@ -204,6 +205,10 @@ async function runBackgroundAgentJobFlow(
   });
 
   const context = await buildAgentContext();
+  logAgentDev('agent', 'background_flow_start', {
+    messagePreview: trimmed.slice(0, 120),
+    activeSpaceId: context.activeSpaceId,
+  });
   const started = await startBackgroundAgentJob(trimmed, context);
   savePendingAgentJob({
     jobId: started.jobId,

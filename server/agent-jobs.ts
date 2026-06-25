@@ -110,6 +110,13 @@ export async function expireStaleRunningJob(jobId: string): Promise<AgentJobReco
   const job = await getAgentJob(jobId);
   if (!job) return null;
   if (!isStaleRunningJob(job)) return job;
+  const { appendAgentJobDevLog } = await import('./agent-dev-log.js');
+  await appendAgentJobDevLog(jobId, 'stale', 'expire', {
+    lastUpdatedAt: job.updatedAt,
+    segmentCount: job.segmentCount,
+    checkpointPhase: job.checkpoint?.phase,
+    steps: job.steps.length,
+  });
   await failAgentJob(
     jobId,
     'La réflexion de Merlin a expiré côté serveur. Rouvrez l’app ou réessayez.',

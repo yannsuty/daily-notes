@@ -1,4 +1,5 @@
 import { apiUrl } from './api-base';
+import { isAgentDevLogEnabled, logAgentDev } from './agent-dev-log';
 import { getAiClientConfig } from './merlin-env';
 import type {
   AgentContext,
@@ -162,6 +163,13 @@ export async function startBackgroundAgentJob(
   jobId?: string,
 ): Promise<AgentJobStartResponse> {
   const clientConfig = await getAiClientConfig();
+  const devLog = isAgentDevLogEnabled();
+
+  logAgentDev('agent-client', 'start_background', {
+    jobId,
+    messagePreview: message.trim().slice(0, 120),
+    activeSpaceId: context.activeSpaceId,
+  }, jobId);
 
   const response = await fetch(apiUrl('/api/merlin-agent'), {
     method: 'POST',
@@ -171,6 +179,7 @@ export async function startBackgroundAgentJob(
       context,
       background: true,
       jobId,
+      devLog,
       config: {
         apiKey: clientConfig.apiKey,
         modelChain: clientConfig.modelChain,
@@ -190,20 +199,25 @@ export async function startBackgroundAgentJob(
     } catch {
       // ignore
     }
+    logAgentDev('agent-client', 'start_background_error', { status: response.status, detail }, jobId);
     throw new Error(detail);
   }
 
-  return (await response.json()) as AgentJobStartResponse;
+  const started = (await response.json()) as AgentJobStartResponse;
+  logAgentDev('agent-client', 'start_background_ok', { jobId: started.jobId, status: started.status }, started.jobId);
+  return started;
 }
 
 /** Lecture ponctuelle de l'état d'un job (sans SSE) — utile au retour en premier plan. */
 export async function getAgentJobStatus(jobId: string): Promise<AgentJobPollResponse> {
+  const devQuery = isAgentDevLogEnabled() ? '&devLog=1' : '';
   const response = await fetch(
-    apiUrl(`/api/merlin-agent?jobId=${encodeURIComponent(jobId)}`),
+    apiUrl(`/api/merlin-agent?jobId=${encodeURIComponent(jobId)}${devQuery}`),
     { headers: { Accept: 'application/json' } },
   );
 
   if (response.status === 404) {
+    logAgentDev('agent-client', 'poll_404', { jobId }, jobId);
     throw new Error('Job introuvable ou expiré');
   }
 
@@ -215,10 +229,20 @@ export async function getAgentJobStatus(jobId: string): Promise<AgentJobPollResp
     } catch {
       // ignore
     }
+    logAgentDev('agent-client', 'poll_error', { status: response.status, detail }, jobId);
     throw new Error(detail);
   }
 
-  return (await response.json()) as AgentJobPollResponse;
+  const status = (await response.json()) as AgentJobPollResponse;
+  logAgentDev('agent-client', 'poll_ok', {
+    status: status.status,
+    steps: status.steps?.length ?? 0,
+    segmentCount: status.segmentCount,
+    checkpointPhase: status.checkpointPhase,
+    serverLogs: status.devLogs?.length ?? 0,
+    error: status.error,
+  }, jobId);
+  return status;
 }
 
 export async function watchAgentJob(
