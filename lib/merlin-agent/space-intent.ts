@@ -20,6 +20,13 @@ export function detectSpaceKind(text: string): MerlinSpaceKind | null {
   return null;
 }
 
+/** Demande de corriger / réaligner un tableau comparatif existant. */
+export function isComparisonRepairRequest(text: string): boolean {
+  return /\b(cass[ée]|d[ée]cal[ée]|mal align[ée]|colonnes?\s+d[ée]cal|lignes?\s+\d|corrig|r[ée]par|r[ée]aligne|remplace\s+(le\s+)?tableau|tableau\s+(est\s+)?(cass[ée]|incorrect|faux))\b/i.test(
+    text,
+  );
+}
+
 /** Demande explicite de créer un nouvel espace plutôt que d'enrichir l'actif. */
 export function isExplicitNewSpaceIntent(text: string): boolean {
   return /\b(nouveau|nouvelle|cr[ée]e|cr[ée]er|autre comparaison|from scratch|s[ée]par[ée])\b/i.test(
@@ -51,6 +58,7 @@ export function shouldExtendActiveSpace(
   userMessage: string,
   activeKind: MerlinSpaceKind,
 ): boolean {
+  if (activeKind === 'comparison' && isComparisonRepairRequest(userMessage)) return true;
   if (shouldUpdateActiveSpace(userMessage, activeKind)) return true;
   const kind = detectSpaceKind(userMessage);
   return kind === activeKind && !isExplicitNewSpaceIntent(userMessage);

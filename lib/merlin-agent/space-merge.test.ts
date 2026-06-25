@@ -1,5 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { mergeSpaceData } from './space-merge.js';
+import { mergeSpaceData, normalizeComparisonData, normalizeComparisonRow } from './space-merge.js';
+
+describe('normalizeComparisonData', () => {
+  const columns = ['Modèle', 'Prix estimé (€)', 'Diamètre', 'Puissance (W)'];
+
+  it('supprime une cellule vide parasite après un modèle en pouces', () => {
+    const data = normalizeComparisonData({
+      columns,
+      rows: [['Philips Classic 44', '', '150-200', '44" (110 cm)', '75']],
+    });
+    expect(data.rows?.[0]).toEqual(['Philips Classic 44', '150-200', '44" (110 cm)', '75']);
+  });
+
+  it('tronque les lignes trop longues', () => {
+    const data = normalizeComparisonData({
+      columns: ['A', 'B'],
+      rows: [['1', '2', '3']],
+    });
+    expect(data.rows?.[0]).toEqual(['1', '2']);
+  });
+
+  it('complète les lignes trop courtes', () => {
+    const data = normalizeComparisonData({
+      columns: ['A', 'B', 'C'],
+      rows: [['1', '2']],
+    });
+    expect(data.rows?.[0]).toEqual(['1', '2', '']);
+  });
+});
+
+describe('normalizeComparisonRow', () => {
+  it('répare une ligne avec guillemet pouce mal échappé', () => {
+    expect(normalizeComparisonRow(['Hunter Original', '', '120-180', '52" (132 cm)'], 3)).toEqual([
+      'Hunter Original',
+      '120-180',
+      '52" (132 cm)',
+    ]);
+  });
+});
 
 describe('mergeSpaceData — comparison', () => {
   const existing = {
@@ -38,5 +76,31 @@ describe('mergeSpaceData — comparison', () => {
     );
     expect(merged.columns).toContain('Garantie');
     expect(merged.rows?.[1][0]).toBe('Gamma');
+  });
+
+  it('remplace tout le tableau si le patch contient colonnes et toutes les lignes', () => {
+    const full = {
+      columns: ['Modèle', 'Prix', 'Bruit'],
+      rows: [
+        ['Alpha', '150 €', '30 dB'],
+        ['Beta', '180 €', '28 dB'],
+        ['Gamma', '200 €', '27 dB'],
+      ],
+    };
+    const merged = mergeSpaceData('comparison', existing, full, { append: true });
+    expect(merged.rows).toHaveLength(3);
+    expect(merged.rows?.[2][0]).toBe('Gamma');
+  });
+
+  it('normalise les lignes décalées lors d un append', () => {
+    const merged = mergeSpaceData(
+      'comparison',
+      existing,
+      {
+        rows: [['Beta', '', '180 €', '28 dB']],
+      },
+      { append: true },
+    );
+    expect(merged.rows?.[1]).toEqual(['Beta', '180 €', '28 dB']);
   });
 });

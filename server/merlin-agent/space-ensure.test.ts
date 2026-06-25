@@ -151,6 +151,36 @@ describe('ensureSpacePersisted', () => {
     expect(ok).toBe(false);
   });
 
+  it('remplace le tableau en mode réparation (append=false)', async () => {
+    const store = makeStore();
+    extractMocks.extractSpaceData.mockResolvedValue({
+      title: 'Comparaison corrigée',
+      recap: 'Tableau aligné',
+      data: {
+        columns: ['Modèle', 'Prix'],
+        rows: [
+          ['Alpha', '150 €'],
+          ['Beta', '180 €'],
+        ],
+      },
+    });
+
+    const ok = await ensureSpacePersisted(
+      store,
+      'Le tableau de comparaison est cassé, les lignes sont décalées',
+      'Voici le tableau corrigé.',
+      config,
+      undefined,
+      activeComparison,
+    );
+
+    expect(ok).toBe(true);
+    expect(extractMocks.extractSpaceData).toHaveBeenCalled();
+    expect(extractMocks.extractSpaceUpdate).not.toHaveBeenCalled();
+    expect(store.getActiveSpace()?.data.rows).toHaveLength(2);
+    expect(store.getActiveSpace()?.title).toBe('Comparaison corrigée');
+  });
+
   it('crée un nouvel espace quand le kind change', async () => {
     const store = makeStore();
     extractMocks.extractSpaceData.mockResolvedValue({

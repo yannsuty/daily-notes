@@ -6,6 +6,7 @@ import {
   saveMerlinList,
   saveMerlinSpace,
 } from './db';
+import { normalizeComparisonData } from '../lib/merlin-agent/space-merge';
 import { SPACE_KIND_LABELS } from './merlin-space-format';
 import { setActiveSpaceId } from './merlin-space-session';
 import { renderMarkdownToHtml } from './markdown';
@@ -216,13 +217,16 @@ export class EspacesPage {
   }
 
   private renderComparisonTable(space: MerlinSpace): string {
-    const { columns = [], rows = [] } = space.data;
+    const { columns = [], rows = [] } = normalizeComparisonData(space.data);
     if (columns.length === 0) {
       return '<p class="espaces-page__empty-section">Tableau en cours de génération…</p>';
     }
     const head = `<tr>${columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
     const body = rows
-      .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join('')}</tr>`)
+      .map(
+        (row) =>
+          `<tr>${columns.map((_, i) => `<td>${escapeHtml(row[i] ?? '')}</td>`).join('')}</tr>`,
+      )
       .join('');
     return `
       <section class="espaces-page__section">

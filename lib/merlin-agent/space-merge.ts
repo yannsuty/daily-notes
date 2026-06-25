@@ -1,5 +1,38 @@
 import type { MerlinSpaceData, MerlinSpaceKind } from './types.js';
 
+/** Supprime les cellules vides parasites (ex. `["Philips Classic 44", "", "150-200"]` après JSON mal échappé). */
+function compactSpuriousEmptyCells(cells: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i];
+    if (cell === '' && out.length > 0 && i + 1 < cells.length && cells[i + 1] !== '') {
+      continue;
+    }
+    out.push(cell);
+  }
+  return out;
+}
+
+export function normalizeComparisonRow(row: string[], columnCount: number): string[] {
+  const cells = compactSpuriousEmptyCells(row.map((c) => (c == null ? '' : String(c))));
+  if (cells.length > columnCount) {
+    return cells.slice(0, columnCount);
+  }
+  if (cells.length < columnCount) {
+    return [...cells, ...Array(columnCount - cells.length).fill('')];
+  }
+  return cells;
+}
+
+/** Aligne chaque ligne sur le nombre de colonnes (tronque ou complète). */
+export function normalizeComparisonData(data: MerlinSpaceData): MerlinSpaceData {
+  const columns = (data.columns ?? []).map((c) => String(c).trim());
+  if (columns.length === 0) return data;
+
+  const rows = (data.rows ?? []).map((row) => normalizeComparisonRow(row, columns.length));
+  return { ...data, columns, rows };
+}
+
 function unionColumns(existing: string[], incoming: string[]): string[] {
   const result = [...existing];
   for (const col of incoming) {
@@ -15,33 +48,66 @@ function alignRowToColumns(row: string[], columns: string[], sourceColumns: stri
   });
 }
 
+function isFullComparisonReplace(
+  existing: MerlinSpaceData,
+  patch: MerlinSpaceData,
+  append: boolean,
+): boolean {
+  if (!append) return false;
+  const patchColumns = patch.columns ?? [];
+  const patchRows = patch.rows ?? [];
+  const existingRows = existing.rows ?? [];
+  if (patchColumns.length === 0 || patchRows.length === 0) return false;
+  return (
+    patchRows.length >= existingRows.length &&
+    patchColumns.length >= (existing.columns?.length ?? 0)
+  );
+}
+
 function mergeComparisonData(
   existing: MerlinSpaceData,
   patch: MerlinSpaceData,
   append: boolean,
 ): MerlinSpaceData {
-  const existingColumns = existing.columns ?? [];
-  const patchColumns = patch.columns ?? [];
+  const normalizedPatch = normalizeComparisonData(patch);
+  const normalizedExisting = normalizeComparisonData(existing);
+
+  const existingColumns = normalizedExisting.columns ?? [];
+  const patchColumns = normalizedPatch.columns ?? [];
   const columns =
     patchColumns.length > 0 ? unionColumns(existingColumns, patchColumns) : existingColumns;
 
-  const existingRows = existing.rows ?? [];
-  const patchRows = patch.rows ?? [];
+  const existingRows = normalizedExisting.rows ?? [];
+  const patchRows = normalizedPatch.rows ?? [];
 
   if (patchRows.length === 0) {
-    return { ...existing, columns: columns.length > 0 ? columns : existing.columns };
+    return normalizeComparisonData({
+      ...normalizedExisting,
+      columns: columns.length > 0 ? columns : normalizedExisting.columns,
+    });
   }
 
   const alignedPatchRows = patchRows.map((row) =>
-    alignRowToColumns(row, columns, patchColumns.length > 0 ? patchColumns : columns),
+    alignRowToColumns(
+      normalizeComparisonRow(row, columns.length),
+      columns,
+      patchColumns.length > 0 ? patchColumns : columns,
+    ),
   );
 
-  if (!append || existingRows.length === 0) {
-    return { ...existing, columns, rows: alignedPatchRows };
+  const replaceAll =
+    !append || existingRows.length === 0 || isFullComparisonReplace(normalizedExisting, normalizedPatch, append);
+
+  if (replaceAll) {
+    return normalizeComparisonData({ ...normalizedExisting, columns, rows: alignedPatchRows });
   }
 
   const alignedExisting = existingRows.map((row) =>
-    alignRowToColumns(row, columns, existingColumns),
+    alignRowToColumns(
+      normalizeComparisonRow(row, columns.length),
+      columns,
+      existingColumns,
+    ),
   );
 
   const rowKey = (row: string[]) => (row[0] ?? '').trim().toLowerCase();
@@ -57,7 +123,7 @@ function mergeComparisonData(
     }
   }
 
-  return { ...existing, columns, rows: merged };
+  return normalizeComparisonData({ ...normalizedExisting, columns, rows: merged });
 }
 
 function mergeRecipeData(

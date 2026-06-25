@@ -3,10 +3,22 @@ import {
   detectSpaceKind,
   detectSpaceUpdateIntent,
   inferSpaceTitle,
+  isComparisonRepairRequest,
   isExplicitNewSpaceIntent,
   isInformationalSpaceQuestion,
   shouldUpdateActiveSpace,
 } from './space-intent.js';
+
+describe('isComparisonRepairRequest', () => {
+  it('détecte une demande de correction de tableau', () => {
+    expect(
+      isComparisonRepairRequest(
+        'Le tableau de comparaison est cassé, du 7 au 13 les données sont décalés',
+      ),
+    ).toBe(true);
+    expect(isComparisonRepairRequest('Compare des ventilateurs silencieux')).toBe(false);
+  });
+});
 
 describe('detectSpaceKind', () => {
   it('détecte une comparaison de ventilateurs', () => {

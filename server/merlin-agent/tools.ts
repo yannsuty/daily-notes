@@ -1,6 +1,6 @@
 import { addDays, formatDateLabel, todayKey } from '../../lib/merlin-agent/dates.js';
 import { formatGitHubSummary, inspectGitHubRepo } from '../../lib/merlin-agent/github.js';
-import { mergeSpaceData } from '../../lib/merlin-agent/space-merge.js';
+import { mergeSpaceData, normalizeComparisonData } from '../../lib/merlin-agent/space-merge.js';
 import { findSpaceByRef } from '../../lib/merlin-agent/space-match.js';
 import {
   isWebTool,
@@ -679,6 +679,7 @@ export class AgentStore {
       return { ok: false, content: 'data_json invalide.' };
     }
     if (parsedData) data = parsedData;
+    if (kind === 'comparison') data = normalizeComparisonData(data);
 
     if (kind === 'diy' && args.create_todo_list === 'true') {
       const listResult = this.createList(`DIY — ${title}`);
@@ -726,6 +727,9 @@ export class AgentStore {
     }
 
     if (args.recap?.trim()) space.recap = args.recap.trim();
+    if (args.space_id?.trim() && args.title?.trim()) {
+      space.title = args.title.trim();
+    }
     if (args.status === 'archived' || args.status === 'active') {
       space.status = args.status;
     }

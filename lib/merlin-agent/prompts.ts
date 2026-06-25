@@ -31,7 +31,7 @@ ${ROUTINE_CONDITION_DOCS}
 - web_search(query, max_results?) — rechercher sur Internet (actualités, infos factuelles, météo, prix…). N'utilise pas pour le journal personnel
 - fetch_page(url) — lire le contenu textuel d'une page web (après une recherche ou si l'utilisateur donne un lien)
 - create_space(kind, title, recap, data_json, create_todo_list?) — créer un espace structuré sauvegardé. kind : comparison | diy | plan | recipe. data_json selon le type (colonnes/lignes pour comparison, intro/sections pour diy, goal/milestones/github pour plan, ingredients/steps pour recipe). create_todo_list=true pour lier une liste de tâches (diy).
-- update_space(space_id|title, recap?, data_json?, status?, append?) — mettre à jour un espace. append=true pour AJOUTER des lignes/étapes sans écraser. Sans space_id ni title, cible l'espace du contexte actif.
+- update_space(space_id|title, recap?, data_json?, status?, append?) — mettre à jour un espace. append=true pour AJOUTER des lignes/étapes sans écraser. Sans space_id ni title, cible l'espace du contexte actif. Pour renommer : space_id + title (nouveau titre).
 - show_space(space_id|title?) — afficher un espace ; sans argument, affiche l'espace du contexte actif
 - list_spaces(kind?) — lister les espaces enregistrés
 - inspect_github_repo(owner, repo) — analyser un dépôt GitHub (nécessite GITHUB_TOKEN en réglages pour les dépôts privés)`;
@@ -46,9 +46,10 @@ Espaces structurés — quand créer quoi :
 Workflow comparaison / espace riche :
 1. Tu DOIS appeler create_space (données complètes dans data_json) pour toute nouvelle comparaison, recette, DIY ou plan
 2. Si un contexte actif est injecté et l'utilisateur demande d'ajouter/enrichir (ex. « ajoute ce modèle »), utilise update_space avec l'id du contexte actif et append=true (nouvelles lignes uniquement dans data_json)
-3. Si create_space ou update_space a été appelé, termine par une réponse naturelle (résumé, recommandation)
-4. Ne jamais se limiter à une réponse texte sans outil pour ces demandes de sauvegarde
-5. Questions complexes dans un contexte actif (conseil, choix, explication) : réponds en texte sans recréer un espace
+3. Si le tableau est cassé / décalé / à corriger : update_space avec space_id du contexte actif, append=false (ou omis), data_json avec columns[] ET toutes les rows[][] corrigées (tableau complet, pas seulement les lignes concernées). Toujours inclure columns pour garantir l'alignement.
+4. Si create_space ou update_space a été appelé, termine par une réponse naturelle (résumé, recommandation)
+5. Ne jamais se limiter à une réponse texte sans outil pour ces demandes de sauvegarde
+6. Questions complexes dans un contexte actif (conseil, choix, explication) : réponds en texte sans recréer un espace
 Après création ou mise à jour, mentionner Galerie → Espaces.`;
 
 export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): string {

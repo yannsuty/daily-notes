@@ -1,6 +1,7 @@
 import {
   detectSpaceKind,
   findRelatedSpace,
+  isComparisonRepairRequest,
   isExplicitNewSpaceIntent,
   isInformationalSpaceQuestion,
   shouldExtendActiveSpace,
@@ -37,7 +38,11 @@ export async function ensureSpacePersisted(
   const active = resolveTargetSpace(store, userMessage, activeSpace);
 
   if (active && shouldExtendActiveSpace(userMessage, active.kind)) {
-    let extracted = await extractSpaceUpdate(active, userMessage, reply, config, referer);
+    const repair = active.kind === 'comparison' && isComparisonRepairRequest(userMessage);
+
+    let extracted = repair
+      ? await extractSpaceData(active.kind, userMessage, reply, config, referer)
+      : await extractSpaceUpdate(active, userMessage, reply, config, referer);
 
     if (!extracted?.data) {
       const fallback = await extractSpaceData(active.kind, userMessage, reply, config, referer);
@@ -52,14 +57,16 @@ export async function ensureSpacePersisted(
 
     if (!extracted?.data) return false;
 
-    const preview = mergeSpaceData(active.kind, active.data, extracted.data, { append: true });
+    const append = repair ? false : true;
+    const preview = mergeSpaceData(active.kind, active.data, extracted.data, { append });
     if (JSON.stringify(preview) === JSON.stringify(active.data)) return false;
 
     const result = store.updateSpace({
       space_id: active.id,
+      title: repair && extracted.title ? extracted.title : undefined,
       recap: extracted.recap,
       data_json: JSON.stringify(extracted.data),
-      append: 'true',
+      append: append ? 'true' : 'false',
     });
     return result.ok;
   }

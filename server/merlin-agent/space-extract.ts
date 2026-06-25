@@ -118,7 +118,7 @@ ${assistantReply.slice(0, 6000)}`,
     return {
       title: existing.title,
       recap: fallback.recap,
-      data: merged,
+      data: fallback.data,
     };
   }
 
