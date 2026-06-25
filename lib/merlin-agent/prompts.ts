@@ -24,6 +24,7 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - create_reminder(text, timeOfDay?, recurrence?, contextTags?) — créer un rappel horaire ou contextuel (tags : travail, maison, courses). Règles : text = uniquement l'action à faire (sans lieu ni condition) ; contextTags = lieu quand le rappel dépend d'un endroit. Ne reformule pas : « quand je rentre à la maison je dois sortir les poubelles » → text « sortir les poubelles », contextTags « maison »
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
+- delete_reminder(text?) — supprimer définitivement un rappel (ex. « retire le rappel de sortir les poubelles »)
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)
 - save_custom_tool(name, description, steps_json, params_json?) — sauvegarder une routine (≤5 étapes, web et espaces inclus). params_json : [{"name":"ville","description":"Ville","required":true,"default":"Paris"}]
 

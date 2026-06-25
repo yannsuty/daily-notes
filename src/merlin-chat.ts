@@ -275,10 +275,11 @@ export class MerlinChat {
         <h4 class="merlin-actions__heading">Rappels contextuels</h4>
         <ul class="merlin-actions__list">
           ${contextReminders
-            .map(
-              (r) =>
-                `<li><span class="merlin-actions__item merlin-actions__item--static">📍 ${escapeHtml(r.text)} <span class="merlin-actions__meta">${r.trigger.kind === 'context' ? r.trigger.tags.join(', ') : ''}</span></span></li>`,
-            )
+            .map((r) => {
+              const tags =
+                r.trigger.kind === 'context' ? r.trigger.tags.join(', ') : '';
+              return `<li><button type="button" class="merlin-actions__item" data-action="complete-reminder" data-reminder-id="${r.id}">📍 ${escapeHtml(r.text)}${tags ? ` <span class="merlin-actions__meta">${escapeHtml(tags)}</span>` : ''}</button></li>`;
+            })
             .join('')}
         </ul>
       </div>`);

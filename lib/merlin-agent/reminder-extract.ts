@@ -47,7 +47,7 @@ export function likelyReminderIntent(text: string): boolean {
     return false;
   }
   if (
-    /^(?:ajoute|crée|creer|créer|montre|affiche|coche|décoche|mes rappels|liste des|\/|routine\s+)/i.test(
+    /^(?:ajoute|crée|creer|créer|montre|affiche|coche|décoche|mes rappels|liste des|\/|routine\s+|retire|retirer|supprime|supprimer|annule|annuler|enlève|enlever|ne me rappelle)/i.test(
       t,
     )
   ) {

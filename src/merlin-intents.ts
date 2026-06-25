@@ -1,6 +1,6 @@
 import { tryParseAddListIntent } from '../lib/merlin-agent/list-fast-path';
 import { likelyReminderIntent } from '../lib/merlin-agent/reminder-extract';
-import { buildLocalReminderFallback } from '../lib/merlin-agent/reminder-text';
+import { buildLocalReminderFallback, cleanReminderActionText } from '../lib/merlin-agent/reminder-text';
 import { detectContextTags } from './merlin-context';
 import { extractReminderFields } from './merlin-reminder-extract';
 import { executeMerlinTool, type ToolResult } from './merlin-tools';
@@ -49,6 +49,29 @@ async function resolveReminderArgs(text: string): Promise<Record<string, string>
   return reminderArgsFromLocal(text);
 }
 
+function isDeleteReminderIntent(text: string): boolean {
+  if (/^ne (?:me )?rappelle(?:[- ]moi)? plus\b/i.test(text)) return true;
+  return /^(?:retire(?:r)?|supprime(?:r)?|annule(?:r)?|enl[eè]ve(?:r)?|oublie)\s+(?:le\s+|mon\s+|un\s+)?rappel\b/i.test(
+    text,
+  );
+}
+
+function deleteReminderHint(text: string): string | undefined {
+  const noMoreMatch = text.match(/^ne (?:me )?rappelle(?:[- ]moi)? plus (?:de )?(.+)/i);
+  if (noMoreMatch) {
+    return cleanReminderActionText(noMoreMatch[1].trim()) || noMoreMatch[1].trim() || undefined;
+  }
+
+  const deleteMatch = text.match(
+    /^(?:retire(?:r)?|supprime(?:r)?|annule(?:r)?|enl[eè]ve(?:r)?|oublie)\s+(?:le\s+|mon\s+|un\s+)?rappel(?:\s+(?:de|pour|sur|contextuel))?\s+(.+)/i,
+  );
+  if (deleteMatch) {
+    return cleanReminderActionText(deleteMatch[1].trim()) || deleteMatch[1].trim() || undefined;
+  }
+
+  return undefined;
+}
+
 export async function tryFastIntent(rawText: string): Promise<IntentResult> {
   const text = stripMerlinPrefix(rawText.trim());
   if (!text) return { handled: false };
@@ -79,6 +102,20 @@ export async function tryFastIntent(rawText: string): Promise<IntentResult> {
       reply: result.content,
       sideEffects: result.mutation,
       usedTool: 'complete_reminder',
+    };
+  }
+
+  // Delete reminder: "retire le rappel de sortir les poubelles"
+  if (isDeleteReminderIntent(text)) {
+    const hint = deleteReminderHint(text);
+    const args: Record<string, string> = {};
+    if (hint) args.text = hint;
+    const result = await executeMerlinTool('delete_reminder', args);
+    return {
+      handled: true,
+      reply: result.content,
+      sideEffects: result.mutation,
+      usedTool: 'delete_reminder',
     };
   }
 
@@ -220,7 +257,7 @@ export function likelyFastPath(text: string): boolean {
   const t = stripMerlinPrefix(text.trim());
   if (!t) return false;
   return (
-    /^(?:ajoute|rappelle|c'est fait|c est fait|j[e']?\s*suis|nous sommes|contexte|crée|creer|créer|montre|affiche|mes rappels|coche|décoche|\/|routine\s+)/i.test(
+    /^(?:ajoute|rappelle|c'est fait|c est fait|j[e']?\s*suis|nous sommes|contexte|crée|creer|créer|montre|affiche|mes rappels|coche|décoche|retire|retirer|supprime|supprimer|annule|annuler|enlève|enlever|\/|routine\s+)/i.test(
       t,
     ) ||
     likelyReminderIntent(t) ||

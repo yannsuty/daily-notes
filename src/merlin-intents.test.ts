@@ -77,4 +77,23 @@ describe('tryFastIntent — rappels', () => {
     expect(result.handled).toBe(false);
     expect(mocks.executeMerlinTool).not.toHaveBeenCalled();
   });
+
+  it('supprime un rappel contextuel via la voie rapide', async () => {
+    mocks.executeMerlinTool.mockResolvedValue({
+      ok: true,
+      content: 'Rappel « sortir les poubelles » supprimé.',
+      mutation: 'reminder_completed',
+    });
+
+    const result = await tryFastIntent(
+      'retire le rappel de sortir les poubelles quand je rentre à la maison',
+    );
+
+    expect(result.handled).toBe(true);
+    expect(result.reply).toContain('supprimé');
+    expect(mocks.executeMerlinTool).toHaveBeenCalledWith('delete_reminder', {
+      text: 'sortir les poubelles',
+    });
+    expect(mocks.extractReminderFields).not.toHaveBeenCalled();
+  });
 });

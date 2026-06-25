@@ -1,7 +1,8 @@
-import { normalizeReminderArgs } from '../lib/merlin-agent/reminder-text';
+import { cleanReminderActionText, normalizeReminderArgs } from '../lib/merlin-agent/reminder-text';
 import { contextTagsMatch, detectContextTags, normalizeContextTags } from './merlin-context';
 import {
   deleteMerlinList,
+  deleteMerlinReminder,
   getMerlinCustomToolByName,
   getMerlinLists,
   getMerlinReminders,
@@ -328,17 +329,43 @@ export async function listReminders(): Promise<ToolResult> {
   return { ok: true, content: `Rappels actifs :\n${lines.join('\n')}` };
 }
 
+function findActiveReminderByHint(
+  active: MerlinReminder[],
+  text?: string,
+): MerlinReminder | undefined {
+  if (active.length === 0) return undefined;
+  if (!text?.trim()) return active[0];
+
+  const raw = text.trim();
+  const tags = detectContextTags(raw);
+  let candidates = active;
+  if (tags.length > 0) {
+    const byContext = active.filter(
+      (r) => r.trigger.kind === 'context' && contextTagsMatch(tags, r.trigger.tags),
+    );
+    if (byContext.length > 0) candidates = byContext;
+  }
+
+  const cleaned = cleanReminderActionText(raw).toLowerCase();
+  const normalized = raw.toLowerCase();
+  const needles = [cleaned, normalized].filter((n) => n.length >= 2);
+  for (const needle of needles) {
+    const match = candidates.find(
+      (r) =>
+        r.text.toLowerCase().includes(needle) || needle.includes(r.text.toLowerCase()),
+    );
+    if (match) return match;
+  }
+
+  return candidates[0];
+}
+
 export async function completeReminder(text?: string): Promise<ToolResult> {
   const reminders = await getMerlinReminders();
   const active = reminders.filter((r) => r.status === 'active');
-  if (active.length === 0) {
+  const target = findActiveReminderByHint(active, text);
+  if (!target) {
     return { ok: false, content: 'Aucun rappel actif à terminer.' };
-  }
-
-  let target = active[0];
-  if (text?.trim()) {
-    const n = text.trim().toLowerCase();
-    target = active.find((r) => r.text.toLowerCase().includes(n)) ?? target;
   }
 
   target.status = 'done';
@@ -351,6 +378,26 @@ export async function completeReminder(text?: string): Promise<ToolResult> {
   return {
     ok: true,
     content: `Rappel « ${target.text} » marqué comme fait.`,
+    mutation: 'reminder_completed',
+  };
+}
+
+export async function deleteReminder(text?: string): Promise<ToolResult> {
+  const reminders = await getMerlinReminders();
+  const active = reminders.filter((r) => r.status === 'active');
+  const target = findActiveReminderByHint(active, text);
+  if (!target) {
+    return { ok: false, content: 'Aucun rappel actif à supprimer.' };
+  }
+
+  await deleteMerlinReminder(target.id);
+
+  const { rescheduleMerlinReminders } = await import('./merlin-scheduler');
+  void rescheduleMerlinReminders();
+
+  return {
+    ok: true,
+    content: `Rappel « ${target.text} » supprimé.`,
     mutation: 'reminder_completed',
   };
 }
@@ -395,6 +442,7 @@ const MUTATION_TOOLS = new Set([
   'toggle_list_item',
   'create_reminder',
   'complete_reminder',
+  'delete_reminder',
   'trigger_context',
   'delete_list',
 ]);
@@ -442,6 +490,8 @@ export async function executeMerlinTool(
       return listReminders();
     case 'complete_reminder':
       return completeReminder(args.text ?? args.item);
+    case 'delete_reminder':
+      return deleteReminder(args.text ?? args.item);
     case 'trigger_context':
       return triggerContext(args.tags ?? args.context ?? '');
     case 'delete_list':
@@ -478,6 +528,7 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 - create_reminder(text, timeOfDay?, recurrence?, contextTags?) — créer un rappel contextuel ou horaire. text = action seule ; contextTags = lieu (travail, maison, courses). Ex. « quand je rentre à la maison je dois sortir les poubelles » → text « sortir les poubelles », contextTags « maison »
 - list_reminders() — lister les rappels actifs
 - complete_reminder(text?) — marquer un rappel comme fait
+- delete_reminder(text?) — supprimer définitivement un rappel
 - trigger_context(tags) — déclencher les rappels d'un contexte (ex. travail, maison)
 - save_custom_tool(name, description, steps_json) — sauvegarder une routine réutilisable`;
 

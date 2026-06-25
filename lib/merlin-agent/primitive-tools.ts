@@ -10,6 +10,7 @@ export const PRIMITIVE_TOOL_NAMES = [
   'create_reminder',
   'list_reminders',
   'complete_reminder',
+  'delete_reminder',
   'trigger_context',
   'delete_list',
   'web_search',

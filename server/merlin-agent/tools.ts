@@ -17,7 +17,7 @@ import {
   shouldRunRoutineStep,
 } from '../../lib/merlin-agent/routine.js';
 import { mergeWebSources } from '../../lib/merlin-agent/web.js';
-import { normalizeReminderArgs } from '../../lib/merlin-agent/reminder-text.js';
+import { cleanReminderActionText, normalizeReminderArgs } from '../../lib/merlin-agent/reminder-text.js';
 import { runWebTool } from './web-tools.js';
 import type {
   AgentClientConfig,
@@ -60,6 +60,7 @@ const MUTATION_TOOLS = new Set([
   'toggle_list_item',
   'create_reminder',
   'complete_reminder',
+  'delete_reminder',
   'trigger_context',
   'delete_list',
   'save_custom_tool',
@@ -74,6 +75,7 @@ const IMMEDIATE_REPLY_TOOLS = new Set([
   'toggle_list_item',
   'create_reminder',
   'complete_reminder',
+  'delete_reminder',
   'trigger_context',
   'delete_list',
   'save_custom_tool',
@@ -570,6 +572,39 @@ export class AgentStore {
     };
   }
 
+  deleteReminder(text?: string): ToolResult {
+    const active = this.reminders.filter((r) => r.status === 'active');
+    if (active.length === 0) {
+      return { ok: false, content: 'Aucun rappel actif à supprimer.' };
+    }
+
+    let target = active[0];
+    if (text?.trim()) {
+      const n = text.trim().toLowerCase();
+      const cleaned = cleanReminderActionText(text).toLowerCase();
+      const needles = [cleaned, n].filter((value) => value.length >= 2);
+      for (const needle of needles) {
+        const match = active.find(
+          (r) =>
+            r.text.toLowerCase().includes(needle) || needle.includes(r.text.toLowerCase()),
+        );
+        if (match) {
+          target = match;
+          break;
+        }
+      }
+    }
+
+    this.dirtyReminders.add(target.id);
+    this.reminders = this.reminders.filter((r) => r.id !== target.id);
+
+    return {
+      ok: true,
+      content: `Rappel « ${target.text} » supprimé.`,
+      mutation: 'reminder_completed',
+    };
+  }
+
   triggerContext(tagsInput: string): ToolResult {
     const tags = tagsInput
       .split(/[,;]+/)
@@ -896,6 +931,8 @@ export class AgentStore {
         return this.listReminders();
       case 'complete_reminder':
         return this.completeReminder(args.text ?? args.item);
+      case 'delete_reminder':
+        return this.deleteReminder(args.text ?? args.item);
       case 'trigger_context':
         return this.triggerContext(args.tags ?? args.context ?? '');
       case 'delete_list':
