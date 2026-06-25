@@ -1,6 +1,32 @@
 import type { MerlinSpaceData, MerlinSpaceKind } from './types.js';
 
-/** Supprime les cellules vides parasites (ex. `["Philips Classic 44", "", "150-200"]` après JSON mal échappé). */
+function findColumnIndex(columns: string[], pattern: RegExp, fallback: number): number {
+  const idx = columns.findIndex((c) => pattern.test(c));
+  return idx >= 0 ? idx : fallback;
+}
+
+function isLikelyDiameter(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  return /\d+\s*["″']\s*\(\s*\d+/i.test(v) || /^\d+\s*["″']\s*$/i.test(v);
+}
+
+function isLikelyPrice(value: string): boolean {
+  const v = value.trim();
+  if (!v) return false;
+  return /€/.test(v) || /\d+\s*[-–]\s*\d+/.test(v);
+}
+
+function scoreComparisonRow(row: string[], columns: string[]): number {
+  const dIdx = findColumnIndex(columns, /diam/i, 2);
+  const pIdx = findColumnIndex(columns, /prix/i, 1);
+  let score = 0;
+  if (isLikelyDiameter(row[dIdx] ?? '')) score += 3;
+  if (isLikelyPrice(row[pIdx] ?? '')) score += 2;
+  return score;
+}
+
+/** Supprime les cellules vides parasites (ex. `["Philips Classic 44", "", "150-200"]`). */
 function compactSpuriousEmptyCells(cells: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < cells.length; i++) {
@@ -11,6 +37,50 @@ function compactSpuriousEmptyCells(cells: string[]): string[] {
     out.push(cell);
   }
   return out;
+}
+
+/** Répare une ligne trop longue ou décalée (colonne en trop après le modèle). */
+export function repairComparisonRow(row: string[], columns: string[]): string[] {
+  const n = columns.length;
+  if (n === 0) return row.map((c) => String(c ?? ''));
+
+  let cells = compactSpuriousEmptyCells(row.map((c) => (c == null ? '' : String(c))));
+  const dIdx = findColumnIndex(columns, /diam/i, 2);
+
+  if (cells.length === n && !isLikelyDiameter(cells[dIdx] ?? '')) {
+    if (dIdx > 0 && isLikelyDiameter(cells[dIdx - 1] ?? '')) {
+      const trial = cells.filter((_, i) => i !== dIdx - 1);
+      if (trial.length === n - 1) {
+        const padded = normalizeComparisonRow(trial, n);
+        if (isLikelyDiameter(padded[dIdx] ?? '')) cells = padded;
+      }
+    }
+  }
+
+  if (cells.length === n + 1) {
+    let best: string[] | null = null;
+    let bestScore = scoreComparisonRow(cells.slice(0, n), columns) - 1;
+
+    for (let remove = 0; remove < cells.length; remove++) {
+      const trial = cells.filter((_, i) => i !== remove);
+      if (trial.length !== n) continue;
+      const score = scoreComparisonRow(trial, columns);
+      const bonus = remove > 0 && remove <= dIdx ? 1 : 0;
+      if (score + bonus > bestScore) {
+        bestScore = score + bonus;
+        best = trial;
+      }
+    }
+    if (best && bestScore >= 3) return best;
+  }
+
+  if (cells.length > n) {
+    return cells.slice(0, n);
+  }
+  if (cells.length < n) {
+    return [...cells, ...Array(n - cells.length).fill('')];
+  }
+  return cells;
 }
 
 export function normalizeComparisonRow(row: string[], columnCount: number): string[] {
@@ -24,12 +94,12 @@ export function normalizeComparisonRow(row: string[], columnCount: number): stri
   return cells;
 }
 
-/** Aligne chaque ligne sur le nombre de colonnes (tronque ou complète). */
+/** Aligne et répare chaque ligne du tableau comparatif. */
 export function normalizeComparisonData(data: MerlinSpaceData): MerlinSpaceData {
   const columns = (data.columns ?? []).map((c) => String(c).trim());
   if (columns.length === 0) return data;
 
-  const rows = (data.rows ?? []).map((row) => normalizeComparisonRow(row, columns.length));
+  const rows = (data.rows ?? []).map((row) => repairComparisonRow(row, columns));
   return { ...data, columns, rows };
 }
 
@@ -89,25 +159,23 @@ function mergeComparisonData(
 
   const alignedPatchRows = patchRows.map((row) =>
     alignRowToColumns(
-      normalizeComparisonRow(row, columns.length),
+      repairComparisonRow(row, columns),
       columns,
       patchColumns.length > 0 ? patchColumns : columns,
     ),
   );
 
   const replaceAll =
-    !append || existingRows.length === 0 || isFullComparisonReplace(normalizedExisting, normalizedPatch, append);
+    !append ||
+    existingRows.length === 0 ||
+    isFullComparisonReplace(normalizedExisting, normalizedPatch, append);
 
   if (replaceAll) {
     return normalizeComparisonData({ ...normalizedExisting, columns, rows: alignedPatchRows });
   }
 
   const alignedExisting = existingRows.map((row) =>
-    alignRowToColumns(
-      normalizeComparisonRow(row, columns.length),
-      columns,
-      existingColumns,
-    ),
+    alignRowToColumns(repairComparisonRow(row, columns), columns, existingColumns),
   );
 
   const rowKey = (row: string[]) => (row[0] ?? '').trim().toLowerCase();

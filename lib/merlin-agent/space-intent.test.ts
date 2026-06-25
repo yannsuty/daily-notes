@@ -16,6 +16,7 @@ describe('isComparisonRepairRequest', () => {
         'Le tableau de comparaison est cassé, du 7 au 13 les données sont décalés',
       ),
     ).toBe(true);
+    expect(isComparisonRepairRequest('Tu peux le corriger ?')).toBe(true);
     expect(isComparisonRepairRequest('Compare des ventilateurs silencieux')).toBe(false);
   });
 });

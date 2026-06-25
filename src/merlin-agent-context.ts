@@ -14,6 +14,7 @@ import {
   saveMerlinSpace,
 } from './db';
 import { getActiveSpaceId } from './merlin-space-session';
+import { normalizeComparisonData } from '../lib/merlin-agent/space-merge';
 import type { AgentContext, AgentMutations } from '../lib/merlin-agent';
 
 const MAX_CONTEXT_MESSAGES = 24;
@@ -85,7 +86,14 @@ export async function applyAgentMutations(mutations: AgentMutations): Promise<vo
 
   if (mutations.spaces?.length) {
     for (const space of mutations.spaces) {
-      await saveMerlinSpace(space);
+      if (space.kind === 'comparison') {
+        await saveMerlinSpace({
+          ...space,
+          data: normalizeComparisonData(space.data),
+        });
+      } else {
+        await saveMerlinSpace(space);
+      }
     }
   }
 }

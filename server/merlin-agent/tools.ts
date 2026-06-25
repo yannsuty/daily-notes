@@ -738,8 +738,19 @@ export class AgentStore {
       if (patch === null) {
         return { ok: false, content: 'data_json invalide.' };
       }
-      const append = args.append === 'true' || args.append === '1';
+      let append = args.append === 'true' || args.append === '1';
+      if (
+        space.kind === 'comparison' &&
+        patch.columns?.length &&
+        (patch.rows?.length ?? 0) >= (space.data.rows?.length ?? 0) &&
+        (space.data.rows?.length ?? 0) > 0
+      ) {
+        append = false;
+      }
       space.data = mergeSpaceData(space.kind, space.data, patch, { append });
+      if (space.kind === 'comparison') {
+        space.data = normalizeComparisonData(space.data);
+      }
     }
 
     space.updatedAt = Date.now();

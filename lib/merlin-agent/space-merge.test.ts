@@ -1,5 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { mergeSpaceData, normalizeComparisonData, normalizeComparisonRow } from './space-merge.js';
+import { mergeSpaceData, normalizeComparisonData, normalizeComparisonRow, repairComparisonRow } from './space-merge.js';
+
+describe('repairComparisonRow', () => {
+  const columns = ['Modèle', 'Prix estimé (€)', 'Diamètre', 'Puissance (W)'];
+
+  it('répare une ligne décalée avec fragment de diamètre après le modèle', () => {
+    const broken = ['Hunter Original', '52"', '120-180', '52" (132 cm)', '80'];
+    expect(repairComparisonRow(broken, columns)).toEqual([
+      'Hunter Original',
+      '120-180',
+      '52" (132 cm)',
+      '80',
+    ]);
+  });
+
+  it('répare une ligne de longueur correcte mais décalée', () => {
+    const broken = ['Minka Aire LightWave', '50"', '200-280', '50" (127 cm)', '90'];
+    expect(repairComparisonRow(broken, columns)).toEqual([
+      'Minka Aire LightWave',
+      '200-280',
+      '50" (127 cm)',
+      '90',
+    ]);
+  });
+});
 
 describe('normalizeComparisonData', () => {
   const columns = ['Modèle', 'Prix estimé (€)', 'Diamètre', 'Puissance (W)'];

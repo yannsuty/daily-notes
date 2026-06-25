@@ -22,8 +22,11 @@ export function detectSpaceKind(text: string): MerlinSpaceKind | null {
 
 /** Demande de corriger / réaligner un tableau comparatif existant. */
 export function isComparisonRepairRequest(text: string): boolean {
+  const trimmed = text.trim();
+  if (/tu peux (le |la |les )?corrig/i.test(trimmed)) return true;
+  if (/peux[- ]tu (le |la )?corrig/i.test(trimmed)) return true;
   return /\b(cass[ée]|d[ée]cal[ée]|mal align[ée]|colonnes?\s+d[ée]cal|lignes?\s+\d|corrig|r[ée]par|r[ée]aligne|remplace\s+(le\s+)?tableau|tableau\s+(est\s+)?(cass[ée]|incorrect|faux))\b/i.test(
-    text,
+    trimmed,
   );
 }
 
@@ -36,7 +39,7 @@ export function isExplicitNewSpaceIntent(text: string): boolean {
 
 /** Demande de modifier l'espace actif plutôt que d'en créer un nouveau. */
 export function detectSpaceUpdateIntent(text: string): boolean {
-  return /\b(ajoute|ajouter|rajoute|rajouter|int[èe]gre|intégrer|met(s|t)?\s+à\s+jour|mets\s+à\s+jour|modifie|modifier|complète|compléter|dans (la |cette |mon )?comparaison|au tableau|au comparatif|retire|supprime|enlève)\b/i.test(
+  return /\b(ajoute|ajouter|rajoute|rajouter|int[èe]gre|intégrer|met(s|t)?\s+à\s+jour|mets\s+à\s+jour|modifie|modifier|corrige|corriger|complète|compléter|dans (la |cette |mon )?comparaison|au tableau|au comparatif|retire|supprime|enlève)\b/i.test(
     text,
   );
 }

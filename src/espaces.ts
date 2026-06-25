@@ -103,10 +103,17 @@ export class EspacesPage {
     if (!this.scrollEl || !this.detailEl) return;
 
     if (this.viewingId) {
-      const space = await getMerlinSpace(this.viewingId);
+      let space = await getMerlinSpace(this.viewingId);
       if (!space) {
         this.viewingId = null;
         return this.render();
+      }
+      if (space.kind === 'comparison') {
+        const repaired = normalizeComparisonData(space.data);
+        if (JSON.stringify(repaired) !== JSON.stringify(space.data)) {
+          space = { ...space, data: repaired, updatedAt: Date.now() };
+          await saveMerlinSpace(space);
+        }
       }
       this.scrollEl.hidden = true;
       this.detailEl.hidden = false;

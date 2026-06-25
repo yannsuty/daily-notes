@@ -1,4 +1,5 @@
 import { assessQueryDepth, extractMemoryQueries } from '../../lib/merlin-agent/complexity.js';
+import { isComparisonRepairRequest } from '../../lib/merlin-agent/space-intent.js';
 import type {
   AgentAdvanceResult,
   AgentJobCheckpoint,
@@ -31,6 +32,7 @@ import {
   AgentStore,
   isImmediateReplyTool,
   normalizeToolArgs,
+  parseSpaceDataJson,
   templateReplyForTool,
 } from './tools.js';
 import type { StepCallback } from './runner.js';
@@ -397,6 +399,24 @@ export async function advanceAgentRun(
     }, onStep);
 
     let toolArgs = { ...pending.args };
+
+    if (
+      pending.name === 'update_space' &&
+      checkpoint.context.activeSpace?.kind === 'comparison'
+    ) {
+      if (isComparisonRepairRequest(trimmed)) {
+        toolArgs.append = 'false';
+      }
+      const patch = parseSpaceDataJson(toolArgs.data_json);
+      const existingRows = checkpoint.context.activeSpace.data.rows?.length ?? 0;
+      if (
+        patch?.columns?.length &&
+        (patch.rows?.length ?? 0) >= existingRows &&
+        existingRows > 0
+      ) {
+        toolArgs.append = 'false';
+      }
+    }
 
     if (pending.name === 'create_reminder') {
       const text = toolArgs.text ?? '';
