@@ -221,9 +221,12 @@ export interface AgentRequestBody {
   /** Lance le traitement en arrière-plan côté serveur (survit à la fermeture de l'app). */
   background?: boolean;
   jobId?: string;
+  /** Active les logs détaillés côté serveur pour ce job (mode dev). */
+  devLog?: boolean;
 }
 
 import type { AgentJobCheckpoint } from './agent-checkpoint.js';
+import type { AgentDevLogEntry } from './agent-dev-log.js';
 
 export type AgentJobStatus = 'pending' | 'running' | 'done' | 'error';
 
@@ -235,6 +238,8 @@ export interface AgentJobRecord {
   updatedAt: number;
   checkpoint?: AgentJobCheckpoint;
   segmentCount?: number;
+  devLog?: boolean;
+  devLogs?: AgentDevLogEntry[];
 }
 
 export interface AgentJobStartResponse {
@@ -248,6 +253,9 @@ export interface AgentJobPollResponse {
   steps: AgentStep[];
   result?: AgentRunResult;
   error?: string;
+  devLogs?: AgentDevLogEntry[];
+  segmentCount?: number;
+  checkpointPhase?: string;
 }
 
 export interface WebSource {

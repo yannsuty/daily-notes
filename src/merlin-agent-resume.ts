@@ -1,4 +1,5 @@
 import { updateMerlinMessageContent } from './db';
+import { logAgentDev } from './agent-dev-log';
 import { applyAgentMutations } from './merlin-agent-context';
 import { setActiveSpaceId } from './merlin-space-session';
 import { getAgentJobStatus, watchAgentJob } from './merlin-agent-client';
@@ -40,6 +41,7 @@ async function failPendingJob(
   message: string,
   callbacks?: AgentJobCallbacks,
 ): Promise<void> {
+  logAgentDev('agent-resume', 'fail_pending', { message }, job.jobId);
   removePendingAgentJob(job.jobId);
   await stopNativeAgentJobWatch();
   await updateMerlinMessageContent(job.placeholderId, message);
@@ -223,6 +225,7 @@ export async function resumePendingAgentJobs(
     return 0;
   }
   resumeInFlight = true;
+  logAgentDev('agent-resume', 'resume_start', { pending: listPendingAgentJobs().length });
 
   let completed = 0;
 
@@ -283,6 +286,7 @@ export async function resumePendingAgentJobs(
     }
   } finally {
     resumeInFlight = false;
+    logAgentDev('agent-resume', 'resume_end', { completed });
     if (resumeQueued) {
       resumeQueued = false;
       void resumePendingAgentJobs(callbacks);

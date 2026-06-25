@@ -27,6 +27,12 @@ import { startSyncLoop, syncNow } from './sync';
 import type { AppMeta } from './types';
 import { todayKey } from './types';
 import { APP_VERSION } from './version';
+import {
+  buildAgentDevLogExport,
+  copyAgentDevLogsToClipboard,
+  isAgentDevLogEnabled,
+  setAgentDevLogEnabled,
+} from './agent-dev-log';
 
 export interface SettingsCallbacks {
   onPassphraseSet: () => void;
@@ -231,10 +237,38 @@ export class SettingsPage {
             </button>
           </div>
         </section>
+
+        ${
+          isAgentDevLogEnabled()
+            ? `
+        <section class="settings__section" id="agent-dev-log-section">
+          <h3 class="settings__section-title">Logs agent (dev)</h3>
+          <p class="settings__desc">
+            Trace la reprise des jobs Merlin (client + serveur). Copiez après un échec pour le diagnostic.
+          </p>
+          <textarea
+            id="agent-dev-log-preview"
+            class="settings__input settings__input--area settings__input--mono"
+            rows="8"
+            readonly
+            placeholder="Les logs apparaîtront ici…"
+          ></textarea>
+          <p class="settings__status" id="agent-dev-log-status"></p>
+          <div class="settings__actions">
+            <button type="button" class="btn btn--primary" id="copy-agent-dev-logs">Copier les logs</button>
+            <button type="button" class="btn btn--ghost" id="refresh-agent-dev-logs">Rafraîchir</button>
+            <button type="button" class="btn btn--ghost" id="disable-agent-dev-logs">Désactiver</button>
+          </div>
+        </section>
+        `
+            : ''
+        }
+
       </div>
 
-      <footer class="settings-page__footer">
+      <footer class="settings-page__footer" id="settings-version-footer">
         <span>Merlin ${escapeHtml(versionLabel)}</span>
+        ${isAgentDevLogEnabled() ? '' : '<span class="settings__desc settings__desc--tight">Appui ×7 pour activer les logs agent</span>'}
       </footer>
     `;
 
@@ -259,6 +293,66 @@ export class SettingsPage {
     const appUpdateStatusEl = this.container.querySelector<HTMLElement>('#app-update-status')!;
     const appUpdateBtn = this.container.querySelector<HTMLButtonElement>('#check-app-update')!;
     const clearAppDownloadBtn = this.container.querySelector<HTMLButtonElement>('#clear-app-download')!;
+    const devLogStatusEl = this.container.querySelector<HTMLElement>('#agent-dev-log-status');
+    const devLogPreviewEl = this.container.querySelector<HTMLTextAreaElement>('#agent-dev-log-preview');
+    const copyDevLogsBtn = this.container.querySelector<HTMLButtonElement>('#copy-agent-dev-logs');
+    const refreshDevLogsBtn = this.container.querySelector<HTMLButtonElement>('#refresh-agent-dev-logs');
+    const disableDevLogsBtn = this.container.querySelector<HTMLButtonElement>('#disable-agent-dev-logs');
+    const versionFooter = this.container.querySelector<HTMLElement>('#settings-version-footer');
+
+    let versionTapCount = 0;
+    let versionTapTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const refreshDevLogPreview = async (): Promise<void> => {
+      if (!devLogPreviewEl || !devLogStatusEl) return;
+      devLogStatusEl.textContent = 'Chargement des logs…';
+      try {
+        const text = await buildAgentDevLogExport();
+        devLogPreviewEl.value = text;
+        devLogStatusEl.textContent = `${text.split('\n').length} lignes`;
+      } catch (err) {
+        devLogStatusEl.textContent = err instanceof Error ? err.message : 'Erreur';
+      }
+    };
+
+    versionFooter?.addEventListener('click', () => {
+      if (isAgentDevLogEnabled()) return;
+      versionTapCount += 1;
+      if (versionTapTimer) clearTimeout(versionTapTimer);
+      versionTapTimer = setTimeout(() => {
+        versionTapCount = 0;
+      }, 2500);
+      if (versionTapCount >= 7) {
+        versionTapCount = 0;
+        setAgentDevLogEnabled(true);
+        void this.render();
+      }
+    });
+
+    copyDevLogsBtn?.addEventListener('click', () => {
+      void (async () => {
+        if (!devLogStatusEl) return;
+        try {
+          await copyAgentDevLogsToClipboard();
+          devLogStatusEl.textContent = 'Logs copiés dans le presse-papiers.';
+        } catch (err) {
+          devLogStatusEl.textContent = err instanceof Error ? err.message : 'Copie impossible';
+        }
+      })();
+    });
+
+    refreshDevLogsBtn?.addEventListener('click', () => {
+      void refreshDevLogPreview();
+    });
+
+    disableDevLogsBtn?.addEventListener('click', () => {
+      setAgentDevLogEnabled(false);
+      void this.render();
+    });
+
+    if (devLogPreviewEl) {
+      void refreshDevLogPreview();
+    }
 
     const showDownloadProgress = (percent?: number): void => {
       if (percent != null && percent > 0) {

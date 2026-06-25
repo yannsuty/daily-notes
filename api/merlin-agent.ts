@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { MAX_AGENT_SEGMENTS } from '../lib/merlin-agent/agent-checkpoint.js';
+import type { AgentJobCheckpoint } from '../lib/merlin-agent/agent-checkpoint.js';
 import { JOB_STREAM_MAX_MS } from '../lib/merlin-agent/agent-duration.js';
 import {
   appendAgentJobStep,
@@ -12,6 +13,7 @@ import {
   saveAgentJobCheckpoint,
   touchAgentJob,
 } from '../server/agent-jobs.js';
+import { appendAgentJobDevLog } from '../server/agent-dev-log.js';
 import {
   advanceAgentRun,
   createBootstrapCheckpoint,
@@ -25,6 +27,25 @@ import {
 } from '../server/merlin-agent/index.js';
 
 const JOB_HEARTBEAT_MS = 25_000;
+
+function bodyFromCheckpoint(jobId: string, checkpoint: AgentJobCheckpoint): AgentRequestBody {
+  return {
+    message: checkpoint.userMessage,
+    context: checkpoint.context,
+    config: checkpoint.config,
+    background: true,
+    jobId,
+    devLog: true,
+  };
+}
+
+function kickSegmentContinuation(jobId: string, checkpoint: AgentJobCheckpoint): void {
+  scheduleBackground(() => processBackgroundJob(jobId, bodyFromCheckpoint(jobId, checkpoint)));
+}
+
+function wantsDevLog(req: VercelRequest): boolean {
+  return req.query.devLog === '1' || req.query.devLog === 'true';
+}
 
 function cors(res: VercelResponse): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -126,7 +147,14 @@ async function processBackgroundJob(
     if (!job) return;
 
     const segmentCount = job.segmentCount ?? 0;
+    await appendAgentJobDevLog(jobId, 'segment', 'start', {
+      segmentCount,
+      status: job.status,
+      checkpointPhase: job.checkpoint?.phase,
+    });
+
     if (segmentCount >= MAX_AGENT_SEGMENTS) {
+      await appendAgentJobDevLog(jobId, 'segment', 'max_segments');
       await failAgentJob(
         jobId,
         'La réflexion a nécessité trop d\'étapes. Réessayez avec une demande plus ciblée.',
@@ -152,6 +180,10 @@ async function processBackgroundJob(
     });
 
     if (outcome.status === 'done') {
+      await appendAgentJobDevLog(jobId, 'segment', 'done', {
+        segmentCount,
+        steps: outcome.result.steps.length,
+      });
       const current = await getAgentJob(jobId);
       await finishAgentJob(jobId, {
         ...outcome.result,
@@ -161,6 +193,10 @@ async function processBackgroundJob(
     }
 
     if (outcome.status === 'failed') {
+      await appendAgentJobDevLog(jobId, 'segment', 'failed', {
+        error: outcome.result.error,
+        segmentCount,
+      });
       await failAgentJob(jobId, outcome.result.error ?? 'Agent error');
       return;
     }
@@ -173,9 +209,17 @@ async function processBackgroundJob(
       segmentCount: segmentCount + 1,
     });
 
+    await appendAgentJobDevLog(jobId, 'segment', 'yield', {
+      nextPhase: outcome.checkpoint.phase,
+      segmentCount: segmentCount + 1,
+      iteration: outcome.checkpoint.iteration,
+      pendingTool: outcome.checkpoint.pendingTool?.name,
+    });
+
     scheduleBackground(() => processBackgroundJob(jobId, body));
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Agent error';
+    await appendAgentJobDevLog(jobId, 'segment', 'exception', { message });
     await failAgentJob(jobId, message);
   } finally {
     clearInterval(heartbeat);
@@ -207,8 +251,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     try {
       if (stream) {
+        const jobBeforeStale = await getAgentJob(jobId);
+        if (jobBeforeStale?.status === 'running' && jobBeforeStale.checkpoint) {
+          await appendAgentJobDevLog(jobId, 'poll', 'kick_sse', {
+            phase: jobBeforeStale.checkpoint.phase,
+            segmentCount: jobBeforeStale.segmentCount,
+          });
+          kickSegmentContinuation(jobId, jobBeforeStale.checkpoint);
+        }
         await streamAgentJob(req, res, jobId, fromStep);
         return;
+      }
+
+      const jobBeforeStale = await getAgentJob(jobId);
+      if (jobBeforeStale?.status === 'running' && jobBeforeStale.checkpoint) {
+        await appendAgentJobDevLog(jobId, 'poll', 'kick', {
+          phase: jobBeforeStale.checkpoint.phase,
+          segmentCount: jobBeforeStale.segmentCount,
+        });
+        kickSegmentContinuation(jobId, jobBeforeStale.checkpoint);
       }
 
       const job = await expireStaleRunningJob(jobId);
@@ -216,12 +277,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(404).json({ error: 'Job not found' });
       }
 
+      if (job.status === 'error' && job.devLog) {
+        await appendAgentJobDevLog(jobId, 'poll', 'return_error', { error: job.error });
+      }
+
+      const includeDevLogs = wantsDevLog(req) || job.devLog;
+
       return res.status(200).json({
         jobId,
         status: job.status,
         steps: job.steps,
         result: job.result,
         error: job.error,
+        ...(includeDevLogs
+          ? {
+              devLogs: job.devLogs,
+              segmentCount: job.segmentCount,
+              checkpointPhase: job.checkpoint?.phase,
+            }
+          : {}),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Job lookup failed';
@@ -244,11 +318,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (body.background) {
     const jobId = body.jobId?.trim() || createJobId();
+    const devLog = body.devLog === true;
     await saveAgentJob(jobId, {
       status: 'pending',
       steps: [],
       updatedAt: Date.now(),
+      devLog,
+      devLogs: devLog ? [] : undefined,
     });
+
+    if (devLog) {
+      await appendAgentJobDevLog(jobId, 'job', 'created', {
+        messagePreview: body.message.trim().slice(0, 120),
+        hasCheckpoint: !!body.jobId,
+      });
+    }
 
     scheduleBackground(() => processBackgroundJob(jobId, body));
 
