@@ -8,8 +8,9 @@ import {
 } from './db';
 import { normalizeComparisonData } from '../lib/merlin-agent/space-merge';
 import { SPACE_KIND_LABELS } from './merlin-space-format';
-import { setActiveSpaceId } from './merlin-space-session';
+import { getActiveSpaceId, setActiveSpaceId } from './merlin-space-session';
 import { renderMarkdownToHtml } from './markdown';
+import { syncNow } from './sync';
 import type { MerlinSpace, MerlinSpaceKind } from './types';
 
 export interface EspacesPageOptions {
@@ -411,8 +412,15 @@ export class EspacesPage {
   private async handleDelete(spaceId: string): Promise<void> {
     if (!confirm('Supprimer cet espace ?')) return;
     await deleteMerlinSpace(spaceId);
+    if (getActiveSpaceId() === spaceId) {
+      setActiveSpaceId(null);
+    }
+    if (this.viewingId === spaceId) {
+      this.viewingId = null;
+    }
     this.onUpdate?.();
     await this.render();
+    void syncNow();
   }
 }
 

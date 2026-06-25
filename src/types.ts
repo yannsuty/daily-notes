@@ -188,7 +188,16 @@ export interface MerlinSyncData {
   customTools?: MerlinCustomTool[];
   env?: MerlinEnvVar[];
   spaces?: MerlinSpace[];
+  /** id → horodatage de suppression (sync multi-appareils). */
+  deletedSpaces?: Record<string, number>;
+  deletedLists?: Record<string, number>;
   updatedAt: number;
+}
+
+/** Tombstones locaux pour suppressions Merlin (stockage IndexedDB). */
+export interface MerlinEntityDeletions {
+  spaces: Record<string, number>;
+  lists: Record<string, number>;
 }
 
 export interface SyncPayload {

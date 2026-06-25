@@ -4,6 +4,7 @@ import type {
   DayEntry,
   MerlinConversation,
   MerlinCustomTool,
+  MerlinEntityDeletions,
   MerlinEnvVar,
   MerlinFact,
   MerlinList,
@@ -62,6 +63,7 @@ interface DailyNoteDB extends DBSchema {
 const DB_NAME = 'daily-note';
 const DB_VERSION = 5;
 export const MERLIN_CONVERSATION_ID = 'main';
+const MERLIN_DELETIONS_META_KEY = 'merlin_deletions';
 
 let dbPromise: Promise<IDBPDatabase<DailyNoteDB>> | null = null;
 
@@ -265,11 +267,61 @@ export async function getMerlinList(id: string): Promise<MerlinList | undefined>
 export async function saveMerlinList(list: MerlinList): Promise<void> {
   const db = await getDb();
   await db.put('merlin_lists', { ...list, updatedAt: Date.now() }, list.id);
+  const deletions = await getMerlinDeletions();
+  if (deletions.lists[list.id]) {
+    delete deletions.lists[list.id];
+    await saveMerlinDeletions(deletions);
+  }
+}
+
+export async function getMerlinDeletions(): Promise<MerlinEntityDeletions> {
+  const db = await getDb();
+  const stored = (await db.get('meta', MERLIN_DELETIONS_META_KEY)) as MerlinEntityDeletions | undefined;
+  return stored ?? { spaces: {}, lists: {} };
+}
+
+export async function saveMerlinDeletions(deletions: MerlinEntityDeletions): Promise<void> {
+  const db = await getDb();
+  await db.put('meta', deletions as unknown as AppMeta, MERLIN_DELETIONS_META_KEY);
+}
+
+async function markMerlinSpaceDeleted(id: string): Promise<void> {
+  const deletions = await getMerlinDeletions();
+  deletions.spaces[id] = Date.now();
+  await saveMerlinDeletions(deletions);
+}
+
+async function markMerlinListDeleted(id: string): Promise<void> {
+  const deletions = await getMerlinDeletions();
+  deletions.lists[id] = Date.now();
+  await saveMerlinDeletions(deletions);
+}
+
+function mergeDeletionMaps(
+  local: Record<string, number>,
+  remote: Record<string, number>,
+): Record<string, number> {
+  const merged = { ...local };
+  for (const [id, ts] of Object.entries(remote)) {
+    merged[id] = Math.max(merged[id] ?? 0, ts);
+  }
+  return merged;
+}
+
+function applyEntityDeletions<T extends { id: string; updatedAt: number }>(
+  items: T[],
+  deletions: Record<string, number>,
+): T[] {
+  return items.filter((item) => {
+    const deletedAt = deletions[item.id];
+    return deletedAt === undefined || item.updatedAt > deletedAt;
+  });
 }
 
 export async function deleteMerlinList(id: string): Promise<void> {
   const db = await getDb();
   await db.delete('merlin_lists', id);
+  await markMerlinListDeleted(id);
 }
 
 export async function getActiveLists(): Promise<MerlinList[]> {
@@ -394,11 +446,17 @@ export async function getMerlinSpace(id: string): Promise<MerlinSpace | undefine
 export async function saveMerlinSpace(space: MerlinSpace): Promise<void> {
   const db = await getDb();
   await db.put('merlin_spaces', { ...space, updatedAt: Date.now() }, space.id);
+  const deletions = await getMerlinDeletions();
+  if (deletions.spaces[space.id]) {
+    delete deletions.spaces[space.id];
+    await saveMerlinDeletions(deletions);
+  }
 }
 
 export async function deleteMerlinSpace(id: string): Promise<void> {
   const db = await getDb();
   await db.delete('merlin_spaces', id);
+  await markMerlinSpaceDeleted(id);
 }
 
 export async function getActiveSpaces(): Promise<MerlinSpace[]> {
@@ -477,7 +535,7 @@ function mergeByName(local: MerlinCustomTool[], remote: MerlinCustomTool[]): Mer
 }
 
 export async function exportMerlinData(): Promise<MerlinSyncData> {
-  const [conversation, facts, lists, reminders, shortcuts, customTools, env, spaces] =
+  const [conversation, facts, lists, reminders, shortcuts, customTools, env, spaces, deletions] =
     await Promise.all([
     getMerlinConversation(),
     getMerlinFacts(),
@@ -487,6 +545,7 @@ export async function exportMerlinData(): Promise<MerlinSyncData> {
     getMerlinCustomTools(),
     getMerlinEnvVars(),
     getMerlinSpaces(),
+    getMerlinDeletions(),
   ]);
   const timestamps = [
     conversation.updatedAt,
@@ -497,6 +556,8 @@ export async function exportMerlinData(): Promise<MerlinSyncData> {
     ...customTools.map((t) => t.updatedAt),
     ...env.map((e) => e.updatedAt),
     ...spaces.map((s) => s.updatedAt),
+    ...Object.values(deletions.spaces),
+    ...Object.values(deletions.lists),
   ];
   return {
     conversation,
@@ -507,6 +568,8 @@ export async function exportMerlinData(): Promise<MerlinSyncData> {
     customTools,
     env,
     spaces,
+    deletedSpaces: deletions.spaces,
+    deletedLists: deletions.lists,
     updatedAt: Math.max(...timestamps, 0),
   };
 }
@@ -547,6 +610,11 @@ export async function importMerlinData(remote: MerlinSyncData): Promise<void> {
     await tx.objectStore('merlin_spaces').put(space, space.id);
   }
   await tx.done;
+
+  await saveMerlinDeletions({
+    spaces: merged.deletedSpaces ?? {},
+    lists: merged.deletedLists ?? {},
+  });
 }
 
 export function mergeMerlinData(
@@ -591,6 +659,21 @@ export function mergeMerlinData(
 
   const updatedAt = Math.max(local.updatedAt, remote.updatedAt);
 
+  const deletedSpaces = mergeDeletionMaps(
+    local.deletedSpaces ?? {},
+    remote.deletedSpaces ?? {},
+  );
+  const deletedLists = mergeDeletionMaps(local.deletedLists ?? {}, remote.deletedLists ?? {});
+
+  const mergedLists = applyEntityDeletions(
+    mergeLists(local.lists ?? [], remote.lists ?? []),
+    deletedLists,
+  );
+  const mergedSpaces = applyEntityDeletions(
+    mergeById(local.spaces ?? [], remote.spaces ?? []),
+    deletedSpaces,
+  );
+
   return {
     conversation: {
       id: MERLIN_CONVERSATION_ID,
@@ -599,12 +682,14 @@ export function mergeMerlinData(
       updatedAt: Math.max(local.conversation.updatedAt, remote.conversation.updatedAt),
     },
     facts: [...factMap.values()],
-    lists: mergeLists(local.lists ?? [], remote.lists ?? []),
+    lists: mergedLists,
     reminders: mergeById(local.reminders ?? [], remote.reminders ?? []),
     shortcuts: mergeShortcuts(local.shortcuts ?? [], remote.shortcuts ?? []),
     customTools: mergeByName(local.customTools ?? [], remote.customTools ?? []),
     env: mergeEnvVars(local.env ?? [], remote.env ?? []),
-    spaces: mergeById(local.spaces ?? [], remote.spaces ?? []),
+    spaces: mergedSpaces,
+    deletedSpaces,
+    deletedLists,
     updatedAt,
   };
 }

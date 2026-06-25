@@ -5,6 +5,7 @@ import {
   saveMerlinList,
 } from './db';
 import { createEntityId } from './merlin-tools';
+import { syncNow } from './sync';
 import type { MerlinList } from './types';
 
 export interface ListesPageOptions {
@@ -230,6 +231,7 @@ export class ListesPage {
     await deleteMerlinList(listId);
     this.onUpdate?.();
     await this.render();
+    void syncNow();
   }
 }
 
