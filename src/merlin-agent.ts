@@ -10,19 +10,24 @@ import {
   saveMerlinFact,
   saveMerlinFacts,
   updateMerlinConversationSummary,
+  updateMerlinMessageContent,
 } from './db';
 import { tryFastIntent } from './merlin-intents';
 import { applyAgentMutations, buildAgentContext } from './merlin-agent-context';
-import { logAgentDev } from './agent-dev-log';
+import { logAgentDev, rememberAgentJobId } from './agent-dev-log';
 import { setActiveSpaceId } from './merlin-space-session';
 import { runServerAgent, startBackgroundAgentJob } from './merlin-agent-client';
 import {
   MERLIN_THINKING_PLACEHOLDER,
+  createAgentJobId,
+  listPendingAgentJobs,
+  removePendingAgentJob,
   savePendingAgentJob,
   shouldUseBackgroundAgent,
 } from './merlin-agent-jobs';
 import {
   startNativeAgentJobWatch,
+  stopNativeAgentJobWatch,
 } from './merlin-agent-native-watch';
 import { pollPendingJobUntilDone } from './merlin-agent-resume';
 import { recordShortcutUsage } from './merlin-shortcuts';
@@ -205,29 +210,49 @@ async function runBackgroundAgentJobFlow(
   });
 
   const context = await buildAgentContext();
-  logAgentDev('agent', 'background_flow_start', {
-    messagePreview: trimmed.slice(0, 120),
-    activeSpaceId: context.activeSpaceId,
-  });
-  const started = await startBackgroundAgentJob(trimmed, context);
-  savePendingAgentJob({
-    jobId: started.jobId,
+  const jobId = createAgentJobId();
+  const pendingJob = {
+    jobId,
     userText: trimmed,
     placeholderId,
     startedAt: Date.now(),
-  });
+  };
+
+  logAgentDev('agent', 'background_flow_start', {
+    messagePreview: trimmed.slice(0, 120),
+    activeSpaceId: context.activeSpaceId,
+    jobId,
+  }, jobId);
+
+  savePendingAgentJob(pendingJob);
+  rememberAgentJobId(jobId);
+  logAgentDev('agent', 'pending_saved_early', { jobId }, jobId);
 
   if (shouldUseBackgroundAgent()) {
-    void startNativeAgentJobWatch(started.jobId);
+    void startNativeAgentJobWatch(jobId);
+  }
+
+  try {
+    const started = await startBackgroundAgentJob(trimmed, context, jobId);
+    if (started.jobId !== jobId) {
+      removePendingAgentJob(jobId);
+      savePendingAgentJob({ ...pendingJob, jobId: started.jobId });
+      rememberAgentJobId(started.jobId);
+      if (shouldUseBackgroundAgent()) {
+        void startNativeAgentJobWatch(started.jobId);
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Impossible de joindre le serveur.';
+    logAgentDev('agent', 'background_start_failed', { message }, jobId);
+    removePendingAgentJob(jobId);
+    await stopNativeAgentJobWatch();
+    await updateMerlinMessageContent(placeholderId, message);
+    return { ok: false, error: message, aiUnavailable: true };
   }
 
   const polled = await pollPendingJobUntilDone(
-    {
-      jobId: started.jobId,
-      userText: trimmed,
-      placeholderId,
-      startedAt: Date.now(),
-    },
+    listPendingAgentJobs().find((j) => j.placeholderId === placeholderId) ?? pendingJob,
     { onStep: options?.onAgentStep },
   );
 

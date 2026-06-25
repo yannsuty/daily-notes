@@ -5,11 +5,13 @@ import { isAppDevEnv } from '../lib/merlin-agent/app-env.js';
 import { JOB_STREAM_MAX_MS } from '../lib/merlin-agent/agent-duration.js';
 import {
   appendAgentJobStep,
+  acquireSegmentLease,
   createJobId,
   expireStaleRunningJob,
   failAgentJob,
   finishAgentJob,
   getAgentJob,
+  releaseSegmentLease,
   saveAgentJob,
   saveAgentJobCheckpoint,
   touchAgentJob,
@@ -139,6 +141,9 @@ async function processBackgroundJob(
   jobId: string,
   body: AgentRequestBody,
 ): Promise<void> {
+  const leased = await acquireSegmentLease(jobId);
+  if (!leased) return;
+
   const heartbeat = setInterval(() => {
     void touchAgentJob(jobId);
   }, JOB_HEARTBEAT_MS);
@@ -217,13 +222,14 @@ async function processBackgroundJob(
       pendingTool: outcome.checkpoint.pendingTool?.name,
     });
 
-    scheduleBackground(() => processBackgroundJob(jobId, body));
+    // Segment suivant repris par le poll Android (nouvelle invocation Vercel).
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Agent error';
     await appendAgentJobDevLog(jobId, 'segment', 'exception', { message });
     await failAgentJob(jobId, message);
   } finally {
     clearInterval(heartbeat);
+    await releaseSegmentLease(jobId);
   }
 }
 
