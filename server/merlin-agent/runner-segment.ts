@@ -7,7 +7,7 @@ import type {
 } from '../../lib/merlin-agent/agent-checkpoint.js';
 import { appendSourcesCitation, mergeWebSources } from '../../lib/merlin-agent/web.js';
 import { gatherMemory } from '../../lib/merlin-agent/memory.js';
-import { parseJsonFromAi, parseToolCall } from '../../lib/merlin-agent/parse.js';
+import { formatAgentReplyForUser, parseAgentTurn, parseJsonFromAi } from '../../lib/merlin-agent/parse.js';
 import { needsReminderExtraction } from '../../lib/merlin-agent/reminder-extract.js';
 import { buildLocalReminderFallback } from '../../lib/merlin-agent/reminder-text.js';
 import {
@@ -350,6 +350,7 @@ export async function advanceAgentRun(
 
     const result = await callMerlinLlm(checkpoint.messages, checkpoint.config, {
       temperature: checkpoint.depth === 'deep' ? 0.55 : 0.45,
+      jsonMode: true,
       referer,
     });
 
@@ -361,20 +362,23 @@ export async function advanceAgentRun(
       };
     }
 
-    const toolCall = parseToolCall(result.text);
-    if (!toolCall) {
-      checkpoint.pendingReply = result.text;
-      checkpoint.phase = 'finalize';
+    const turn = parseAgentTurn(result.text);
+    if (turn.toolCall) {
+      checkpoint.pendingTool = {
+        name: turn.toolCall.name,
+        args: normalizeToolArgs(turn.toolCall.args ?? {}),
+        llmText: result.text,
+      };
+      if (turn.reply) {
+        checkpoint.pendingReply = turn.reply;
+      }
+      checkpoint.phase = 'tool';
       persistStore(checkpoint, store);
       return { status: 'yield', checkpoint };
     }
 
-    checkpoint.pendingTool = {
-      name: toolCall.name,
-      args: normalizeToolArgs(toolCall.args ?? {}),
-      llmText: result.text,
-    };
-    checkpoint.phase = 'tool';
+    checkpoint.pendingReply = turn.reply ?? result.text;
+    checkpoint.phase = 'finalize';
     persistStore(checkpoint, store);
     return { status: 'yield', checkpoint };
   }
@@ -520,8 +524,8 @@ export async function advanceAgentRun(
   }
 
   if (checkpoint.phase === 'finalize') {
-    const reply = checkpoint.synthesizedReply ?? checkpoint.pendingReply;
-    if (!reply) {
+    const rawReply = checkpoint.synthesizedReply ?? checkpoint.pendingReply;
+    if (!rawReply) {
       persistStore(checkpoint, store);
       return {
         status: 'failed',
@@ -529,10 +533,12 @@ export async function advanceAgentRun(
       };
     }
 
+    const userReply = formatAgentReplyForUser(rawReply);
+
     const autoSaved = await ensureSpacePersisted(
       store,
       trimmed,
-      reply,
+      rawReply,
       checkpoint.config,
       referer,
       checkpoint.context.activeSpace,
@@ -552,7 +558,7 @@ export async function advanceAgentRun(
       result: successResult(
         checkpoint,
         store,
-        reply,
+        userReply,
         pickSideEffect(store) ?? checkpoint.lastSideEffect,
       ),
     };

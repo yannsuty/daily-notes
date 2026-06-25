@@ -1,4 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { formatAgentReplyForUser } from '../lib/merlin-agent/parse';
 import type {
   AppMeta,
   DayEntry,
@@ -202,7 +203,8 @@ export async function updateMerlinMessageContent(
   const conv = await getMerlinConversation();
   const message = conv.messages.find((m) => m.id === messageId);
   if (!message) return null;
-  message.content = content;
+  message.content =
+    message.role === 'assistant' ? formatAgentReplyForUser(content) : content;
   message.updatedAt = Date.now();
   conv.updatedAt = Date.now();
   await saveMerlinConversation(conv);

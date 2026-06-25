@@ -14,6 +14,7 @@ import {
 } from './db';
 import { tryFastIntent } from './merlin-intents';
 import { applyAgentMutations, buildAgentContext } from './merlin-agent-context';
+import { formatAgentReplyForUser } from '../lib/merlin-agent/parse';
 import { logAgentDev, rememberAgentJobId } from './agent-dev-log';
 import { setActiveSpaceId } from './merlin-space-session';
 import { runServerAgent, startBackgroundAgentJob } from './merlin-agent-client';
@@ -274,15 +275,16 @@ async function runBackgroundAgentJobFlow(
 }
 
 async function appendExchange(userText: string, reply: string): Promise<void> {
+  const displayReply = formatAgentReplyForUser(reply);
   const assistantMsg: MerlinMessage = {
     id: createMessageId(),
     role: 'assistant',
-    content: reply,
+    content: displayReply,
     createdAt: Date.now(),
   };
   await appendMerlinMessage(assistantMsg);
 
-  await noteAgentReplyForFacts(userText, reply);
+  await noteAgentReplyForFacts(userText, displayReply);
   void maybeCompressConversation();
 }
 
@@ -392,6 +394,7 @@ export async function handleUserMessage(
     )[0];
     if (newest) setActiveSpaceId(newest.id);
   }
+  const displayReply = formatAgentReplyForUser(agentResult.reply);
   await appendExchange(trimmed, agentResult.reply);
   void recordShortcutUsage(trimmed);
   const { syncNow } = await import('./sync');
@@ -399,7 +402,7 @@ export async function handleUserMessage(
 
   return {
     ok: true,
-    content: agentResult.reply,
+    content: displayReply,
     sideEffects: agentResult.sideEffects,
     steps: agentResult.steps,
     depth: agentResult.depth,

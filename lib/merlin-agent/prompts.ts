@@ -90,10 +90,24 @@ export function buildSystemPrompt(context: AgentContext, memoryBlock = ''): stri
   prompt += SPACE_GUIDANCE;
   prompt += `\n\nOutils disponibles :\n${TOOL_DOCS}${buildCustomToolsPromptBlock(context.customTools)}
 
-Pour utiliser un outil, réponds UNIQUEMENT avec ce JSON :
-{"action":"tool","name":"nom_outil","args":{"clé":"valeur"}}
+Format de réponse — OBLIGATOIRE (JSON valide uniquement) :
+{
+  "reply": "Texte naturel en français, c'est ce que l'utilisateur voit",
+  "app": {
+    "tool": { "name": "nom_outil", "args": { "clé": "valeur" } }
+  }
+}
 
-Sinon réponds normalement en texte.`;
+Règles :
+- reply : toujours présent ; message clair, concis, en français (jamais de JSON, data_json ni noms d'outils techniques)
+- app.tool : uniquement quand tu exécutes un outil ; omettre app entier si aucun outil
+- Les données volumineuses (data_json des espaces, steps_json…) restent dans app.tool.args, pas dans reply
+
+Exemple avec outil :
+{"reply":"Je crée la comparaison — retrouvez-la dans Galerie → Espaces.","app":{"tool":{"name":"create_space","args":{"kind":"comparison","title":"…","data_json":{...}}}}}
+
+Exemple sans outil :
+{"reply":"Pour une chambre de 20 m², un ventilateur 132 cm est généralement adapté."}`;
 
   return prompt;
 }

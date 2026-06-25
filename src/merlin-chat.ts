@@ -20,6 +20,7 @@ import { listPendingAgentJobs, appendPendingJobStep } from './merlin-agent-jobs'
 import { abandonPendingAgentJobs, loadPendingJobProgress } from './merlin-agent-resume';
 import { assessQueryDepth } from '../lib/merlin-agent';
 import type { AgentStep } from '../lib/merlin-agent';
+import { formatAgentReplyForUser } from '../lib/merlin-agent/parse';
 import { getPaletteShortcuts, toggleShortcutPin } from './merlin-shortcuts';
 import { renderMarkdownToHtml } from './markdown';
 import { getMerlinTtsPrefs, speakMerlin } from './merlin-tts';
@@ -415,7 +416,7 @@ export class MerlinChat {
       bubble.appendChild(label);
 
       text.classList.add('merlin-chat__text--markdown');
-      text.innerHTML = renderMarkdownToHtml(content);
+      text.innerHTML = renderMarkdownToHtml(formatAgentReplyForUser(content));
     } else {
       text.textContent = content;
     }
