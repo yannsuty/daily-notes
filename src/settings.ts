@@ -244,7 +244,7 @@ export class SettingsPage {
         <section class="settings__section" id="agent-dev-log-section">
           <h3 class="settings__section-title">Logs agent (dev)</h3>
           <p class="settings__desc">
-            Trace la reprise des jobs Merlin (client + serveur). Copiez après un échec pour le diagnostic.
+            Trace la reprise des jobs Merlin (client + serveur). Activé si <code>APP_ENV=dev</code> au build ou sur Vercel, sinon 7 appuis sur la version. Copiez après un échec pour le diagnostic.
           </p>
           <textarea
             id="agent-dev-log-preview"
@@ -268,7 +268,7 @@ export class SettingsPage {
 
       <footer class="settings-page__footer" id="settings-version-footer">
         <span>Merlin ${escapeHtml(versionLabel)}</span>
-        ${isAgentDevLogEnabled() ? '' : '<span class="settings__desc settings__desc--tight">Appui ×7 pour activer les logs agent</span>'}
+        ${isAgentDevLogEnabled() ? '' : '<span class="settings__desc settings__desc--tight">Appui ×7 sur la version pour activer les logs agent (ou APP_ENV=dev au build)</span>'}
       </footer>
     `;
 

@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { isAppDevEnv } from '../lib/merlin-agent/app-env';
 import {
   formatAgentDevLogEntry,
   redactDevLogDetail,
@@ -12,8 +13,13 @@ import type { AgentJobPollResponse } from '../lib/merlin-agent';
 const STORAGE_ENABLED = 'merlin-agent-dev-log';
 const STORAGE_LOGS = 'merlin-agent-dev-log-entries';
 
+function buildAppEnv(): string | undefined {
+  return typeof __APP_ENV__ !== 'undefined' ? __APP_ENV__ : undefined;
+}
+
 export function isAgentDevLogEnabled(): boolean {
   if (import.meta.env.DEV) return true;
+  if (isAppDevEnv(buildAppEnv())) return true;
   try {
     return localStorage.getItem(STORAGE_ENABLED) === '1';
   } catch {
@@ -108,7 +114,7 @@ export async function buildAgentDevLogExport(): Promise<string> {
     `App : ${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'inconnue'}`,
     `Plateforme : ${Capacitor.getPlatform()}`,
     `API : ${apiUrl('/api/merlin-agent')}`,
-    `Dev log : ${isAgentDevLogEnabled() ? 'activé' : 'désactivé'}`,
+    `Dev log : ${isAgentDevLogEnabled() ? 'activé' : 'désactivé'} (APP_ENV=${buildAppEnv() || '—'})`,
     '',
     '--- CLIENT ---',
   ];

@@ -402,6 +402,7 @@ export default defineConfig(({ mode }) => {
     base: isCapacitor ? './' : '/',
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
+      __APP_ENV__: JSON.stringify(env.APP_ENV ?? process.env.APP_ENV ?? ''),
     },
     plugins: [
       {

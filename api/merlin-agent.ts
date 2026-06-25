@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { MAX_AGENT_SEGMENTS } from '../lib/merlin-agent/agent-checkpoint.js';
 import type { AgentJobCheckpoint } from '../lib/merlin-agent/agent-checkpoint.js';
+import { isAppDevEnv } from '../lib/merlin-agent/app-env.js';
 import { JOB_STREAM_MAX_MS } from '../lib/merlin-agent/agent-duration.js';
 import {
   appendAgentJobStep,
@@ -318,7 +319,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (body.background) {
     const jobId = body.jobId?.trim() || createJobId();
-    const devLog = body.devLog === true;
+    const devLog = body.devLog === true || isAppDevEnv(process.env.APP_ENV);
     await saveAgentJob(jobId, {
       status: 'pending',
       steps: [],
