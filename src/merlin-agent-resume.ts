@@ -1,5 +1,6 @@
 import { updateMerlinMessageContent } from './db';
 import { logAgentDev } from './agent-dev-log';
+import { isJobNotFoundError, isRetryableJobNotFound } from '../lib/merlin-agent/job-poll';
 import { applyAgentMutations } from './merlin-agent-context';
 import { setActiveSpaceId } from './merlin-space-session';
 import { getAgentJobStatus, watchAgentJob } from './merlin-agent-client';
@@ -31,9 +32,10 @@ function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError';
 }
 
-function isJobExpiredError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return message.includes('introuvable') || message.includes('expiré');
+function isJobExpiredError(err: unknown, job?: PendingAgentJob): boolean {
+  if (!isJobNotFoundError(err)) return false;
+  if (job && isRetryableJobNotFound(job)) return false;
+  return true;
 }
 
 async function failPendingJob(
@@ -75,10 +77,15 @@ function watchJobInBackground(
     },
     signal: controller.signal,
     fromStep,
+    pollGrace: {
+      startedAt: job.startedAt,
+      postPending: job.postPending,
+      serverRegistered: job.serverRegistered,
+    },
   })
     .then((result) => applyAgentJobResult(job, result, callbacks))
     .catch(async (err) => {
-      if (isJobExpiredError(err)) {
+      if (isJobExpiredError(err, job)) {
         const message = err instanceof Error ? err.message : 'Job expiré';
         await failPendingJob(job, message, callbacks);
         return;
@@ -99,16 +106,25 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function fetchJobStatusWithRetry(
-  jobId: string,
-  attempts = 4,
+  job: PendingAgentJob,
+  attempts = 8,
 ): Promise<Awaited<ReturnType<typeof getAgentJobStatus>>> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i += 1) {
     try {
-      return await getAgentJobStatus(jobId);
+      return await getAgentJobStatus(job.jobId);
     } catch (err) {
       lastErr = err;
-      if (isJobExpiredError(err)) throw err;
+      if (isJobNotFoundError(err) && isRetryableJobNotFound(job)) {
+        logAgentDev('agent-resume', 'poll_404_retry', {
+          jobId: job.jobId,
+          attempt: i + 1,
+          postPending: job.postPending ?? false,
+        }, job.jobId);
+        await sleep(Math.min(600 * (i + 1), 3000));
+        continue;
+      }
+      if (isJobExpiredError(err, job)) throw err;
       if (i < attempts - 1) {
         await sleep(400 * (i + 1));
       }
@@ -246,7 +262,12 @@ export async function resumePendingAgentJobs(
 
       try {
         try {
-          const status = await fetchJobStatusWithRetry(job.jobId);
+          if (job.postPending) {
+            await startNativeAgentJobWatch(job.jobId);
+            continue;
+          }
+
+          const status = await fetchJobStatusWithRetry(job);
           const applied = await tryApplyFinishedJobStatus(job, status, callbacks);
           if (applied) {
             completed += 1;
@@ -263,18 +284,22 @@ export async function resumePendingAgentJobs(
             continue;
           }
         } catch (statusErr) {
-          if (isJobExpiredError(statusErr)) {
+          if (isJobExpiredError(statusErr, job)) {
             const message =
               statusErr instanceof Error ? statusErr.message : 'Job expiré';
             await failPendingJob(job, message, callbacks);
             completed += 1;
             continue;
           }
+          if (isJobNotFoundError(statusErr) && isRetryableJobNotFound(job)) {
+            await startNativeAgentJobWatch(job.jobId);
+            continue;
+          }
         }
 
         watchJobInBackground(job, callbacks);
       } catch (err) {
-        if (isJobExpiredError(err)) {
+        if (isJobExpiredError(err, job)) {
           const message = err instanceof Error ? err.message : 'Job expiré';
           await failPendingJob(job, message, callbacks);
           completed += 1;
@@ -314,6 +339,11 @@ export async function watchPendingJobUntilDone(
     const result = await watchAgentJob(job.jobId, {
       onStep: callbacks?.onStep,
       signal: controller.signal,
+      pollGrace: {
+        startedAt: job.startedAt,
+        postPending: job.postPending,
+        serverRegistered: job.serverRegistered,
+      },
     });
     return applyAgentJobResult(job, result, callbacks);
   } catch (err) {
@@ -323,7 +353,7 @@ export async function watchPendingJobUntilDone(
       return { backgroundPending: true };
     }
 
-    if (isJobExpiredError(err)) {
+    if (isJobExpiredError(err, job)) {
       const message = err instanceof Error ? err.message : 'Job expiré';
       await failPendingJob(job, message, callbacks);
       return { ok: false, error: message, aiUnavailable: true };

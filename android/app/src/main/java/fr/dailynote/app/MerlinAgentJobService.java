@@ -32,6 +32,8 @@ public class MerlinAgentJobService extends Service {
     private static final long POLL_INTERVAL_MS = 2000;
     private static final int MAX_POLL_FAILURES = 30;
     private static final long MAX_WATCH_MS = 15 * 60 * 1000L;
+    /** 404 possible tant que le POST client n'a pas créé le job sur Redis. */
+    private static final long POST_GRACE_MS = 120_000L;
     private static final String PREFS_NAME = "merlin_agent_job";
     private static final String PREF_JOB_ID = "job_id";
     private static final String PREF_POLL_URL = "poll_url";
@@ -182,6 +184,9 @@ public class MerlinAgentJobService extends Service {
         int code = connection.getResponseCode();
         if (code == 404) {
             connection.disconnect();
+            if (System.currentTimeMillis() - watchStartedAt < POST_GRACE_MS) {
+                return null;
+            }
             MerlinAgentJobBridge.deliverJobFinished(jobId);
             showReplyNotification("La réflexion de Merlin a expiré.");
             finishService();

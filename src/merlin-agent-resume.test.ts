@@ -149,7 +149,12 @@ describe('watchPendingJobUntilDone', () => {
   it('échoue proprement si le job a expiré côté serveur', async () => {
     mocks.watchAgentJob.mockRejectedValue(new Error('Job expiré ou introuvable'));
 
-    const result = await watchPendingJobUntilDone(job);
+    const result = await watchPendingJobUntilDone({
+      ...job,
+      postPending: false,
+      serverRegistered: true,
+      startedAt: Date.now() - 130_000,
+    });
 
     expect(result).toEqual({
       ok: false,
@@ -281,6 +286,43 @@ describe('resumePendingAgentJobs', () => {
 
     expect(completed).toBe(1);
     expect(mocks.getAgentJobStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('ne abandonne pas un job dont le POST est encore en cours (404 transitoire)', async () => {
+    mocks.listPendingAgentJobs.mockReturnValue([
+      { ...job, postPending: true, serverRegistered: false },
+    ]);
+
+    const completed = await resumePendingAgentJobs();
+
+    expect(completed).toBe(0);
+    expect(mocks.getAgentJobStatus).not.toHaveBeenCalled();
+    expect(mocks.removePendingAgentJob).not.toHaveBeenCalled();
+    expect(mocks.startNativeAgentJobWatch).toHaveBeenCalledWith('job-1');
+  });
+
+  it('réessaie un 404 tant que le job vient d’être créé côté client', async () => {
+    mocks.listPendingAgentJobs.mockReturnValue([
+      {
+        ...job,
+        postPending: false,
+        serverRegistered: false,
+        startedAt: Date.now() - 2_000,
+      },
+    ]);
+    mocks.getAgentJobStatus
+      .mockRejectedValueOnce(new Error('Job introuvable ou expiré'))
+      .mockResolvedValue({
+        status: 'running',
+        steps: [],
+      });
+    mocks.watchAgentJob.mockReturnValue(new Promise(() => {}));
+
+    const completed = await resumePendingAgentJobs();
+
+    expect(completed).toBe(0);
+    expect(mocks.getAgentJobStatus).toHaveBeenCalledTimes(2);
+    expect(mocks.removePendingAgentJob).not.toHaveBeenCalled();
   });
 });
 
