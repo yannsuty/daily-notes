@@ -15,3 +15,9 @@ export const JOB_STREAM_MAX_MS = BACKGROUND_JOB_TIMEOUT_MS - 3_000;
 
 /** Job `running` sans activité → marqué en erreur (process tué, enchaînement segment interrompu…). */
 export const STALE_RUNNING_MS = BACKGROUND_JOB_TIMEOUT_MS + 180_000;
+
+/** Marge plus large quand un checkpoint attend la reprise via poll (segments). */
+export const STALE_WITH_CHECKPOINT_MS = 20 * 60_000;
+
+/** Durée max d'un segment (verrou Redis). */
+export const SEGMENT_LEASE_MS = 120_000;

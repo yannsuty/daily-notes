@@ -23,6 +23,10 @@ export function agentJobKey(jobId: string): string {
   return `agent:${jobId}`;
 }
 
+export function agentJobLeaseKey(jobId: string): string {
+  return `agent:lease:${jobId}`;
+}
+
 export function webCacheKey(kind: 'search' | 'page', key: string): string {
   return `web:${kind}:${key}`;
 }

@@ -1,14 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { MAX_AGENT_SEGMENTS } from '../lib/merlin-agent/agent-checkpoint.js';
 import type { AgentJobCheckpoint } from '../lib/merlin-agent/agent-checkpoint.js';
+import { isAppDevEnv } from '../lib/merlin-agent/app-env.js';
 import { JOB_STREAM_MAX_MS } from '../lib/merlin-agent/agent-duration.js';
 import {
   appendAgentJobStep,
+  acquireSegmentLease,
   createJobId,
   expireStaleRunningJob,
   failAgentJob,
   finishAgentJob,
   getAgentJob,
+  releaseSegmentLease,
   saveAgentJob,
   saveAgentJobCheckpoint,
   touchAgentJob,
@@ -138,6 +141,9 @@ async function processBackgroundJob(
   jobId: string,
   body: AgentRequestBody,
 ): Promise<void> {
+  const leased = await acquireSegmentLease(jobId);
+  if (!leased) return;
+
   const heartbeat = setInterval(() => {
     void touchAgentJob(jobId);
   }, JOB_HEARTBEAT_MS);
@@ -216,13 +222,14 @@ async function processBackgroundJob(
       pendingTool: outcome.checkpoint.pendingTool?.name,
     });
 
-    scheduleBackground(() => processBackgroundJob(jobId, body));
+    // Segment suivant repris par le poll Android (nouvelle invocation Vercel).
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Agent error';
     await appendAgentJobDevLog(jobId, 'segment', 'exception', { message });
     await failAgentJob(jobId, message);
   } finally {
     clearInterval(heartbeat);
+    await releaseSegmentLease(jobId);
   }
 }
 
@@ -318,7 +325,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (body.background) {
     const jobId = body.jobId?.trim() || createJobId();
-    const devLog = body.devLog === true;
+    const devLog = body.devLog === true || isAppDevEnv(process.env.APP_ENV);
     await saveAgentJob(jobId, {
       status: 'pending',
       steps: [],

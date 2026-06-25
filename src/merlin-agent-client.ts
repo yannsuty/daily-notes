@@ -9,6 +9,8 @@ import type {
   AgentStep,
 } from '../lib/merlin-agent';
 
+const START_BACKGROUND_TIMEOUT_MS = 45_000;
+
 export interface RunServerAgentOptions {
   onStep?: (step: AgentStep) => void;
   stream?: boolean;
@@ -171,25 +173,44 @@ export async function startBackgroundAgentJob(
     activeSpaceId: context.activeSpaceId,
   }, jobId);
 
-  const response = await fetch(apiUrl('/api/merlin-agent'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      context,
-      background: true,
-      jobId,
-      devLog,
-      config: {
-        apiKey: clientConfig.apiKey,
-        modelChain: clientConfig.modelChain,
-        model: clientConfig.model,
-        githubToken: clientConfig.githubToken,
-        braveSearchApiKey: clientConfig.braveSearchApiKey,
-        tavilyApiKey: clientConfig.tavilyApiKey,
-      },
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), START_BACKGROUND_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(apiUrl('/api/merlin-agent'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        message,
+        context,
+        background: true,
+        jobId,
+        devLog,
+        config: {
+          apiKey: clientConfig.apiKey,
+          modelChain: clientConfig.modelChain,
+          model: clientConfig.model,
+          githubToken: clientConfig.githubToken,
+          braveSearchApiKey: clientConfig.braveSearchApiKey,
+          tavilyApiKey: clientConfig.tavilyApiKey,
+        },
+      }),
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    const message =
+      err instanceof DOMException && err.name === 'AbortError'
+        ? 'Délai dépassé en contactant le serveur Merlin.'
+        : err instanceof Error
+          ? err.message
+          : 'Erreur réseau';
+    logAgentDev('agent-client', 'start_background_error', { detail: message, jobId }, jobId);
+    throw new Error(message);
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     let detail = `Erreur serveur (${response.status})`;

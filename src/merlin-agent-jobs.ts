@@ -92,6 +92,10 @@ export function removeStalePendingAgentJobs(now = Date.now()): PendingAgentJob[]
   return stale;
 }
 
+export function createAgentJobId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function shouldUseBackgroundAgent(): boolean {
   return Capacitor.isNativePlatform();
 }

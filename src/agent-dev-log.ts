@@ -1,4 +1,5 @@
 import { Capacitor } from '@capacitor/core';
+import { isAppDevEnv } from '../lib/merlin-agent/app-env';
 import {
   formatAgentDevLogEntry,
   redactDevLogDetail,
@@ -11,9 +12,16 @@ import type { AgentJobPollResponse } from '../lib/merlin-agent';
 
 const STORAGE_ENABLED = 'merlin-agent-dev-log';
 const STORAGE_LOGS = 'merlin-agent-dev-log-entries';
+const STORAGE_LAST_JOBS = 'merlin-agent-dev-last-jobs';
+const MAX_LAST_JOBS = 8;
+
+function buildAppEnv(): string | undefined {
+  return typeof __APP_ENV__ !== 'undefined' ? __APP_ENV__ : undefined;
+}
 
 export function isAgentDevLogEnabled(): boolean {
   if (import.meta.env.DEV) return true;
+  if (isAppDevEnv(buildAppEnv())) return true;
   try {
     return localStorage.getItem(STORAGE_ENABLED) === '1';
   } catch {
@@ -21,6 +29,28 @@ export function isAgentDevLogEnabled(): boolean {
   }
 }
 
+export function rememberAgentJobId(jobId: string): void {
+  if (!jobId.trim()) return;
+  try {
+    const raw = localStorage.getItem(STORAGE_LAST_JOBS);
+    const current = raw ? (JSON.parse(raw) as string[]) : [];
+    const next = [jobId, ...current.filter((id) => id !== jobId)].slice(0, MAX_LAST_JOBS);
+    localStorage.setItem(STORAGE_LAST_JOBS, JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+function readLastJobIds(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_LAST_JOBS);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as string[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
 export function setAgentDevLogEnabled(enabled: boolean): void {
   try {
     if (enabled) {
@@ -108,7 +138,7 @@ export async function buildAgentDevLogExport(): Promise<string> {
     `App : ${typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'inconnue'}`,
     `Plateforme : ${Capacitor.getPlatform()}`,
     `API : ${apiUrl('/api/merlin-agent')}`,
-    `Dev log : ${isAgentDevLogEnabled() ? 'activé' : 'désactivé'}`,
+    `Dev log : ${isAgentDevLogEnabled() ? 'activé' : 'désactivé'} (APP_ENV=${buildAppEnv() || '—'})`,
     '',
     '--- CLIENT ---',
   ];
@@ -130,6 +160,18 @@ export async function buildAgentDevLogExport(): Promise<string> {
     }
   }
 
+  const pendingIds = new Set(pending.map((job) => job.jobId));
+  const recentIds = readLastJobIds().filter((id) => !pendingIds.has(id));
+
+  lines.push('', '--- DERNIERS JOBS (historique) ---');
+  if (recentIds.length === 0) {
+    lines.push('(aucun)');
+  } else {
+    for (const jobId of recentIds) {
+      lines.push(`- ${jobId}`);
+    }
+  }
+
   for (const job of pending) {
     const status = await fetchJobDevLogs(job.jobId);
     lines.push('', `--- SERVEUR (${job.jobId}) ---`);
@@ -138,11 +180,31 @@ export async function buildAgentDevLogExport(): Promise<string> {
       continue;
     }
     lines.push(`status=${status.status} steps=${status.steps?.length ?? 0}`);
+    if (status.segmentCount != null) lines.push(`segmentCount=${status.segmentCount}`);
+    if (status.checkpointPhase) lines.push(`checkpointPhase=${status.checkpointPhase}`);
     if (status.error) lines.push(`error=${status.error}`);
     if (status.devLogs?.length) {
       lines.push(...status.devLogs.map(formatAgentDevLogEntry));
     } else {
       lines.push('(aucun log serveur — activer avant le prochain job)');
+    }
+  }
+
+  for (const jobId of recentIds) {
+    const status = await fetchJobDevLogs(jobId);
+    lines.push('', `--- SERVEUR (${jobId}) ---`);
+    if (!status) {
+      lines.push('(job introuvable ou expiré)');
+      continue;
+    }
+    lines.push(`status=${status.status} steps=${status.steps?.length ?? 0}`);
+    if (status.segmentCount != null) lines.push(`segmentCount=${status.segmentCount}`);
+    if (status.checkpointPhase) lines.push(`checkpointPhase=${status.checkpointPhase}`);
+    if (status.error) lines.push(`error=${status.error}`);
+    if (status.devLogs?.length) {
+      lines.push(...status.devLogs.map(formatAgentDevLogEntry));
+    } else {
+      lines.push('(aucun log serveur)');
     }
   }
 
