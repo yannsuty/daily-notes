@@ -135,6 +135,10 @@ export async function initApp(root: HTMLElement): Promise<void> {
     onVoiceRequest: () => {
       void merlin?.beginConversing();
     },
+    onOpenSpace: (spaceId) => {
+      tabBar?.switchTo('gallery');
+      gallery?.openEspacesSpace(spaceId);
+    },
   });
 
   journal = new Journal({

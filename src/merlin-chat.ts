@@ -30,12 +30,14 @@ export interface MerlinChatOptions {
   container: HTMLElement;
   onConversationUpdate?: () => void;
   onVoiceRequest?: () => void;
+  onOpenSpace?: (spaceId: string) => void;
 }
 
 export class MerlinChat {
   private container: HTMLElement;
   private onConversationUpdate?: () => void;
   private onVoiceRequest?: () => void;
+  private onOpenSpace?: (spaceId: string) => void;
   private messagesEl: HTMLElement | null = null;
   private actionsEl: HTMLElement | null = null;
   private paletteEl: HTMLElement | null = null;
@@ -53,6 +55,7 @@ export class MerlinChat {
     this.container = options.container;
     this.onConversationUpdate = options.onConversationUpdate;
     this.onVoiceRequest = options.onVoiceRequest;
+    this.onOpenSpace = options.onOpenSpace;
   }
 
   async init(): Promise<void> {
@@ -191,10 +194,16 @@ export class MerlinChat {
     this.contextEl.hidden = false;
     this.contextEl.innerHTML = `
       <span class="merlin-chat__context-label">Contexte :</span>
-      <span class="merlin-chat__context-badge">${escapeHtml(SPACE_KIND_LABELS[space.kind])}</span>
-      <span class="merlin-chat__context-title">${escapeHtml(space.title)}</span>
+      <button type="button" class="merlin-chat__context-open" data-action="open-context-space" data-space-id="${escapeHtml(space.id)}" title="Ouvrir l'espace">
+        <span class="merlin-chat__context-badge">${escapeHtml(SPACE_KIND_LABELS[space.kind])}</span>
+        <span class="merlin-chat__context-title">${escapeHtml(space.title)}</span>
+      </button>
       <button type="button" class="merlin-chat__context-clear" data-action="clear-context" aria-label="Quitter le contexte">✕</button>
     `;
+
+    this.contextEl.querySelector('[data-action="open-context-space"]')?.addEventListener('click', () => {
+      this.onOpenSpace?.(space.id);
+    });
 
     this.contextEl.querySelector('[data-action="clear-context"]')?.addEventListener('click', () => {
       setActiveSpaceId(null);
