@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { searchBraveImages } from './image-tools.js';
+import { refreshComparisonRowImage, searchBraveImages } from './image-tools.js';
 
 describe('searchBraveImages', () => {
   const originalFetch = globalThis.fetch;
@@ -33,5 +33,39 @@ describe('searchBraveImages', () => {
     expect(hits).toHaveLength(1);
     expect(hits[0].imageUrl).toBe('https://cdn.example.com/hunter.jpg');
     expect(hits[0].pageUrl).toBe('https://shop.example.com/hunter');
+  });
+});
+
+describe('refreshComparisonRowImage', () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          results: [
+            {
+              title: 'Alpha',
+              properties: { url: 'https://cdn.example.com/alpha-new.jpg' },
+            },
+          ],
+        }),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('retourne une URL image structurée', async () => {
+    const result = await refreshComparisonRowImage('Alpha', 'Ventilateurs', {
+      braveSearchApiKey: 'test-key',
+    });
+    expect(result.ok).toBe(true);
+    expect(result.imageUrl).toBe('https://cdn.example.com/alpha-new.jpg');
   });
 });

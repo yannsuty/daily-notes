@@ -7,6 +7,7 @@ import {
   clampImageResultCount,
   formatImageSearchResults,
   isValidImageUrl,
+  buildComparisonImageQuery,
   type ImageSearchHit,
 } from '../../lib/merlin-agent/image.js';
 import type { AgentClientConfig, MerlinSpace, ToolResult } from '../../lib/merlin-agent/types.js';
@@ -148,6 +149,39 @@ export async function resolveFirstImageUrl(
   if (!braveKey) return null;
   const hits = await searchBraveImages(query, 3, braveKey);
   return hits[0]?.imageUrl ?? null;
+}
+
+export async function refreshComparisonRowImage(
+  rowName: string,
+  contextHint: string,
+  config: AgentClientConfig,
+): Promise<{ ok: boolean; imageUrl?: string; content: string }> {
+  const braveKey = resolveBraveApiKey(config);
+  if (!braveKey) {
+    return {
+      ok: false,
+      content:
+        'Recherche d\'images indisponible : configurez BRAVE_SEARCH_API_KEY (Brave Images).',
+    };
+  }
+
+  const query = buildComparisonImageQuery(rowName, contextHint);
+
+  try {
+    const hits = await searchBraveImages(query, 3, braveKey);
+    const imageUrl = hits[0]?.imageUrl;
+    if (!imageUrl) {
+      return { ok: false, content: `Aucune image trouvée pour « ${rowName} ».` };
+    }
+    return {
+      ok: true,
+      imageUrl,
+      content: `Image trouvée pour « ${rowName} ».`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Erreur réseau';
+    return { ok: false, content: `Recherche d'images impossible : ${message}.` };
+  }
 }
 
 export async function runImageSearch(

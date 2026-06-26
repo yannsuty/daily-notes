@@ -110,6 +110,27 @@ function buildAgentResponse(
     mutationSpaces = [updated];
     reply = 'J’ai ajouté le modèle Gamma à la comparaison.';
     steps.push({ phase: 'tool', label: 'Comparaison mise à jour' });
+  } else if (
+    active?.kind === 'comparison' &&
+    /\b(image|images|photo|photos|illustration|vignette)\b/i.test(message) &&
+    /\b(cherche|trouve|ajoute|mets|montre|recherche|illustre)\b/i.test(message)
+  ) {
+    const existing = spaces.get(active.id) ?? active;
+    const rowImages: Record<string, string> = { ...(existing.data.rowImages ?? {}) };
+    for (const row of existing.data.rows ?? []) {
+      const key = (row[0] ?? '').trim().toLowerCase();
+      if (!key) continue;
+      rowImages[key] = `https://cdn.example.com/e2e-${key}.jpg`;
+    }
+    const updated: MerlinSpace = {
+      ...existing,
+      data: { ...existing.data, rowImages },
+      updatedAt: Date.now(),
+    };
+    spaces.set(updated.id, updated);
+    mutationSpaces = [updated];
+    reply = 'J’ai trouvé des images pour chaque modèle de la comparaison.';
+    steps.push({ phase: 'tool', label: 'Images ajoutées' });
   } else if (/compare|comparaison|ventilateur/.test(lower)) {
     const space = comparisonSpace('e2e-ventilateurs', 'Ventilateurs de plafond', [
       ['Alpha', '150 €', '30 dB'],

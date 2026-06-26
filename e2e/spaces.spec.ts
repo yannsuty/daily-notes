@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { installAgentMock } from './helpers/agent-mock';
+import { installSpaceImageMock, seedComparisonRowImage } from './helpers/space-image-mock';
 import { resetAppStorage } from './helpers/storage';
 import {
   clearActiveContext,
@@ -88,5 +89,47 @@ test.describe('Espaces — parcours comparaison (agent mocké)', () => {
 
     await clearActiveContext(page);
     await expect(page.locator('.merlin-chat__context')).toBeHidden();
+  });
+
+  test('images agent : cherche des images → vignettes dans Galerie', async ({ page }) => {
+    await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
+    await waitForThinkingDone(page);
+
+    await sendMerlinMessage(page, 'Cherche des images pour chaque modèle');
+    await waitForThinkingDone(page);
+
+    await expectLastAssistantMessage(page, /images|modèle/i);
+
+    await openEspacesGallery(page);
+    await openSpaceDetail(page, 'Ventilateurs de plafond');
+    await expect(page.locator('.espaces-page__comparison-image').first()).toHaveAttribute(
+      'src',
+      /cdn\.example\.com\/e2e-alpha\.jpg/,
+    );
+  });
+
+  test('rafraîchir l’image : bouton met à jour la vignette', async ({ page }) => {
+    await installSpaceImageMock(page, {
+      imageUrl: 'https://cdn.example.com/e2e-refreshed.jpg',
+    });
+
+    await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
+    await waitForThinkingDone(page);
+
+    await seedComparisonRowImage(
+      page,
+      'Ventilateurs de plafond',
+      'https://cdn.example.com/e2e-old.jpg',
+    );
+
+    await openEspacesGallery(page);
+    await openSpaceDetail(page, 'Ventilateurs de plafond');
+
+    const image = page.locator('.espaces-page__comparison-image');
+    await expect(image).toHaveAttribute('src', /e2e-old\.jpg/);
+
+    await page.getByRole('button', { name: "Rafraîchir l'image" }).click();
+    await expect(page.getByRole('button', { name: 'Recherche…' })).toBeHidden();
+    await expect(image).toHaveAttribute('src', /e2e-refreshed\.jpg/);
   });
 });

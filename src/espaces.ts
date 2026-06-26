@@ -14,6 +14,7 @@ import {
   restoreComparisonRow,
 } from '../lib/merlin-agent/comparison-items';
 import { getRowImage } from '../lib/merlin-agent/comparison-images';
+import { refreshComparisonRowImageClient } from './merlin-space-image-client';
 import { SPACE_KIND_LABELS } from './merlin-space-format';
 import { getActiveSpaceId, setActiveSpaceId } from './merlin-space-session';
 import { renderMarkdownToHtml } from './markdown';
@@ -44,6 +45,8 @@ export class EspacesPage {
   private filter: MerlinSpaceKind | 'all' = 'all';
   private viewingId: string | null = null;
   private comparisonItemIndex = 0;
+  private refreshingImageKey: string | null = null;
+  private imageRefreshError: string | null = null;
 
   constructor(container: HTMLElement, options: EspacesPageOptions = {}) {
     this.container = container;
@@ -271,6 +274,7 @@ export class EspacesPage {
     const name = entry.row[0]?.trim() || `Article ${idx + 1}`;
     const imageUrl = getRowImage(space.data, entry.key);
     const imageHtml = renderComparisonImage(imageUrl, name);
+    const isRefreshing = this.refreshingImageKey === entry.key;
     const details = columns
       .slice(1)
       .map((col, i) => {
@@ -303,8 +307,10 @@ export class EspacesPage {
         </article>
         ${nav}
         <div class="espaces-page__comparison-actions">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="refresh-image" data-row-key="${escapeHtml(entry.key)}" ${isRefreshing ? 'disabled aria-busy="true"' : ''}>${isRefreshing ? 'Recherche…' : 'Rafraîchir l\'image'}</button>
           <button type="button" class="btn btn--ghost btn--sm espaces-page__ignore-btn" data-action="ignore-item" data-row-key="${escapeHtml(entry.key)}">Ignorer cet article</button>
         </div>
+        ${this.imageRefreshError ? `<p class="espaces-page__comparison-image-error" role="alert">${escapeHtml(this.imageRefreshError)}</p>` : ''}
         ${this.renderIgnoredRowsSection(ignored)}
         <details class="espaces-page__table-details">
           <summary>Tableau complet</summary>
@@ -510,18 +516,25 @@ export class EspacesPage {
     this.detailEl.querySelector('[data-action="prev-item"]')?.addEventListener('click', () => {
       if (this.comparisonItemIndex > 0) {
         this.comparisonItemIndex -= 1;
+        this.imageRefreshError = null;
         void this.render();
       }
     });
 
     this.detailEl.querySelector('[data-action="next-item"]')?.addEventListener('click', () => {
       this.comparisonItemIndex += 1;
+      this.imageRefreshError = null;
       void this.render();
     });
 
     this.detailEl.querySelector('[data-action="ignore-item"]')?.addEventListener('click', (e) => {
       const key = (e.currentTarget as HTMLElement).dataset.rowKey;
       if (key) void this.handleIgnoreRow(space.id, key);
+    });
+
+    this.detailEl.querySelector('[data-action="refresh-image"]')?.addEventListener('click', (e) => {
+      const key = (e.currentTarget as HTMLElement).dataset.rowKey;
+      if (key) void this.handleRefreshRowImage(space.id, key);
     });
 
     this.detailEl.querySelectorAll('[data-action="restore-item"]').forEach((btn) => {
@@ -565,6 +578,42 @@ export class EspacesPage {
     if (visibleBefore > 0 && visibleAfter === 0) {
       this.comparisonItemIndex = 0;
     }
+  }
+
+  private async handleRefreshRowImage(spaceId: string, rowKey: string): Promise<void> {
+    const space = await getMerlinSpace(spaceId);
+    if (!space || space.kind !== 'comparison') return;
+
+    const entry = getVisibleComparisonRows(space.data).find((row) => row.key === rowKey);
+    if (!entry) return;
+
+    const label = entry.row[0]?.trim() || rowKey;
+    this.refreshingImageKey = rowKey;
+    this.imageRefreshError = null;
+    if (this.viewingId) await this.render();
+
+    const result = await refreshComparisonRowImageClient(label, space.title);
+    this.refreshingImageKey = null;
+
+    if (!result.ok || !result.imageUrl) {
+      this.imageRefreshError = result.content || 'Impossible de trouver une image.';
+      if (this.viewingId) await this.render();
+      return;
+    }
+
+    const nextData = {
+      ...space.data,
+      rowImages: {
+        ...(space.data.rowImages ?? {}),
+        [rowKey]: result.imageUrl,
+      },
+    };
+
+    await saveMerlinSpace({ ...space, data: nextData, updatedAt: Date.now() });
+    this.imageRefreshError = null;
+    if (this.viewingId) await this.render();
+    this.onUpdate?.();
+    void syncNow();
   }
 
   private async handleRestoreRow(spaceId: string, rowKey: string): Promise<void> {

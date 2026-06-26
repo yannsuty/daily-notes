@@ -1988,6 +1988,20 @@ body {
   line-height: 1.45;
 }
 
+.espaces-page__comparison-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.espaces-page__comparison-image-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--danger, #c0392b);
+}
+
 .espaces-page__comparison-nav {
   display: flex;
   align-items: center;
@@ -2001,12 +2015,6 @@ body {
   font-weight: 600;
   color: var(--muted);
   flex-shrink: 0;
-}
-
-.espaces-page__comparison-actions {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 1rem;
 }
 
 .espaces-page__ignore-btn {
