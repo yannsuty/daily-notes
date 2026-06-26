@@ -1,0 +1,116 @@
+---
+description: Versionnement semver, workflow Git (develop → main → tag), release Android et MAJ in-app.
+globs:
+  - android/app/build.gradle
+  - package.json
+  - .github/workflows/android-release.yml
+  - src/app-update.ts
+  - src/settings.ts
+alwaysApply: true
+---
+
+# Release et déploiement
+
+## Workflow Git
+
+| Branche | Rôle |
+|---------|------|
+| **feature / fix** (`cursor/…`, etc.) | Travail du jour |
+| **`develop`** | Intégration — toutes les PR de fonctionnalités et correctifs y convergent |
+| **`main`** | Production — uniquement les versions prêtes à publier |
+| **tag `vX.Y.Z`** | Déclenche la release Android (CI) ; doit pointer sur `main` |
+
+### Étapes
+
+1. **Créer une PR vers `develop`** (pas vers `main`) depuis la branche de travail.
+2. **Merger dans `develop`** après revue et CI verte (`npm test`, e2e, etc.).
+3. **Déployer l’API** : Vercel déploie `develop` en preview / staging ; valider le comportement serveur avant release.
+4. **Release** : PR `develop` → `main`, merger quand la version est prête.
+5. **Taguer sur `main`** : `vX.Y.Z` (voir semver ci-dessous) — le workflow `android-release.yml` build l’APK et publie la GitHub Release.
+
+### Règles
+
+- Ne pas pousser de features directement sur `main`.
+- Ne pas taguer depuis `develop` — le tag part toujours de `main` après merge.
+- Les bumps de version (`package.json`, `build.gradle`) se font dans la PR de release (`develop` → `main`), pas sur chaque feature PR sauf besoin explicite.
+
+---
+
+## Tags de version (x.y.z)
+
+Utiliser le format **x.y.z** (semver) pour les tags Git et la version dans `package.json`.
+
+### Quand incrémenter
+
+| Composant | Quand l'incrémenter | Exemple (depuis `3.3.11`) |
+|-----------|---------------------|--------------------------|
+| **x** (majeur) | Nouvelle fonctionnalité **majeure** (changement important, rupture possible) | `4.0.0` |
+| **y** (mineur) | Ajout d'une **nouvelle fonctionnalité** (sans rupture) | `3.4.0` |
+| **z** (correctif) | **Correction de bug** ou **modification mineure** | `3.3.12` |
+
+### Règles semver
+
+- Remettre à **0** les composants de droite lors d'un incrément à gauche (`3.3.11` → `3.4.0`, pas `3.4.1`).
+- Tag Git : `vX.Y.Z` (ex. `v3.3.12`).
+- Toujours partir de la **dernière version publiée** (`package.json` et tags Git) avant d'incrémenter.
+- Mettre à jour `package.json` (`version`) en même temps que le tag.
+- Ne pas sauter de numéros ni réutiliser un tag existant.
+
+### Exemples
+
+- Sync cloud multi-appareils → **mineur** (`3.3.11` → `3.4.0`)
+- Refonte complète de l'éditeur → **majeur** (`3.3.11` → `4.0.0`)
+- Fix crash à la sauvegarde → **correctif** (`3.3.11` → `3.3.12`)
+- Ajustement CSS ou libellé → **correctif** (`3.3.11` → `3.3.12`)
+
+---
+
+## Versions Android (cohérence obligatoire)
+
+Avant de créer un tag ou de modifier une version, **vérifier systématiquement** :
+
+- [ ] `versionCode` incrémenté dans `android/app/build.gradle` (entier strictement supérieur au précédent)
+- [ ] `versionName` dans `build.gradle` = numéro du tag sans le `v` (ex. tag `v3.3.2` → `"3.3.2"`)
+- [ ] `version` dans `package.json` alignée sur `versionName`
+- [ ] Tags existants consultés (`git fetch --tags && git tag -l 'v*' --sort=-v:refname`) — **jamais de régression semver**
+
+---
+
+## CI / GitHub Release
+
+- [ ] Le workflow `.github/workflows/android-release.yml` publie **les deux** assets :
+  - `app-release.apk`
+  - `app-version.json` (`versionCode`, `versionName`, `tag`)
+- [ ] L'asset APK s'appelle exactement `app-release.apk`
+
+---
+
+## MAJ in-app (`src/app-update.ts`)
+
+- [ ] La détection utilise **`versionCode`** (`app-version.json`, lecture native) comme source de vérité, semver en secours
+- [ ] 1 seul appel API `/releases/latest` par vérification ; le cache est **vidé au clic** du bouton (pas de faux « à jour » pendant 30 min)
+- [ ] Pas de vérification automatique à l'ouverture des réglages (uniquement au clic du bouton)
+- [ ] Le tag GitHub affiché peut différer du `versionName` APK, mais `versionCode` est la source de vérité Android
+- [ ] Le téléchargement APK est **repriseable** (`ApkDownloadManager`) : fichier `.part` + `merlin-update.meta.json` dans le cache
+- [ ] En cas de réseau instable, le bouton « Vérifier et mettre à jour » doit **reprendre** au dernier octet (HTTP Range)
+- [ ] Les erreurs GitHub / téléchargement sont envoyées à **Sentry** (`feature: app-update`, contexte `app_update`) avec status HTTP, rate limit, version installée
+- [ ] **`app-version.json`** : lecture native via `browser_download_url` (`AppUpdate.fetchUrlText`), secours API `asset.url` — jamais `fetch()` WebView sur `github.com/releases/download`
+- [ ] Optionnel : secret `VITE_GITHUB_TOKEN` (CI) pour éviter la limite API GitHub (60 req/h/IP sans token, 5000/h avec)
+
+---
+
+## Avant de pousser le tag
+
+- [ ] `npm run build:cap` passe
+- [ ] Le nouveau `versionCode` est > à celui de la dernière release publiée
+- [ ] Message de commit / tag explicite (ex. `chore: version 3.3.2`)
+- [ ] PR `develop` → `main` mergée ; tag créé sur le commit de `main`
+
+---
+
+## Pièges connus
+
+- Un tag `v3.3.1` avec `versionName "3.3.0"` bloque l'utilisateur (affichage et MAJ incohérents)
+- Réinstaller le même `versionCode` échoue silencieusement côté Android
+- `/releases/latest` ne reflète que le tag le plus récent semver — vérifier qu'il pointe bien sur la release visée
+- Taguer `develop` au lieu de `main` : la release GitHub ne correspond pas à la prod Vercel
