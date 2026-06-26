@@ -6,7 +6,24 @@ import {
 } from './parse.js';
 
 describe('parseAgentTurn', () => {
-  it('parse le format reply + app.tool', () => {
+  it('parse le format message + app.tool', () => {
+    const turn = parseAgentTurn(
+      JSON.stringify({
+        message: 'Je crée la comparaison dans Galerie → Espaces.',
+        app: {
+          tool: {
+            name: 'create_space',
+            args: { kind: 'comparison', title: 'Ventilateurs' },
+          },
+        },
+      }),
+    );
+    expect(turn.reply).toBe('Je crée la comparaison dans Galerie → Espaces.');
+    expect(turn.toolCall?.name).toBe('create_space');
+    expect(turn.toolCall?.args?.kind).toBe('comparison');
+  });
+
+  it('parse le format reply + app.tool (alias rétrocompatible)', () => {
     const turn = parseAgentTurn(
       JSON.stringify({
         reply: 'Je crée la comparaison dans Galerie → Espaces.',
@@ -23,7 +40,13 @@ describe('parseAgentTurn', () => {
     expect(turn.toolCall?.args?.kind).toBe('comparison');
   });
 
-  it('parse reply seul sans outil', () => {
+  it('parse message seul sans outil', () => {
+    const turn = parseAgentTurn(JSON.stringify({ message: 'Voici mon conseil.' }));
+    expect(turn.reply).toBe('Voici mon conseil.');
+    expect(turn.toolCall).toBeNull();
+  });
+
+  it('parse reply seul sans outil (alias)', () => {
     const turn = parseAgentTurn(JSON.stringify({ reply: 'Voici mon conseil.' }));
     expect(turn.reply).toBe('Voici mon conseil.');
     expect(turn.toolCall).toBeNull();
@@ -49,7 +72,15 @@ describe('parseAgentTurn', () => {
 });
 
 describe('formatAgentReplyForUser', () => {
-  it('extrait reply du JSON structuré', () => {
+  it('extrait message du JSON structuré', () => {
+    expect(
+      formatAgentReplyForUser(
+        JSON.stringify({ message: 'Texte visible', app: { tool: { name: 'show_lists' } } }),
+      ),
+    ).toBe('Texte visible');
+  });
+
+  it('extrait reply du JSON structuré (alias)', () => {
     expect(
       formatAgentReplyForUser(
         JSON.stringify({ reply: 'Texte visible', app: { tool: { name: 'show_lists' } } }),

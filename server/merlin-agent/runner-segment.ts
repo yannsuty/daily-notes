@@ -13,6 +13,7 @@ import { buildLocalReminderFallback } from '../../lib/merlin-agent/reminder-text
 import {
   buildSystemPrompt,
   PLANNER_PROMPT,
+  STRUCTURED_REPLY_REMINDER,
   SYNTHESIS_PROMPT,
 } from '../../lib/merlin-agent/prompts.js';
 import type {
@@ -497,7 +498,7 @@ export async function advanceAgentRun(
     checkpoint.messages.push({ role: 'assistant', content: pending.llmText });
     checkpoint.messages.push({
       role: 'user',
-      content: `Résultat de l'outil ${pending.name} :\n${toolResult.content}\n\nContinue : utilise un autre outil si nécessaire, sinon réponds en texte naturel.`,
+      content: `Résultat de l'outil ${pending.name} :\n${toolResult.content}\n\nContinue : utilise un autre outil si nécessaire, sinon réponds. ${STRUCTURED_REPLY_REMINDER}`,
     });
 
     checkpoint.iteration += 1;

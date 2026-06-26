@@ -13,6 +13,12 @@ export function cleanReminderActionText(text: string): string {
     cleaned = cleaned
       .replace(/^(?:quand|lorsque)\s+je\s+(?:suis|rentre|arrive)\s+(?:de\s+)?/i, '')
       .replace(/^en\s+rentrant\s+/i, '')
+      .replace(
+        /\s+(?:quand|lorsque)\s+je\s+(?:suis|rentre|arrive)\s+(?:de\s+)?(?:à\s+la\s+maison|a\s+la\s+maison|chez\s+moi|au\s+travail|aux?\s+courses)\s*$/i,
+        '',
+      )
+      .replace(/\s+(?:quand|lorsque)\s+je\s+(?:suis|rentre|arrive)\s*$/i, '')
+      .replace(/\s+en\s+rentrant\s*$/i, '')
       .replace(/\bje\s+dois\s+/gi, '')
       .replace(/\bil\s+faut\s+/gi, '')
       .replace(/^de\s+/i, '');

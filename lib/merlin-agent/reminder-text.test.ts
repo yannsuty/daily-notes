@@ -12,7 +12,13 @@ describe('cleanReminderActionText', () => {
     );
   });
 
-  it('retire le lieu et la condition', () => {
+  it('retire le lieu et la condition en fin de phrase', () => {
+    expect(
+      cleanReminderActionText('sortir les poubelles quand je rentre à la maison'),
+    ).toBe('sortir les poubelles');
+  });
+
+  it('retire le lieu et la condition en début de phrase', () => {
     expect(
       cleanReminderActionText('quand je rentre à la maison je dois sortir les poubelles'),
     ).toBe('sortir les poubelles');
