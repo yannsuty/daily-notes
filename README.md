@@ -21,30 +21,60 @@ L'app est disponible sur `http://localhost:5173`.
 
 > **Note :** la route `/api/sync` ne fonctionne qu'après déploiement sur Vercel avec Upstash Redis lié. En local, la prise de notes fonctionne entièrement hors ligne.
 
+## Workflow Git
+
+| Branche | Rôle |
+|---------|------|
+| **feature / fix** | Travail du jour (`cursor/…`, etc.) |
+| **`develop`** | Intégration — cible des PR de fonctionnalités et correctifs |
+| **`main`** | Production — versions prêtes à publier |
+| **tag `vX.Y.Z`** | Release Android (CI) ; toujours sur `main` |
+
+### Contribuer
+
+1. Créer une branche depuis `develop`.
+2. Ouvrir une **PR vers `develop`** (pas vers `main`).
+3. Merger après revue et CI verte (`npm test`, e2e Playwright).
+
+### Publier une version
+
+1. Valider l’API sur le déploiement Vercel de `develop` (preview / staging).
+2. Ouvrir une PR **`develop` → `main`**.
+3. Dans cette PR : incrémenter `versionCode` / `versionName` (`android/app/build.gradle`) et `version` (`package.json`) — format semver **x.y.z** (voir `.cursor/rules/release-deploy.mdc`).
+4. Merger dans `main`, puis taguer sur `main` :
+
+```bash
+git checkout main
+git pull
+git tag v3.8.1
+git push origin v3.8.1
+```
+
+Le workflow `.github/workflows/android-release.yml` build l’APK signé et crée la GitHub Release.
+
+> Ne pas taguer depuis `develop` ni pousser des features directement sur `main`.
+
 ## Déploiement sur Vercel
 
-1. **Initialiser Git et pousser sur GitHub**
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit — Daily Note PWA"
-   git remote add origin <votre-repo>
-   git push -u origin main
-   ```
+| Branche Vercel | Usage |
+|----------------|-------|
+| **`main`** | Production (URL publique de l’API) |
+| **`develop`** | Staging — valider sync, agent Merlin, etc. avant release |
 
-2. **Importer le projet dans [Vercel](https://vercel.com)**
+1. **Importer le projet dans [Vercel](https://vercel.com)** (repo GitHub lié)
    - Framework Preset : **Vite**
    - Build Command : `npm run build`
    - Output Directory : `dist`
+   - Branche de production : **`main`**
 
-3. **Créer un store Redis (Upstash)**
+2. **Créer un store Redis (Upstash)**
    - Dashboard Vercel → votre projet → **Storage** / **Marketplace**
    - Ajouter une intégration **Upstash Redis** (successeur de Vercel KV)
    - Les variables `UPSTASH_REDIS_REST_URL` et `UPSTASH_REDIS_REST_TOKEN` sont injectées automatiquement
 
-4. **Redéployer** après liaison du store Redis
+3. **Redéployer** après liaison du store Redis
 
-5. **Installer la PWA** sur mobile/desktop via « Ajouter à l'écran d'accueil »
+4. **Installer la PWA** sur mobile/desktop via « Ajouter à l'écran d'accueil »
 
 ## Synchronisation multi-appareils
 
@@ -119,16 +149,6 @@ Vérifier localement que l'alias et le mot de passe sont corrects :
 ```
 
 > **Erreur CI « keystore password was incorrect »** : les secrets `ANDROID_KEYSTORE_PASSWORD` et `ANDROID_KEY_ALIAS` sont manquants ou incorrects. Vérifiez qu'ils correspondent exactement à ceux saisis lors de `keytool -genkey`. Si vous n'avez qu'un seul mot de passe, définissez au minimum `ANDROID_KEYSTORE_PASSWORD` (le mot de passe de la clé sera réutilisé automatiquement).
-
-### Publier une version
-
-```bash
-# Incrémenter versionCode / versionName dans android/app/build.gradle
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Le workflow `.github/workflows/android-release.yml` build l'APK signé et crée la Release automatiquement.
 
 ### Installer via Obtainium
 
