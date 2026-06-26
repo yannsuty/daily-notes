@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   enrichComparisonRowImages,
+  formatComparisonImageCount,
   getRowImage,
   mergeRowImages,
   needsComparisonImageEnrichment,
@@ -68,6 +69,34 @@ describe('enrichComparisonRowImages', () => {
     expect(search).toHaveBeenCalledTimes(1);
     expect(result.rowImages.alpha).toBe('https://cdn.example.com/old.jpg');
     expect(result.skipped).toBeGreaterThan(0);
+  });
+});
+
+describe('formatComparisonImageCount', () => {
+  const data = {
+    columns: ['Modèle', 'Prix'],
+    rows: [
+      ['Alpha', '100 €'],
+      ['Beta', '120 €'],
+    ],
+  };
+
+  it('formate le compteur partiel', () => {
+    expect(
+      formatComparisonImageCount({
+        ...data,
+        rowImages: { alpha: 'https://a.test/1.jpg' },
+      }),
+    ).toBe('1/2 photos');
+  });
+
+  it('formate le compteur complet', () => {
+    expect(
+      formatComparisonImageCount({
+        ...data,
+        rowImages: { alpha: 'https://a.test/1.jpg', beta: 'https://b.test/2.jpg' },
+      }),
+    ).toBe('2 photos');
   });
 });
 

@@ -138,3 +138,22 @@ export function needsComparisonImageEnrichment(
   if (overwrite) return true;
   return visible.some((entry) => entry.key && !getRowImage(data, entry.key));
 }
+
+export function countComparisonImages(data: MerlinSpaceData): {
+  withImage: number;
+  total: number;
+} {
+  const visible = getVisibleComparisonRows(data);
+  const withImage = visible.filter((entry) => entry.key && getRowImage(data, entry.key)).length;
+  return { withImage, total: visible.length };
+}
+
+export function formatComparisonImageCount(data: MerlinSpaceData): string | null {
+  const { withImage, total } = countComparisonImages(data);
+  if (total === 0) return null;
+  if (withImage === 0) return 'Sans photo';
+  if (withImage === total) {
+    return total === 1 ? '1 photo' : `${total} photos`;
+  }
+  return `${withImage}/${total} photos`;
+}
