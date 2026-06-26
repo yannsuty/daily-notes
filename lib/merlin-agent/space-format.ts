@@ -1,4 +1,6 @@
 import type { MerlinSpace, MerlinSpaceKind } from './types.js';
+import { comparisonRowKey } from './comparison-items.js';
+import { getRowImage } from './comparison-images.js';
 
 export const SPACE_KIND_LABELS: Record<MerlinSpaceKind, string> = {
   comparison: 'Comparaison',
@@ -20,7 +22,10 @@ export function formatSpaceForAgent(space: MerlinSpace): string {
     lines.push('Tableau :');
     lines.push(data.columns.join(' | '));
     for (const row of data.rows ?? []) {
-      lines.push(row.join(' | '));
+      const parts = [row.join(' | ')];
+      const imageUrl = getRowImage(data, comparisonRowKey(row));
+      if (imageUrl) parts.push(`image: ${imageUrl}`);
+      lines.push(parts.join(' | '));
     }
   }
 

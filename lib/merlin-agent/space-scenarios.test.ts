@@ -89,6 +89,14 @@ const scenarios: Scenario[] = [
     expectKind: 'comparison',
   },
   {
+    label: 'images — enrichir la comparaison active',
+    message: 'Cherche des images pour chaque modèle',
+    activeKind: 'comparison',
+    expectUpdate: true,
+    expectExtend: true,
+    expectKind: null,
+  },
+  {
     label: 'plan DIY — nouveau projet sans rupture',
     message: 'Plan pour refaire la salle de bain',
     activeKind: 'comparison',

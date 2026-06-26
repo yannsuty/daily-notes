@@ -1931,6 +1931,26 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.espaces-page__comparison-figure {
+  margin: 0 0 0.75rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 120px;
+  background: color-mix(in srgb, var(--border) 25%, transparent);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.espaces-page__comparison-image {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
 .espaces-page__comparison-label {
   margin: 0 0 0.25rem;
   font-size: 0.75rem;

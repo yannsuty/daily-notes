@@ -37,8 +37,17 @@ export function isExplicitNewSpaceIntent(text: string): boolean {
   );
 }
 
+/** Demande d'illustrer les objets d'une comparaison avec des images. */
+export function isComparisonImageRequest(text: string): boolean {
+  return (
+    /\b(image|images|photo|photos|illustration|vignette|visuel)\b/i.test(text) &&
+    /\b(cherche|trouve|ajoute|mets|montre|recherche|illustre)\b/i.test(text)
+  );
+}
+
 /** Demande de modifier l'espace actif plutôt que d'en créer un nouveau. */
 export function detectSpaceUpdateIntent(text: string): boolean {
+  if (isComparisonImageRequest(text)) return true;
   return /\b(ajoute|ajouter|rajoute|rajouter|int[èe]gre|intégrer|met(s|t)?\s+à\s+jour|mets\s+à\s+jour|modifie|modifier|corrige|corriger|complète|compléter|dans (la |cette |mon )?comparaison|au tableau|au comparatif|retire|supprime|enlève)\b/i.test(
     text,
   );
@@ -95,6 +104,7 @@ export function isInformationalSpaceQuestion(text: string): boolean {
     return false;
   }
   if (detectSpaceUpdateIntent(trimmed)) return false;
+  if (isComparisonImageRequest(trimmed)) return false;
   return /^(quel|quelle|quels|quelles|comment|pourquoi|c'est quoi|dis[- ]moi|parle[- ]moi|explique|tu en penses quoi|avis sur|des infos sur|renseigne)/i.test(
     trimmed,
   );

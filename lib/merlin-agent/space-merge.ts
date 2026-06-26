@@ -1,4 +1,5 @@
 import type { MerlinSpaceData, MerlinSpaceKind } from './types.js';
+import { mergeRowImages } from './comparison-images.js';
 
 function findColumnIndex(columns: string[], pattern: RegExp, fallback: number): number {
   const idx = columns.findIndex((c) => pattern.test(c));
@@ -151,10 +152,14 @@ function mergeComparisonData(
   const patchRows = normalizedPatch.rows ?? [];
 
   if (patchRows.length === 0) {
-    return normalizeComparisonData({
+    const merged: MerlinSpaceData = {
       ...normalizedExisting,
       columns: columns.length > 0 ? columns : normalizedExisting.columns,
-    });
+    };
+    if (patch.rowImages) {
+      merged.rowImages = mergeRowImages(normalizedExisting.rowImages, patch.rowImages, append);
+    }
+    return normalizeComparisonData(merged);
   }
 
   const alignedPatchRows = patchRows.map((row) =>
@@ -171,7 +176,11 @@ function mergeComparisonData(
     isFullComparisonReplace(normalizedExisting, normalizedPatch, append);
 
   if (replaceAll) {
-    return normalizeComparisonData({ ...normalizedExisting, columns, rows: alignedPatchRows });
+    const replaced: MerlinSpaceData = { ...normalizedExisting, columns, rows: alignedPatchRows };
+    if (patch.rowImages) {
+      replaced.rowImages = mergeRowImages(normalizedExisting.rowImages, patch.rowImages, false);
+    }
+    return normalizeComparisonData(replaced);
   }
 
   const alignedExisting = existingRows.map((row) =>
@@ -191,7 +200,15 @@ function mergeComparisonData(
     }
   }
 
-  return normalizeComparisonData({ ...normalizedExisting, columns, rows: merged });
+  const mergedResult = normalizeComparisonData({ ...normalizedExisting, columns, rows: merged });
+  if (patch.rowImages) {
+    mergedResult.rowImages = mergeRowImages(
+      normalizedExisting.rowImages,
+      patch.rowImages,
+      append,
+    );
+  }
+  return mergedResult;
 }
 
 function mergeRecipeData(

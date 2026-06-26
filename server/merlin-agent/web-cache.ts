@@ -25,7 +25,7 @@ export function normalizeWebCacheKey(value: string): string {
 }
 
 export async function getWebCache(
-  kind: 'search' | 'page',
+  kind: 'search' | 'page' | 'image',
   rawKey: string,
 ): Promise<string | null> {
   const key = webCacheKey(kind, normalizeWebCacheKey(rawKey));
@@ -44,7 +44,7 @@ export async function getWebCache(
 }
 
 export async function setWebCache(
-  kind: 'search' | 'page',
+  kind: 'search' | 'page' | 'image',
   rawKey: string,
   value: string,
   ttlSeconds: number,

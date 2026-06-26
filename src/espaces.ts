@@ -13,6 +13,7 @@ import {
   ignoreComparisonRow,
   restoreComparisonRow,
 } from '../lib/merlin-agent/comparison-items';
+import { getRowImage } from '../lib/merlin-agent/comparison-images';
 import { SPACE_KIND_LABELS } from './merlin-space-format';
 import { getActiveSpaceId, setActiveSpaceId } from './merlin-space-session';
 import { renderMarkdownToHtml } from './markdown';
@@ -268,6 +269,8 @@ export class EspacesPage {
     const entry = visible[idx];
     const nameCol = columns[0] ?? 'Article';
     const name = entry.row[0]?.trim() || `Article ${idx + 1}`;
+    const imageUrl = getRowImage(space.data, entry.key);
+    const imageHtml = renderComparisonImage(imageUrl, name);
     const details = columns
       .slice(1)
       .map((col, i) => {
@@ -293,6 +296,7 @@ export class EspacesPage {
           ${ignored.length > 0 ? `<span class="espaces-page__comparison-meta">${ignored.length} ignoré${ignored.length > 1 ? 's' : ''}</span>` : ''}
         </div>
         <article class="espaces-page__comparison-card" data-row-key="${escapeHtml(entry.key)}">
+          ${imageHtml}
           <p class="espaces-page__comparison-label">${escapeHtml(nameCol)}</p>
           <h5 class="espaces-page__comparison-name">${escapeHtml(name)}</h5>
           ${details ? `<dl class="espaces-page__comparison-props">${details}</dl>` : ''}
@@ -608,4 +612,18 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function isSafeImageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function renderComparisonImage(url: string | undefined, alt: string): string {
+  if (!url || !isSafeImageUrl(url)) return '';
+  return `<figure class="espaces-page__comparison-figure"><img class="espaces-page__comparison-image" src="${escapeHtml(url)}" alt="${escapeHtml(alt)}" loading="lazy" referrerpolicy="no-referrer" decoding="async" /></figure>`;
 }

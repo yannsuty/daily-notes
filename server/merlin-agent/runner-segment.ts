@@ -52,6 +52,8 @@ const CONTINUE_TOOLS = new Set([
   'update_space',
   'web_search',
   'fetch_page',
+  'search_images',
+  'enrich_comparison_images',
 ]);
 
 function pushStep(

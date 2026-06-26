@@ -31,6 +31,8 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 ${ROUTINE_CONDITION_DOCS}
 - web_search(query, max_results?) — rechercher sur Internet (actualités, infos factuelles, météo, prix…). N'utilise pas pour le journal personnel
 - fetch_page(url) — lire le contenu textuel d'une page web (après une recherche ou si l'utilisateur donne un lien)
+- search_images(query, max_results?) — rechercher des images sur Internet (Brave Images). Retourne des URLs https
+- enrich_comparison_images(space_id?, rows?, overwrite?) — rechercher et sauvegarder une image par article dans une comparaison active. rows = clés optionnelles (1ʳᵉ colonne). overwrite=true pour remplacer les images existantes
 - create_space(kind, title, recap, data_json, create_todo_list?) — créer un espace structuré sauvegardé. kind : comparison | diy | plan | recipe. data_json selon le type (colonnes/lignes pour comparison, intro/sections pour diy, goal/milestones/github pour plan, ingredients/steps pour recipe). create_todo_list=true pour lier une liste de tâches (diy).
 - update_space(space_id|title, recap?, data_json?, status?, append?) — mettre à jour un espace. append=true pour AJOUTER des lignes/étapes sans écraser. Sans space_id ni title, cible l'espace du contexte actif. Pour renommer : space_id + title (nouveau titre).
 - show_space(space_id|title?) — afficher un espace ; sans argument, affiche l'espace du contexte actif
@@ -51,7 +53,13 @@ Workflow comparaison / espace riche :
 4. Si create_space ou update_space a été appelé, termine par le champ message du JSON structuré (résumé, recommandation)
 5. Ne jamais se limiter à un message sans outil pour ces demandes de sauvegarde
 6. Questions complexes dans un contexte actif (conseil, choix, explication) : message dans le JSON structuré, sans recréer un espace
-Après création ou mise à jour, mentionner Galerie → Espaces.`;
+
+Images dans une comparaison :
+- Demande explicite (« cherche des images », « une photo par produit », « illustre chaque modèle ») → enrich_comparison_images avec space_id du contexte actif
+- Ne jamais inventer d'URL d'image ; si la recherche échoue pour un objet, le signaler dans le message
+- overwrite=true uniquement si l'utilisateur demande de remplacer ou rafraîchir les images
+- Après enrichissement, mentionner Galerie → Espaces pour voir les vignettes
+- Après création ou mise à jour d'un espace, mentionner Galerie → Espaces.`;
 
 export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): string {
   if (customTools.length === 0) return '';

@@ -15,6 +15,8 @@ export const PRIMITIVE_TOOL_NAMES = [
   'delete_list',
   'web_search',
   'fetch_page',
+  'search_images',
+  'enrich_comparison_images',
   'create_space',
   'update_space',
   'show_space',
@@ -28,6 +30,8 @@ export const PRIMITIVE_TOOLS = new Set<string>(PRIMITIVE_TOOL_NAMES);
 
 export const WEB_TOOL_NAMES = new Set(['web_search', 'fetch_page']);
 
+export const IMAGE_TOOL_NAMES = new Set(['search_images', 'enrich_comparison_images']);
+
 export const MAX_CUSTOM_ROUTINE_STEPS = 5;
 
 export function isPrimitiveTool(name: string): boolean {
@@ -36,4 +40,8 @@ export function isPrimitiveTool(name: string): boolean {
 
 export function isWebTool(name: string): boolean {
   return WEB_TOOL_NAMES.has(name);
+}
+
+export function isImageTool(name: string): boolean {
+  return IMAGE_TOOL_NAMES.has(name);
 }

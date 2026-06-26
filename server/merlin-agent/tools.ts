@@ -3,6 +3,7 @@ import { formatGitHubSummary, inspectGitHubRepo } from '../../lib/merlin-agent/g
 import { mergeSpaceData, normalizeComparisonData } from '../../lib/merlin-agent/space-merge.js';
 import { findSpaceByRef } from '../../lib/merlin-agent/space-match.js';
 import {
+  isImageTool,
   isWebTool,
   MAX_CUSTOM_ROUTINE_STEPS,
 } from '../../lib/merlin-agent/primitive-tools.js';
@@ -19,6 +20,7 @@ import {
 import { mergeWebSources } from '../../lib/merlin-agent/web.js';
 import { cleanReminderActionText, normalizeReminderArgs } from '../../lib/merlin-agent/reminder-text.js';
 import { runWebTool } from './web-tools.js';
+import { runImageTool } from './image-tools.js';
 import type {
   AgentClientConfig,
   AgentContext,
@@ -66,6 +68,7 @@ const MUTATION_TOOLS = new Set([
   'save_custom_tool',
   'create_space',
   'update_space',
+  'enrich_comparison_images',
 ]);
 
 /** Mutations qui renvoient tout de suite sans laisser l'agent formuler (listes, rappels). */
@@ -659,6 +662,14 @@ export class AgentStore {
       for (const row of data.rows ?? []) {
         lines.push('| ' + row.join(' | ') + ' |');
       }
+      const images = data.rowImages ?? {};
+      const imageKeys = Object.keys(images);
+      if (imageKeys.length > 0) {
+        lines.push('\nImages :');
+        for (const key of imageKeys) {
+          lines.push(`- ${key}: ${images[key]}`);
+        }
+      }
     }
 
     if (space.kind === 'diy') {
@@ -965,6 +976,18 @@ export class AgentStore {
     }
   }
 
+  private getImageToolDeps() {
+    return {
+      resolveSpace: (ref?: string) => this.resolveSpace(ref),
+      formatSpace: (space: MerlinSpace) => this.formatSpaceContent(space),
+      applyRowImages: (space: MerlinSpace, rowImages: Record<string, string>) => {
+        space.data = { ...space.data, rowImages };
+        space.updatedAt = Date.now();
+        this.markSpace(space);
+      },
+    };
+  }
+
   private async executeStepAsync(
     name: string,
     args: Record<string, string>,
@@ -972,6 +995,9 @@ export class AgentStore {
   ): Promise<ToolResult> {
     if (isWebTool(name)) {
       return runWebTool(name, args, config);
+    }
+    if (isImageTool(name)) {
+      return runImageTool(name, args, config, this.getImageToolDeps());
     }
     if (name === 'inspect_github_repo') {
       return this.inspectGitHubRepo(args.owner ?? '', args.repo ?? '');
@@ -1045,6 +1071,9 @@ export class AgentStore {
     }
     if (isWebTool(name)) {
       return runWebTool(name, args, config);
+    }
+    if (isImageTool(name)) {
+      return runImageTool(name, args, config, this.getImageToolDeps());
     }
     if (name === 'inspect_github_repo') {
       return this.inspectGitHubRepo(args.owner ?? '', args.repo ?? '');
