@@ -256,6 +256,24 @@ export class AgentStore {
     return this.dirtySpaces.size > 0;
   }
 
+  getSpaceById(id: string): MerlinSpace | undefined {
+    return this.spaces.find((s) => s.id === id);
+  }
+
+  getDirtyComparisonSpaces(): MerlinSpace[] {
+    return this.spaces.filter(
+      (s) => this.dirtySpaces.has(s.id) && s.kind === 'comparison' && s.status === 'active',
+    );
+  }
+
+  applyComparisonRowImages(spaceId: string, rowImages: Record<string, string>): void {
+    const space = this.getSpaceById(spaceId);
+    if (!space || space.kind !== 'comparison') return;
+    space.data = { ...space.data, rowImages };
+    space.updatedAt = Date.now();
+    this.markSpace(space);
+  }
+
   toSnapshot(): SerializedAgentStore {
     return {
       days: this.days,

@@ -91,20 +91,32 @@ test.describe('Espaces — parcours comparaison (agent mocké)', () => {
     await expect(page.locator('.merlin-chat__context')).toBeHidden();
   });
 
-  test('images agent : cherche des images → vignettes dans Galerie', async ({ page }) => {
+  test('images auto : création comparaison → vignettes dans Galerie', async ({ page }) => {
     await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
     await waitForThinkingDone(page);
-
-    await sendMerlinMessage(page, 'Cherche des images pour chaque modèle');
-    await waitForThinkingDone(page);
-
-    await expectLastAssistantMessage(page, /images|modèle/i);
 
     await openEspacesGallery(page);
     await openSpaceDetail(page, 'Ventilateurs de plafond');
     await expect(page.locator('.espaces-page__comparison-image').first()).toHaveAttribute(
       'src',
       /cdn\.example\.com\/e2e-alpha\.jpg/,
+    );
+  });
+
+  test('override images : rafraîchir toutes les images sur demande', async ({ page }) => {
+    await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
+    await waitForThinkingDone(page);
+
+    await sendMerlinMessage(page, 'Rafraîchis les images de la comparaison');
+    await waitForThinkingDone(page);
+
+    await expectLastAssistantMessage(page, /images|remplac/i);
+
+    await openEspacesGallery(page);
+    await openSpaceDetail(page, 'Ventilateurs de plafond');
+    await expect(page.locator('.espaces-page__comparison-image').first()).toHaveAttribute(
+      'src',
+      /cdn\.example\.com\/e2e-alpha-override\.jpg/,
     );
   });
 

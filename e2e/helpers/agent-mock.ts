@@ -34,7 +34,7 @@ function comparisonSpace(
   rows: string[][],
   updatedAt = Date.now(),
 ): MerlinSpace {
-  return {
+  const space: MerlinSpace = {
     id,
     kind: 'comparison',
     title,
@@ -47,6 +47,21 @@ function comparisonSpace(
       rows,
     },
   };
+  return withComparisonImages(space);
+}
+
+function withComparisonImages(space: MerlinSpace, overwrite = false): MerlinSpace {
+  if (space.kind !== 'comparison') return space;
+  const rowImages: Record<string, string> = { ...(space.data.rowImages ?? {}) };
+  for (const row of space.data.rows ?? []) {
+    const key = (row[0] ?? '').trim().toLowerCase();
+    if (!key) continue;
+    if (overwrite || !rowImages[key]) {
+      const suffix = overwrite ? '-override' : '';
+      rowImages[key] = `https://cdn.example.com/e2e-${key}${suffix}.jpg`;
+    }
+  }
+  return { ...space, data: { ...space.data, rowImages } };
 }
 
 function recipeSpace(id: string, title: string): MerlinSpace {
@@ -113,24 +128,14 @@ function buildAgentResponse(
   } else if (
     active?.kind === 'comparison' &&
     /\b(image|images|photo|photos|illustration|vignette)\b/i.test(message) &&
-    /\b(cherche|trouve|ajoute|mets|montre|recherche|illustre)\b/i.test(message)
+    /\b(remplace|rafra[îi]chis|r[ée]affiche|cherche|trouve|recherche|illustre)\b/i.test(message)
   ) {
     const existing = spaces.get(active.id) ?? active;
-    const rowImages: Record<string, string> = { ...(existing.data.rowImages ?? {}) };
-    for (const row of existing.data.rows ?? []) {
-      const key = (row[0] ?? '').trim().toLowerCase();
-      if (!key) continue;
-      rowImages[key] = `https://cdn.example.com/e2e-${key}.jpg`;
-    }
-    const updated: MerlinSpace = {
-      ...existing,
-      data: { ...existing.data, rowImages },
-      updatedAt: Date.now(),
-    };
+    const updated = withComparisonImages(existing, true);
     spaces.set(updated.id, updated);
     mutationSpaces = [updated];
-    reply = 'J’ai trouvé des images pour chaque modèle de la comparaison.';
-    steps.push({ phase: 'tool', label: 'Images ajoutées' });
+    reply = 'J’ai remplacé les images de la comparaison.';
+    steps.push({ phase: 'tool', label: 'Images remplacées' });
   } else if (/compare|comparaison|ventilateur/.test(lower)) {
     const space = comparisonSpace('e2e-ventilateurs', 'Ventilateurs de plafond', [
       ['Alpha', '150 €', '30 dB'],

@@ -89,11 +89,11 @@ const scenarios: Scenario[] = [
     expectKind: 'comparison',
   },
   {
-    label: 'images — enrichir la comparaison active',
-    message: 'Cherche des images pour chaque modèle',
+    label: 'override images — pas de mise à jour tableau',
+    message: 'Rafraîchis les photos de chaque modèle',
     activeKind: 'comparison',
-    expectUpdate: true,
-    expectExtend: true,
+    expectUpdate: false,
+    expectExtend: false,
     expectKind: null,
   },
   {

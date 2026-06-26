@@ -1,5 +1,5 @@
 import type { ComparisonRowEntry } from './comparison-items.js';
-import { comparisonRowKey } from './comparison-items.js';
+import { comparisonRowKey, getVisibleComparisonRows } from './comparison-items.js';
 import {
   buildComparisonImageQuery,
   COMPARISON_IMAGE_CONCURRENCY,
@@ -126,4 +126,15 @@ export function parseRowKeysArg(raw?: string): string[] | undefined {
 
 export function rowKeyFromName(name: string): string {
   return comparisonRowKey([name]);
+}
+
+/** True si au moins un article visible n'a pas encore d'image (ou si overwrite). */
+export function needsComparisonImageEnrichment(
+  data: MerlinSpaceData,
+  overwrite = false,
+): boolean {
+  const visible = getVisibleComparisonRows(data);
+  if (visible.length === 0) return false;
+  if (overwrite) return true;
+  return visible.some((entry) => entry.key && !getRowImage(data, entry.key));
 }

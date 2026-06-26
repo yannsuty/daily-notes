@@ -3,6 +3,7 @@ import {
   enrichComparisonRowImages,
   getRowImage,
   mergeRowImages,
+  needsComparisonImageEnrichment,
 } from './comparison-images.js';
 
 const entries = [
@@ -67,5 +68,37 @@ describe('enrichComparisonRowImages', () => {
     expect(search).toHaveBeenCalledTimes(1);
     expect(result.rowImages.alpha).toBe('https://cdn.example.com/old.jpg');
     expect(result.skipped).toBeGreaterThan(0);
+  });
+});
+
+describe('needsComparisonImageEnrichment', () => {
+  const data = {
+    columns: ['Modèle', 'Prix'],
+    rows: [
+      ['Alpha', '100 €'],
+      ['Beta', '120 €'],
+    ],
+  };
+
+  it('retourne true si une ligne n’a pas d’image', () => {
+    expect(needsComparisonImageEnrichment(data)).toBe(true);
+  });
+
+  it('retourne false si toutes les lignes ont une image', () => {
+    expect(
+      needsComparisonImageEnrichment({
+        ...data,
+        rowImages: { alpha: 'https://a.test/1.jpg', beta: 'https://b.test/2.jpg' },
+      }),
+    ).toBe(false);
+  });
+
+  it('retourne true en mode overwrite même si des images existent', () => {
+    expect(
+      needsComparisonImageEnrichment(
+        { ...data, rowImages: { alpha: 'https://a.test/1.jpg' } },
+        true,
+      ),
+    ).toBe(true);
   });
 });

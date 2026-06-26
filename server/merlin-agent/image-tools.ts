@@ -120,18 +120,17 @@ export async function searchBraveImages(
     }[];
   };
 
-  const hits: ImageSearchHit[] = (payload.results ?? [])
-    .map((item) => {
-      const imageUrl = extractBraveImageUrl(item);
-      if (!imageUrl) return null;
-      return {
-        title: item.title?.trim() || '(sans titre)',
-        imageUrl,
-        pageUrl: item.url?.trim() || undefined,
-      };
-    })
-    .filter((item): item is ImageSearchHit => item !== null)
-    .slice(0, count);
+  const hits: ImageSearchHit[] = [];
+  for (const item of payload.results ?? []) {
+    const imageUrl = extractBraveImageUrl(item);
+    if (!imageUrl) continue;
+    hits.push({
+      title: item.title?.trim() || '(sans titre)',
+      imageUrl,
+      ...(item.url?.trim() ? { pageUrl: item.url.trim() } : {}),
+    });
+    if (hits.length >= count) break;
+  }
 
   if (hits.length > 0) {
     await writeImageCache(query, count, hits);
