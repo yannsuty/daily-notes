@@ -42,8 +42,8 @@ test.describe('Agent — trace et retry (agent mocké)', () => {
   });
 });
 
-test.describe('Agent — arrière-plan (web)', () => {
-  test('ne bloque pas l’UI avec le bandeau arrière-plan sur le web', async ({ page }) => {
+test.describe('Agent — arrière-plan', () => {
+  test('ne bloque pas l’UI avec le bandeau arrière-plan', async ({ page }) => {
     await resetAppStorage(page);
     await installAgentMock(page);
 

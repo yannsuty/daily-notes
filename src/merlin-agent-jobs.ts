@@ -1,4 +1,3 @@
-import { Capacitor } from '@capacitor/core';
 import type { AgentStep } from '../lib/merlin-agent';
 
 const STORAGE_KEY = 'merlin-pending-agent-jobs';
@@ -115,13 +114,14 @@ export function markPendingJobPostComplete(
   writeJobs(jobs);
 }
 
+/** Jobs serveur persistants + reprise (Web et mobile). */
 export function shouldUseBackgroundAgent(): boolean {
-  return Capacitor.isNativePlatform();
+  return true;
 }
 
-/** Job serveur : utile si l'app est déjà en arrière-plan ; sinon flux direct en premier plan. */
+/** L'onglet ou l'app est masqué avant le démarrage du job. */
 export function shouldStartBackgroundAgentJob(): boolean {
-  return shouldUseBackgroundAgent() && document.visibilityState !== 'visible';
+  return document.visibilityState !== 'visible';
 }
 
 export function registerAgentJobResume(onResume: () => void): () => void {

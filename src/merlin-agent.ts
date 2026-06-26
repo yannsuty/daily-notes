@@ -1,6 +1,5 @@
 import {
   chatCompletion,
-  LLM_UNAVAILABLE_MSG,
   parseJsonFromAi,
 } from './ai-provider';
 import {
@@ -13,11 +12,10 @@ import {
   updateMerlinMessageContent,
 } from './db';
 import { tryFastIntent } from './merlin-intents';
-import { applyAgentMutations, buildAgentContext } from './merlin-agent-context';
+import { buildAgentContext } from './merlin-agent-context';
 import { formatAgentReplyForUser } from '../lib/merlin-agent/parse';
 import { logAgentDev, rememberAgentJobId } from './agent-dev-log';
-import { setActiveSpaceId } from './merlin-space-session';
-import { runServerAgent, startBackgroundAgentJob } from './merlin-agent-client';
+import { startBackgroundAgentJob } from './merlin-agent-client';
 import {
   MERLIN_THINKING_PLACEHOLDER,
   createAgentJobId,
@@ -25,7 +23,6 @@ import {
   markPendingJobPostComplete,
   removePendingAgentJob,
   savePendingAgentJob,
-  shouldUseBackgroundAgent,
 } from './merlin-agent-jobs';
 import {
   startNativeAgentJobWatch,
@@ -232,9 +229,7 @@ async function runBackgroundAgentJobFlow(
   rememberAgentJobId(jobId);
   logAgentDev('agent', 'pending_saved_early', { jobId }, jobId);
 
-  if (shouldUseBackgroundAgent()) {
-    void startNativeAgentJobWatch(jobId);
-  }
+  void startNativeAgentJobWatch(jobId);
 
   try {
     const started = await startBackgroundAgentJob(trimmed, context, jobId);
@@ -248,9 +243,7 @@ async function runBackgroundAgentJobFlow(
         serverRegistered: true,
       });
       rememberAgentJobId(started.jobId);
-      if (shouldUseBackgroundAgent()) {
-        void startNativeAgentJobWatch(started.jobId);
-      }
+      void startNativeAgentJobWatch(started.jobId);
     }
   } catch (err) {
     markPendingJobPostComplete(jobId, false);
@@ -367,46 +360,7 @@ export async function handleUserMessage(
     };
   }
 
-  if (shouldUseBackgroundAgent()) {
-    return runBackgroundAgentJobFlow(trimmed, options) as Promise<AgentReply>;
-  }
-
-  const context = await buildAgentContext();
-  const agentResult = await runServerAgent(trimmed, context, {
-    onStep: options?.onAgentStep,
-    stream: !!options?.onAgentStep,
-  });
-
-  if (!agentResult.ok || !agentResult.reply) {
-    return {
-      ok: false,
-      error: agentResult.error ?? LLM_UNAVAILABLE_MSG,
-      aiUnavailable: true,
-      steps: agentResult.steps,
-      depth: agentResult.depth,
-    };
-  }
-
-  await applyAgentMutations(agentResult.mutations);
-  if (agentResult.mutations.spaces?.length) {
-    const newest = [...agentResult.mutations.spaces].sort(
-      (a, b) => b.updatedAt - a.updatedAt,
-    )[0];
-    if (newest) setActiveSpaceId(newest.id);
-  }
-  const displayReply = formatAgentReplyForUser(agentResult.reply);
-  await appendExchange(trimmed, agentResult.reply);
-  void recordShortcutUsage(trimmed);
-  const { syncNow } = await import('./sync');
-  await syncNow();
-
-  return {
-    ok: true,
-    content: displayReply,
-    sideEffects: agentResult.sideEffects,
-    steps: agentResult.steps,
-    depth: agentResult.depth,
-  };
+  return runBackgroundAgentJobFlow(trimmed, options) as Promise<AgentReply>;
 }
 
 export async function getWelcomeMessage(): Promise<string> {
