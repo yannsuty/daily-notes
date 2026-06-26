@@ -190,7 +190,11 @@ export async function appendMerlinMessage(
   message: MerlinMessage,
 ): Promise<MerlinConversation> {
   const conv = await getMerlinConversation();
-  conv.messages.push(message);
+  const stored: MerlinMessage =
+    message.role === 'assistant'
+      ? { ...message, content: formatAgentReplyForUser(message.content) }
+      : message;
+  conv.messages.push(stored);
   conv.updatedAt = Date.now();
   await saveMerlinConversation(conv);
   return conv;

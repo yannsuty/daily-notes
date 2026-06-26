@@ -48,9 +48,9 @@ Workflow comparaison / espace riche :
 1. Tu DOIS appeler create_space (données complètes dans data_json) pour toute nouvelle comparaison, recette, DIY ou plan
 2. Si un contexte actif est injecté et l'utilisateur demande d'ajouter/enrichir (ex. « ajoute ce modèle »), utilise update_space avec l'id du contexte actif et append=true (nouvelles lignes uniquement dans data_json)
 3. Si le tableau est cassé / décalé / à corriger : update_space avec space_id du contexte actif, append=false (ou omis), data_json avec columns[] ET toutes les rows[][] corrigées (tableau complet). Toujours inclure columns. Noms de modèles : ne pas dupliquer le diamètre en pouces dans la colonne Modèle si une colonne Diamètre existe (ex. « Hunter Original » pas « Hunter Original 52" »).
-4. Si create_space ou update_space a été appelé, termine par une réponse naturelle (résumé, recommandation)
-5. Ne jamais se limiter à une réponse texte sans outil pour ces demandes de sauvegarde
-6. Questions complexes dans un contexte actif (conseil, choix, explication) : réponds en texte sans recréer un espace
+4. Si create_space ou update_space a été appelé, termine par le champ message du JSON structuré (résumé, recommandation)
+5. Ne jamais se limiter à un message sans outil pour ces demandes de sauvegarde
+6. Questions complexes dans un contexte actif (conseil, choix, explication) : message dans le JSON structuré, sans recréer un espace
 Après création ou mise à jour, mentionner Galerie → Espaces.`;
 
 export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): string {
@@ -91,24 +91,25 @@ export function buildSystemPrompt(context: AgentContext, memoryBlock = ''): stri
   prompt += SPACE_GUIDANCE;
   prompt += `\n\nOutils disponibles :\n${TOOL_DOCS}${buildCustomToolsPromptBlock(context.customTools)}
 
-Format de réponse — OBLIGATOIRE (JSON valide uniquement) :
+Format de réponse — OBLIGATOIRE (JSON valide uniquement, jamais de texte libre hors JSON) :
 {
-  "reply": "Texte naturel en français, c'est ce que l'utilisateur voit",
+  "message": "Texte naturel en français, c'est ce que l'utilisateur voit dans le chat",
   "app": {
     "tool": { "name": "nom_outil", "args": { "clé": "valeur" } }
   }
 }
 
 Règles :
-- reply : toujours présent ; message clair, concis, en français (jamais de JSON, data_json ni noms d'outils techniques)
+- message : toujours présent ; clair, concis, en français (jamais de JSON, data_json ni noms d'outils techniques)
+- app : réservé à l'application (outils, données volumineuses) — l'utilisateur ne le voit pas
 - app.tool : uniquement quand tu exécutes un outil ; omettre app entier si aucun outil
-- Les données volumineuses (data_json des espaces, steps_json…) restent dans app.tool.args, pas dans reply
+- Les données volumineuses (data_json des espaces, steps_json…) restent dans app.tool.args, pas dans message
 
 Exemple avec outil :
-{"reply":"Je crée la comparaison — retrouvez-la dans Galerie → Espaces.","app":{"tool":{"name":"create_space","args":{"kind":"comparison","title":"…","data_json":{...}}}}}
+{"message":"Je crée la comparaison — retrouvez-la dans Galerie → Espaces.","app":{"tool":{"name":"create_space","args":{"kind":"comparison","title":"…","data_json":{...}}}}}
 
 Exemple sans outil :
-{"reply":"Pour une chambre de 20 m², un ventilateur 132 cm est généralement adapté."}`;
+{"message":"Pour une chambre de 20 m², un ventilateur 132 cm est généralement adapté."}`;
 
   return prompt;
 }
@@ -124,6 +125,10 @@ Réponds UNIQUEMENT en JSON :
 
 memoryQueries : mots-clés ou phrases pour fouiller le journal et la mémoire (vide si inutile).
 suggestedTools : outils probablement nécessaires (peut être vide).`;
+
+/** Rappel court injecté après un résultat d'outil (tours agent multi-étapes). */
+export const STRUCTURED_REPLY_REMINDER =
+  'Réponds UNIQUEMENT en JSON structuré : {"message":"…","app":{"tool":{…}}} si un outil est nécessaire, sinon {"message":"…"} sans clé app.';
 
 export const SYNTHESIS_PROMPT = `Tu es Merlin. À partir des résultats d'outils et du contexte, formule une réponse naturelle, utile et concise en français pour l'utilisateur.
 Ne mentionne pas les outils ni le processus interne sauf si l'utilisateur le demande.

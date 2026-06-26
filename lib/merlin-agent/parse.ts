@@ -86,7 +86,7 @@ export function parseAgentTurn(text: string): ParsedAgentTurn {
 
   const parsed = parseJsonFromAi<Record<string, unknown>>(trimmed);
   if (parsed && typeof parsed === 'object') {
-    const replyRaw = parsed.reply ?? parsed.message;
+    const replyRaw = parsed.message ?? parsed.reply;
     const reply =
       typeof replyRaw === 'string' && replyRaw.trim() ? replyRaw.trim() : null;
 
