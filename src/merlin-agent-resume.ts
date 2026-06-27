@@ -7,6 +7,7 @@ import { getAgentJobStatus, watchAgentJob } from './merlin-agent-client';
 import type { AgentReply, AgentSideEffect } from './merlin-agent';
 import {
   getActivePollController,
+  isPollingAgentJob,
   isStalePendingJob,
   listPendingAgentJobs,
   releaseActivePoll,
@@ -108,11 +109,12 @@ function sleep(ms: number): Promise<void> {
 async function fetchJobStatusWithRetry(
   job: PendingAgentJob,
   attempts = 8,
+  options?: { kick?: boolean },
 ): Promise<Awaited<ReturnType<typeof getAgentJobStatus>>> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i += 1) {
     try {
-      return await getAgentJobStatus(job.jobId);
+      return await getAgentJobStatus(job.jobId, options);
     } catch (err) {
       lastErr = err;
       if (isJobNotFoundError(err) && isRetryableJobNotFound(job)) {
@@ -258,6 +260,10 @@ export async function resumePendingAgentJobs(
         continue;
       }
 
+      if (isPollingAgentJob(job.jobId)) {
+        continue;
+      }
+
       stopPollingAgentJob(job.jobId);
 
       try {
@@ -267,7 +273,7 @@ export async function resumePendingAgentJobs(
             continue;
           }
 
-          const status = await fetchJobStatusWithRetry(job);
+          const status = await fetchJobStatusWithRetry(job, 8, { kick: false });
           const applied = await tryApplyFinishedJobStatus(job, status, callbacks);
           if (applied) {
             completed += 1;

@@ -168,6 +168,12 @@ export function releaseActivePoll(jobId: string): void {
   activePolls.delete(jobId);
 }
 
+/** SSE ou poll actif pour ce job (ne pas interrompre via resume). */
+export function isPollingAgentJob(jobId: string): boolean {
+  const controller = activePolls.get(jobId);
+  return controller != null && !controller.signal.aborted;
+}
+
 const activePolls = new Map<string, AbortController>();
 
 export function stopPollingAgentJob(jobId: string): void {

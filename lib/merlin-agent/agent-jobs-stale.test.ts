@@ -4,6 +4,7 @@ import {
   expireStaleRunningJob,
   finishAgentJob,
   getAgentJob,
+  isSegmentLeaseHeld,
   isStaleRunningJob,
   releaseSegmentLease,
   saveAgentJob,
@@ -17,7 +18,9 @@ describe('agent jobs — segment lease', () => {
     const jobId = 'lease-test-1';
     expect(await acquireSegmentLease(jobId)).toBe(true);
     expect(await acquireSegmentLease(jobId)).toBe(false);
+    expect(await isSegmentLeaseHeld(jobId)).toBe(true);
     await releaseSegmentLease(jobId);
+    expect(await isSegmentLeaseHeld(jobId)).toBe(false);
     expect(await acquireSegmentLease(jobId)).toBe(true);
     await releaseSegmentLease(jobId);
   });
