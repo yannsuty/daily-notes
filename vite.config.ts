@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { JOB_STREAM_MAX_MS } from './lib/merlin-agent/agent-duration';
+import { resolveBuildCommit } from './lib/app-version';
 import {
   callOpenRouterWithFallback,
   OPENROUTER_FREE_ROUTER,
@@ -495,6 +496,7 @@ export default defineConfig(({ mode }) => {
     base: isCapacitor ? './' : '/',
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
+      __APP_COMMIT__: JSON.stringify(resolveBuildCommit() ?? ''),
       __APP_ENV__: JSON.stringify(env.APP_ENV ?? process.env.APP_ENV ?? ''),
     },
     plugins: [

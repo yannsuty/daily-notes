@@ -23,7 +23,7 @@ import {
   fetchBackendVersion,
   formatDevVersionHeader,
 } from './api-version';
-import { getBuildAppEnv, getFrontendVersionLabel, isDevBuild } from './build-env';
+import { getBuildAppEnv, getFrontendCommit, getFrontendVersionLabel, isDevBuild } from './build-env';
 
 export async function initApp(root: HTMLElement): Promise<void> {
   root.className = 'app';
@@ -42,11 +42,13 @@ export async function initApp(root: HTMLElement): Promise<void> {
   if (isDevBuild()) {
     const devVersion = document.createElement('span');
     devVersion.className = 'app__dev-version';
-    devVersion.textContent = formatDevVersionHeader(getFrontendVersionLabel(), null);
+    const frontVersion = getFrontendVersionLabel();
+    const frontCommit = getFrontendCommit();
+    devVersion.textContent = formatDevVersionHeader(frontVersion, frontCommit, null);
     brand.appendChild(devVersion);
     void fetchBackendVersion().then((back) => {
-      devVersion.textContent = formatDevVersionHeader(getFrontendVersionLabel(), back);
-      devVersion.title = devVersionTitle(getFrontendVersionLabel(), getBuildAppEnv(), back);
+      devVersion.textContent = formatDevVersionHeader(frontVersion, frontCommit, back);
+      devVersion.title = devVersionTitle(frontVersion, frontCommit, getBuildAppEnv(), back);
     });
   }
 

@@ -81,14 +81,15 @@ body {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+  align-items: baseline;
+  gap: 0.5rem;
 }
 
 .app__title {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--muted);
+  flex-shrink: 0;
 }
 
 .app__dev-version {
@@ -98,8 +99,8 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: min(70vw, 22rem);
-  opacity: 0.9;
+  min-width: 0;
+  opacity: 0.85;
 }
 
 .app__sync-status {
