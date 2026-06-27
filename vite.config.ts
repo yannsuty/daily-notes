@@ -215,6 +215,42 @@ function createMerlinSpaceImageDevProxy() {
   };
 }
 
+function createVersionDevProxy(appEnv: string) {
+  return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
+    const url = req.url ?? '';
+    if (!url.startsWith('/api/version')) {
+      next();
+      return;
+    }
+
+    if (req.method !== 'GET' && req.method !== 'OPTIONS') {
+      next();
+      return;
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    const { getBuildVersionInfo } = await import('./lib/app-version');
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(
+      JSON.stringify(
+        getBuildVersionInfo({
+          ...process.env,
+          APP_ENV: appEnv || process.env.APP_ENV || 'dev',
+        }),
+      ),
+    );
+  };
+}
+
 function createMerlinAgentDevProxy(fallbackApiKey: string) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     const url = req.url ?? '';
@@ -465,15 +501,18 @@ export default defineConfig(({ mode }) => {
       {
         name: 'openrouter-dev-proxy',
         configureServer(server) {
+          const versionProxy = createVersionDevProxy(env.APP_ENV ?? process.env.APP_ENV ?? 'dev');
           const aiProxy = createOpenRouterDevProxy(env.OPENROUTER_API_KEY ?? '');
           const agentProxy = createMerlinAgentDevProxy(env.OPENROUTER_API_KEY ?? '');
           const webProxy = createMerlinWebDevProxy();
           const spaceImageProxy = createMerlinSpaceImageDevProxy();
           server.middlewares.use((req, res, next) => {
-            void spaceImageProxy(req, res, () => {
-              void webProxy(req, res, () => {
-                void agentProxy(req, res, () => {
-                  void aiProxy(req, res, next);
+            void versionProxy(req, res, () => {
+              void spaceImageProxy(req, res, () => {
+                void webProxy(req, res, () => {
+                  void agentProxy(req, res, () => {
+                    void aiProxy(req, res, next);
+                  });
                 });
               });
             });
