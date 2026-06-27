@@ -238,10 +238,14 @@ export async function startBackgroundAgentJob(
 }
 
 /** Lecture ponctuelle de l'état d'un job (sans SSE) — utile au retour en premier plan. */
-export async function getAgentJobStatus(jobId: string): Promise<AgentJobPollResponse> {
+export async function getAgentJobStatus(
+  jobId: string,
+  options?: { kick?: boolean },
+): Promise<AgentJobPollResponse> {
   const devQuery = isAgentDevLogEnabled() ? '&devLog=1' : '';
+  const kickQuery = options?.kick === false ? '&kick=0' : '';
   const response = await fetch(
-    apiUrl(`/api/merlin-agent?jobId=${encodeURIComponent(jobId)}${devQuery}`),
+    apiUrl(`/api/merlin-agent?jobId=${encodeURIComponent(jobId)}${devQuery}${kickQuery}`),
     { headers: { Accept: 'application/json' } },
   );
 

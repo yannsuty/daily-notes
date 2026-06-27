@@ -139,6 +139,17 @@ export async function releaseSegmentLease(jobId: string): Promise<void> {
   await redis.del(agentJobLeaseKey(jobId));
 }
 
+/** Vrai si un segment est déjà en cours (autre requête poll/SSE). */
+export async function isSegmentLeaseHeld(jobId: string): Promise<boolean> {
+  if (!isRedisConfigured()) {
+    const until = memoryLeases.get(jobId) ?? 0;
+    return until > Date.now();
+  }
+  const redis = getRedis();
+  const held = await redis.get(agentJobLeaseKey(jobId));
+  return held != null;
+}
+
 /** Marque un job bloqué en « running » comme erreur (timeout Vercel, process tué, etc.). */
 export async function expireStaleRunningJob(jobId: string): Promise<AgentJobRecord | null> {
   const job = await getAgentJob(jobId);

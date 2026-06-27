@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   removeStalePendingAgentJobs: vi.fn(),
   setPendingJobSteps: vi.fn(),
   isStalePendingJob: vi.fn(),
+  isPollingAgentJob: vi.fn(),
 }));
 
 vi.mock('./merlin-agent-client', () => ({
@@ -65,6 +66,7 @@ vi.mock('./merlin-agent-jobs', async (importOriginal) => {
     removeStalePendingAgentJobs: mocks.removeStalePendingAgentJobs,
     setPendingJobSteps: mocks.setPendingJobSteps,
     isStalePendingJob: mocks.isStalePendingJob,
+    isPollingAgentJob: mocks.isPollingAgentJob,
   };
 });
 
@@ -219,6 +221,7 @@ describe('resumePendingAgentJobs', () => {
     mocks.getActivePollController.mockReturnValue(new AbortController());
     mocks.removeStalePendingAgentJobs.mockReturnValue([]);
     mocks.isStalePendingJob.mockReturnValue(false);
+    mocks.isPollingAgentJob.mockReturnValue(false);
   });
 
   it('termine les jobs expirés au retour dans l’app', async () => {
@@ -267,9 +270,22 @@ describe('resumePendingAgentJobs', () => {
     const completed = await resumePendingAgentJobs({ onStepsBatch });
 
     expect(completed).toBe(0);
+    expect(mocks.getAgentJobStatus).toHaveBeenCalledWith('job-1', { kick: false });
     expect(mocks.setPendingJobSteps).toHaveBeenCalledWith('job-1', steps);
     expect(onStepsBatch).toHaveBeenCalledWith(steps);
     expect(mocks.startNativeAgentJobWatch).toHaveBeenCalledWith('job-1');
+  });
+
+  it('ne touche pas un job déjà suivi en SSE', async () => {
+    mocks.listPendingAgentJobs.mockReturnValue([job]);
+    mocks.isPollingAgentJob.mockReturnValue(true);
+
+    const completed = await resumePendingAgentJobs();
+
+    expect(completed).toBe(0);
+    expect(mocks.stopPollingAgentJob).not.toHaveBeenCalled();
+    expect(mocks.getAgentJobStatus).not.toHaveBeenCalled();
+    expect(mocks.watchAgentJob).not.toHaveBeenCalled();
   });
 
   it('réessaie le statut serveur après une erreur réseau transitoire', async () => {
