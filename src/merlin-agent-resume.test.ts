@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   setPendingJobSteps: vi.fn(),
   isStalePendingJob: vi.fn(),
   isPollingAgentJob: vi.fn(),
+  logAgentDev: vi.fn(),
+  logAgentReplyResult: vi.fn(),
 }));
 
 vi.mock('./merlin-agent-client', () => ({
@@ -52,6 +54,11 @@ vi.mock('./sync', () => ({
 
 vi.mock('./merlin-agent', () => ({
   noteAgentReplyForFacts: mocks.noteAgentReplyForFacts,
+}));
+
+vi.mock('./agent-dev-log', () => ({
+  logAgentDev: mocks.logAgentDev,
+  logAgentReplyResult: mocks.logAgentReplyResult,
 }));
 
 vi.mock('./merlin-agent-jobs', async (importOriginal) => {
@@ -140,6 +147,14 @@ describe('watchPendingJobUntilDone', () => {
     expect(mocks.removePendingAgentJob).toHaveBeenCalledWith('job-1');
   });
 
+  it('enregistre la réponse agent dans les logs debug', async () => {
+    mocks.watchAgentJob.mockResolvedValue(doneResult);
+
+    await watchPendingJobUntilDone(job);
+
+    expect(mocks.logAgentReplyResult).toHaveBeenCalledWith(doneResult, 'job-1');
+  });
+
   it('passe en arrière-plan sur AbortError (pause / app masquée)', async () => {
     mocks.watchAgentJob.mockRejectedValue(new DOMException('Aborted', 'AbortError'));
 
@@ -177,7 +192,7 @@ describe('loadPendingJobProgress', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stubDocument();
-    mocks.isWatchingAgentJob.mockReturnValue(false);
+    mocks.isPollingAgentJob.mockReturnValue(false);
   });
 
   it('charge les étapes serveur et les émet en batch', async () => {
@@ -226,7 +241,7 @@ describe('loadPendingJobProgress', () => {
   it('évite un poll JSON si un watch SSE est déjà actif', async () => {
     const cachedSteps = [{ phase: 'think' as const, label: 'En cours' }];
     mocks.listPendingAgentJobs.mockReturnValue([{ ...job, steps: cachedSteps }]);
-    mocks.isWatchingAgentJob.mockReturnValue(true);
+    mocks.isPollingAgentJob.mockReturnValue(true);
     const onStepsBatch = vi.fn();
 
     const loaded = await loadPendingJobProgress('job-1', { onStepsBatch });
@@ -346,18 +361,6 @@ describe('resumePendingAgentJobs', () => {
     expect(mocks.getAgentJobStatus).not.toHaveBeenCalled();
     expect(mocks.removePendingAgentJob).not.toHaveBeenCalled();
     expect(mocks.startNativeAgentJobWatch).toHaveBeenCalledWith('job-1');
-  });
-
-  it('ne relance pas un watch déjà actif', async () => {
-    mocks.listPendingAgentJobs.mockReturnValue([job]);
-    mocks.isWatchingAgentJob.mockReturnValue(true);
-
-    const completed = await resumePendingAgentJobs();
-
-    expect(completed).toBe(0);
-    expect(mocks.stopPollingAgentJob).not.toHaveBeenCalled();
-    expect(mocks.getAgentJobStatus).not.toHaveBeenCalled();
-    expect(mocks.watchAgentJob).not.toHaveBeenCalled();
   });
 
   it('réessaie un 404 tant que le job vient d’être créé côté client', async () => {

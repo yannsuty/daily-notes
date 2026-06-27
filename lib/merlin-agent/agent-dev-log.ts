@@ -28,6 +28,17 @@ export function trimAgentDevLogs(logs: AgentDevLogEntry[]): AgentDevLogEntry[] {
   return logs.slice(logs.length - MAX_AGENT_DEV_LOGS);
 }
 
+/** Tronque un texte pour les logs debug (réponses agent, résultats d'outils). */
+export function previewAgentDevText(
+  text: string | undefined,
+  maxLen = 600,
+): string | undefined {
+  if (!text?.trim()) return undefined;
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  return `${trimmed.slice(0, maxLen)}… (${trimmed.length} car.)`;
+}
+
 export function redactDevLogDetail(
   detail?: Record<string, unknown>,
 ): Record<string, unknown> | undefined {

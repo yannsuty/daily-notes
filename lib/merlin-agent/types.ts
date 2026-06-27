@@ -273,4 +273,6 @@ export interface ToolResult {
   content: string;
   mutation?: AgentSideEffect;
   webSources?: WebSource[];
+  /** Métadonnées debug (logs agent uniquement). */
+  devMeta?: Record<string, unknown>;
 }

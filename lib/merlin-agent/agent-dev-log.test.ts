@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatAgentDevLogEntry,
+  previewAgentDevText,
   redactDevLogDetail,
   trimAgentDevLogs,
   type AgentDevLogEntry,
@@ -36,5 +37,14 @@ describe('agent-dev-log', () => {
       event: String(i),
     }));
     expect(trimAgentDevLogs(logs)).toHaveLength(250);
+  });
+
+  it('tronque les longues réponses pour les logs', () => {
+    expect(previewAgentDevText('abc', 10)).toBe('abc');
+    expect(previewAgentDevText(undefined)).toBeUndefined();
+    const long = 'x'.repeat(700);
+    const preview = previewAgentDevText(long, 600);
+    expect(preview).toContain('… (700 car.)');
+    expect(preview!.length).toBeLessThan(700);
   });
 });

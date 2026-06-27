@@ -17,7 +17,7 @@ import {
   saveAgentJobCheckpoint,
   touchAgentJob,
 } from '../server/agent-jobs.js';
-import { appendAgentJobDevLog } from '../server/agent-dev-log.js';
+import { appendAgentJobDevLog, logAgentReplyDevLog } from '../server/agent-dev-log.js';
 import {
   advanceAgentRun,
   createBootstrapCheckpoint,
@@ -232,6 +232,7 @@ async function processBackgroundJob(
     const stepWrites: Promise<void>[] = [];
     const outcome = await advanceAgentRun(checkpoint, {
       referer: referer(),
+      jobId,
       onStep: (step) => {
         stepWrites.push(appendAgentJobStep(jobId, step));
       },
@@ -239,6 +240,7 @@ async function processBackgroundJob(
     await Promise.all(stepWrites);
 
     if (outcome.status === 'done') {
+      await logAgentReplyDevLog(jobId, outcome.result);
       await appendAgentJobDevLog(jobId, 'segment', 'done', {
         segmentCount,
         steps: outcome.result.steps.length,
@@ -252,6 +254,7 @@ async function processBackgroundJob(
     }
 
     if (outcome.status === 'failed') {
+      await logAgentReplyDevLog(jobId, outcome.result);
       await appendAgentJobDevLog(jobId, 'segment', 'failed', {
         error: outcome.result.error,
         segmentCount,

@@ -1,5 +1,5 @@
 import { updateMerlinMessageContent } from './db';
-import { logAgentDev } from './agent-dev-log';
+import { logAgentDev, logAgentReplyResult } from './agent-dev-log';
 import { isJobNotFoundError, isRetryableJobNotFound } from '../lib/merlin-agent/job-poll';
 import { applyAgentMutations } from './merlin-agent-context';
 import { setActiveSpaceId } from './merlin-space-session';
@@ -160,6 +160,7 @@ export async function applyAgentJobResult(
   result: AgentRunResult,
   callbacks?: AgentJobCallbacks,
 ): Promise<AgentReply> {
+  logAgentReplyResult(result, job.jobId);
   removePendingAgentJob(job.jobId);
   await stopNativeAgentJobWatch();
 

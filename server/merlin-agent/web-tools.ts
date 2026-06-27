@@ -8,6 +8,7 @@ import {
   type WebSearchHit,
   type WebSearchProvider,
 } from '../../lib/merlin-agent/web.js';
+import { fetchPageBlockedHint } from '../../lib/merlin-agent/fetch-page-log.js';
 import type { AgentClientConfig, ToolResult } from '../../lib/merlin-agent/types.js';
 import {
   getWebCache,
@@ -287,13 +288,36 @@ export async function runWebSearch(
   };
 }
 
+type FetchPageErrorCode =
+  | 'missing_url'
+  | 'invalid_url'
+  | 'http_error'
+  | 'empty_content'
+  | 'timeout'
+  | 'network';
+
+function fetchPageResult(
+  ok: boolean,
+  content: string,
+  devMeta: Record<string, unknown>,
+  extra?: Pick<ToolResult, 'webSources'>,
+): ToolResult {
+  return { ok, content, devMeta, ...extra };
+}
+
 export async function runFetchPage(args: Record<string, string>): Promise<ToolResult> {
   const url = (args.url ?? '').trim();
+  const startedAt = Date.now();
   if (!url) {
-    return { ok: false, content: 'URL manquante.' };
+    return fetchPageResult(false, 'URL manquante.', {
+      errorCode: 'missing_url' satisfies FetchPageErrorCode,
+    });
   }
   if (!isPublicHttpUrl(url)) {
-    return { ok: false, content: 'URL non autorisée (seuls http/https publics sont acceptés).' };
+    return fetchPageResult(false, 'URL non autorisée (seuls http/https publics sont acceptés).', {
+      url,
+      errorCode: 'invalid_url' satisfies FetchPageErrorCode,
+    });
   }
 
   const cached = await getWebCache('page', url);
@@ -301,11 +325,17 @@ export async function runFetchPage(args: Record<string, string>): Promise<ToolRe
     try {
       const payload = JSON.parse(cached) as CachedWebPayload;
       if (payload.content) {
-        return {
-          ok: true,
-          content: payload.content,
-          webSources: payload.webSources ?? [pageWebSource(url)],
-        };
+        return fetchPageResult(
+          true,
+          payload.content,
+          {
+            url,
+            fromCache: true,
+            durationMs: Date.now() - startedAt,
+            contentLength: payload.content.length,
+          },
+          { webSources: payload.webSources ?? [pageWebSource(url)] },
+        );
       }
     } catch {
       // relire la page
@@ -325,30 +355,72 @@ export async function runFetchPage(args: Record<string, string>): Promise<ToolRe
       FETCH_TIMEOUT_MS,
     );
 
+    const finalUrl = response.url || url;
+    const contentType = response.headers.get('content-type') ?? '';
+    const durationMs = Date.now() - startedAt;
+
     if (!response.ok) {
-      return { ok: false, content: `Impossible de lire la page (HTTP ${response.status}).` };
+      const blockedHint = fetchPageBlockedHint(response.status);
+      const hintSuffix = blockedHint ? ` — ${blockedHint}` : '';
+      return fetchPageResult(
+        false,
+        `Impossible de lire la page (HTTP ${response.status})${hintSuffix}`,
+        {
+          url,
+          finalUrl: finalUrl !== url ? finalUrl : undefined,
+          httpStatus: response.status,
+          httpStatusText: response.statusText || undefined,
+          contentType: contentType || undefined,
+          fromCache: false,
+          durationMs,
+          errorCode: 'http_error' satisfies FetchPageErrorCode,
+          blockedHint,
+        },
+      );
     }
 
-    const contentType = response.headers.get('content-type') ?? '';
     const raw = await response.text();
     const text = contentType.includes('html') ? htmlToPlainText(raw) : raw.trim();
     const titleMatch = raw.match(/<title[^>]*>([^<]+)<\/title>/i);
     const pageTitle = titleMatch?.[1]?.trim();
 
     if (!text) {
-      const emptyResult: ToolResult = {
-        ok: true,
-        content: `Page lue mais sans contenu textuel exploitable : ${url}`,
-        webSources: [pageWebSource(url, pageTitle)],
-      };
-      return emptyResult;
+      return fetchPageResult(
+        true,
+        `Page lue mais sans contenu textuel exploitable : ${url}`,
+        {
+          url,
+          finalUrl: finalUrl !== url ? finalUrl : undefined,
+          httpStatus: response.status,
+          contentType: contentType || undefined,
+          pageTitle,
+          textLength: 0,
+          rawLength: raw.length,
+          fromCache: false,
+          durationMs,
+          errorCode: 'empty_content' satisfies FetchPageErrorCode,
+        },
+        { webSources: [pageWebSource(url, pageTitle)] },
+      );
     }
 
-    const result: ToolResult = {
-      ok: true,
-      content: `Contenu de ${url} :\n\n${text}`,
-      webSources: [pageWebSource(url, pageTitle)],
-    };
+    const content = `Contenu de ${url} :\n\n${text}`;
+    const result = fetchPageResult(
+      true,
+      content,
+      {
+        url,
+        finalUrl: finalUrl !== url ? finalUrl : undefined,
+        httpStatus: response.status,
+        contentType: contentType || undefined,
+        pageTitle,
+        textLength: text.length,
+        rawLength: raw.length,
+        fromCache: false,
+        durationMs,
+      },
+      { webSources: [pageWebSource(url, pageTitle)] },
+    );
 
     const payload: CachedWebPayload = {
       content: result.content,
@@ -358,8 +430,22 @@ export async function runFetchPage(args: Record<string, string>): Promise<ToolRe
 
     return result;
   } catch (err) {
+    const durationMs = Date.now() - startedAt;
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
     const message = err instanceof Error ? err.message : 'Erreur réseau';
-    return { ok: false, content: `Lecture de page impossible : ${message}.` };
+    return fetchPageResult(
+      false,
+      isTimeout
+        ? `Lecture de page impossible : délai dépassé (${FETCH_TIMEOUT_MS / 1000}s).`
+        : `Lecture de page impossible : ${message}.`,
+      {
+        url,
+        fromCache: false,
+        durationMs,
+        errorCode: (isTimeout ? 'timeout' : 'network') satisfies FetchPageErrorCode,
+        errorMessage: message,
+      },
+    );
   }
 }
 
