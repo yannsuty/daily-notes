@@ -7,8 +7,8 @@ export async function sendMerlinMessage(page: Page, text: string): Promise<void>
 }
 
 export async function waitForThinkingDone(page: Page): Promise<void> {
-  const status = page.locator('.merlin-chat__status');
-  await expect(status).toBeEmpty();
+  const thinking = page.locator('.merlin-chat__bubble--thinking');
+  await expect(thinking).toHaveCount(0);
 }
 
 export async function expectLastAssistantMessage(
