@@ -1381,16 +1381,73 @@ body {
   }
 }
 
-.merlin-chat__status {
-  flex-shrink: 0;
-  padding: 0.25rem 1rem;
-  font-size: 0.8125rem;
-  color: var(--muted);
-  text-align: center;
+.merlin-chat__bubble--thinking {
+  opacity: 0.92;
 }
 
-.merlin-chat__status[hidden] {
-  display: none;
+.merlin-chat__thinking {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.merlin-chat__thinking-status {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text);
+}
+
+.merlin-chat__thinking-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.merlin-chat__thinking-step {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  padding: 0.2rem 0 0.2rem 0.625rem;
+  border-left: 2px solid var(--border);
+}
+
+.merlin-chat__thinking-step--done {
+  opacity: 0.75;
+}
+
+.merlin-chat__thinking-step--active {
+  color: var(--text);
+  font-weight: 500;
+  border-left-color: var(--accent);
+}
+
+.merlin-chat__thinking-step--plan,
+.merlin-chat__thinking-step--think,
+.merlin-chat__thinking-step--synthesize,
+.merlin-chat__thinking-step--analyze {
+  border-left-color: var(--accent);
+}
+
+.merlin-chat__thinking-step--tool,
+.merlin-chat__thinking-step--memory {
+  border-left-color: #10b981;
+}
+
+.merlin-chat__thinking-step--active::after {
+  content: '…';
+  animation: merlin-thinking-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes merlin-thinking-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .merlin-chat__background {
@@ -1422,39 +1479,6 @@ body {
 
 .merlin-chat__background-dismiss:hover {
   background: var(--border);
-}
-
-.merlin-chat__trace {
-  flex-shrink: 0;
-  max-height: 120px;
-  overflow-y: auto;
-  padding: 0.35rem 1rem 0.5rem;
-  border-top: 1px dashed var(--border);
-  background: rgba(59, 130, 246, 0.04);
-}
-
-.merlin-chat__trace[hidden] {
-  display: none;
-}
-
-.merlin-chat__trace-item {
-  font-size: 0.75rem;
-  color: var(--muted);
-  padding: 0.15rem 0;
-  border-left: 2px solid var(--border);
-  padding-left: 0.5rem;
-  margin-bottom: 0.15rem;
-}
-
-.merlin-chat__trace-item--plan,
-.merlin-chat__trace-item--think,
-.merlin-chat__trace-item--synthesize {
-  border-left-color: var(--accent);
-}
-
-.merlin-chat__trace-item--tool,
-.merlin-chat__trace-item--memory {
-  border-left-color: #10b981;
 }
 
 .merlin-chat__composer {

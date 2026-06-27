@@ -19,7 +19,7 @@ test.describe('Agent — trace et retry (agent mocké)', () => {
     await input.fill('Compare des ventilateurs de plafond');
     await page.getByRole('button', { name: 'Envoyer' }).click();
 
-    await expect(page.locator('.merlin-chat__status')).toContainText(/réfléchit|analyse/i);
+    await expect(page.locator('.merlin-chat__bubble--thinking')).toContainText(/réfléchit|analyse/i);
     await waitForThinkingDone(page);
     await expectLastAssistantMessage(page, /comparaison/i);
   });
