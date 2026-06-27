@@ -15,7 +15,7 @@ import {
 import { tryFastIntent } from './merlin-intents';
 import { applyAgentMutations, buildAgentContext } from './merlin-agent-context';
 import { formatAgentReplyForUser } from '../lib/merlin-agent/parse';
-import { logAgentDev, rememberAgentJobId } from './agent-dev-log';
+import { logAgentDev, logAgentReplyResult, rememberAgentJobId } from './agent-dev-log';
 import { setActiveSpaceId } from './merlin-space-session';
 import { runServerAgent, startBackgroundAgentJob } from './merlin-agent-client';
 import {
@@ -378,6 +378,7 @@ export async function handleUserMessage(
   });
 
   if (!agentResult.ok || !agentResult.reply) {
+    logAgentReplyResult(agentResult);
     return {
       ok: false,
       error: agentResult.error ?? LLM_UNAVAILABLE_MSG,
@@ -395,6 +396,7 @@ export async function handleUserMessage(
     if (newest) setActiveSpaceId(newest.id);
   }
   const displayReply = formatAgentReplyForUser(agentResult.reply);
+  logAgentReplyResult(agentResult);
   await appendExchange(trimmed, agentResult.reply);
   void recordShortcutUsage(trimmed);
   const { syncNow } = await import('./sync');

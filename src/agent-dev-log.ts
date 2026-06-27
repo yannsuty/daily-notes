@@ -2,13 +2,14 @@ import { Capacitor } from '@capacitor/core';
 import { isAppDevEnv } from '../lib/merlin-agent/app-env';
 import {
   formatAgentDevLogEntry,
+  previewAgentDevText,
   redactDevLogDetail,
   trimAgentDevLogs,
   type AgentDevLogEntry,
 } from '../lib/merlin-agent/agent-dev-log';
 import { apiUrl } from './api-base';
 import { listPendingAgentJobs } from './merlin-agent-jobs';
-import type { AgentJobPollResponse } from '../lib/merlin-agent';
+import type { AgentJobPollResponse, AgentRunResult } from '../lib/merlin-agent';
 
 const STORAGE_ENABLED = 'merlin-agent-dev-log';
 const STORAGE_LOGS = 'merlin-agent-dev-log-entries';
@@ -108,6 +109,22 @@ export function logAgentDev(
   writeClientLogs([...readClientLogs(), entry]);
 }
 
+export function logAgentReplyResult(
+  result: Pick<AgentRunResult, 'ok' | 'reply' | 'error' | 'steps' | 'depth'>,
+  jobId?: string,
+): void {
+  logAgentDev(
+    'agent-reply',
+    result.ok ? 'ok' : 'error',
+    {
+      replyPreview: previewAgentDevText(result.reply ?? result.error),
+      steps: result.steps?.length ?? 0,
+      depth: result.depth,
+    },
+    jobId,
+  );
+}
+
 export function clearAgentDevLogs(): void {
   try {
     localStorage.removeItem(STORAGE_LOGS);
@@ -183,6 +200,11 @@ export async function buildAgentDevLogExport(): Promise<string> {
     if (status.segmentCount != null) lines.push(`segmentCount=${status.segmentCount}`);
     if (status.checkpointPhase) lines.push(`checkpointPhase=${status.checkpointPhase}`);
     if (status.error) lines.push(`error=${status.error}`);
+    if (status.result?.reply) {
+      lines.push(`replyPreview=${previewAgentDevText(status.result.reply) ?? status.result.reply}`);
+    } else if (status.result?.error) {
+      lines.push(`replyPreview=${previewAgentDevText(status.result.error) ?? status.result.error}`);
+    }
     if (status.devLogs?.length) {
       lines.push(...status.devLogs.map(formatAgentDevLogEntry));
     } else {
@@ -201,6 +223,11 @@ export async function buildAgentDevLogExport(): Promise<string> {
     if (status.segmentCount != null) lines.push(`segmentCount=${status.segmentCount}`);
     if (status.checkpointPhase) lines.push(`checkpointPhase=${status.checkpointPhase}`);
     if (status.error) lines.push(`error=${status.error}`);
+    if (status.result?.reply) {
+      lines.push(`replyPreview=${previewAgentDevText(status.result.reply) ?? status.result.reply}`);
+    } else if (status.result?.error) {
+      lines.push(`replyPreview=${previewAgentDevText(status.result.error) ?? status.result.error}`);
+    }
     if (status.devLogs?.length) {
       lines.push(...status.devLogs.map(formatAgentDevLogEntry));
     } else {

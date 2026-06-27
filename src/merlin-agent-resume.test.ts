@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   removeStalePendingAgentJobs: vi.fn(),
   setPendingJobSteps: vi.fn(),
   isStalePendingJob: vi.fn(),
+  logAgentDev: vi.fn(),
+  logAgentReplyResult: vi.fn(),
 }));
 
 vi.mock('./merlin-agent-client', () => ({
@@ -50,6 +52,11 @@ vi.mock('./sync', () => ({
 
 vi.mock('./merlin-agent', () => ({
   noteAgentReplyForFacts: mocks.noteAgentReplyForFacts,
+}));
+
+vi.mock('./agent-dev-log', () => ({
+  logAgentDev: mocks.logAgentDev,
+  logAgentReplyResult: mocks.logAgentReplyResult,
 }));
 
 vi.mock('./merlin-agent-jobs', async (importOriginal) => {
@@ -134,6 +141,14 @@ describe('watchPendingJobUntilDone', () => {
       expect(result.content).toBe('Voici la comparaison.');
     }
     expect(mocks.removePendingAgentJob).toHaveBeenCalledWith('job-1');
+  });
+
+  it('enregistre la réponse agent dans les logs debug', async () => {
+    mocks.watchAgentJob.mockResolvedValue(doneResult);
+
+    await watchPendingJobUntilDone(job);
+
+    expect(mocks.logAgentReplyResult).toHaveBeenCalledWith(doneResult, 'job-1');
   });
 
   it('passe en arrière-plan sur AbortError (pause / app masquée)', async () => {

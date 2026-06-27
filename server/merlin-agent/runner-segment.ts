@@ -26,6 +26,7 @@ import type {
   ChatMessage,
   WebSource,
 } from '../../lib/merlin-agent/types.js';
+import { logAgentToolDevLog } from '../agent-dev-log.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
 import { ensureSpacePersisted } from './space-ensure.js';
@@ -255,7 +256,7 @@ export function createBootstrapCheckpoint(body: AgentRequestBody): AgentJobCheck
 
 export async function advanceAgentRun(
   checkpoint: AgentJobCheckpoint,
-  options?: { onStep?: StepCallback; referer?: string },
+  options?: { onStep?: StepCallback; referer?: string; jobId?: string },
 ): Promise<AgentAdvanceResult> {
   const onStep = options?.onStep;
   const referer = options?.referer;
@@ -450,6 +451,9 @@ export async function advanceAgentRun(
     }
 
     const toolResult = await store.executeToolAsync(pending.name, toolArgs, checkpoint.config);
+    if (options?.jobId) {
+      void logAgentToolDevLog(options.jobId, pending.name, toolArgs, toolResult);
+    }
     checkpoint.pendingTool = undefined;
 
     if (toolResult.webSources?.length) {
