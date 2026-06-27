@@ -42,8 +42,30 @@ function bodyFromCheckpoint(jobId: string, checkpoint: AgentJobCheckpoint): Agen
   };
 }
 
-function kickSegmentContinuation(jobId: string, checkpoint: AgentJobCheckpoint): void {
-  scheduleBackground(() => processBackgroundJob(jobId, bodyFromCheckpoint(jobId, checkpoint)));
+const JOB_STREAM_POLL_MS = 400;
+/** Budget par kick : enchaîne plusieurs segments tant que Vercel le permet. */
+const KICK_SEGMENT_BUDGET_MS = 240_000;
+
+async function kickSegmentContinuation(
+  jobId: string,
+  initialCheckpoint: AgentJobCheckpoint,
+): Promise<void> {
+  const deadline = Date.now() + KICK_SEGMENT_BUDGET_MS;
+
+  for (let i = 0; i < MAX_AGENT_SEGMENTS && Date.now() < deadline; i += 1) {
+    const job = await getAgentJob(jobId);
+    if (!job || job.status === 'done' || job.status === 'error') return;
+
+    const checkpoint = job.checkpoint ?? initialCheckpoint;
+    const segmentBefore = job.segmentCount ?? 0;
+
+    await processBackgroundJob(jobId, bodyFromCheckpoint(jobId, checkpoint));
+
+    const after = await getAgentJob(jobId);
+    if (!after || after.status === 'done' || after.status === 'error') return;
+    if (!after.checkpoint) return;
+    if ((after.segmentCount ?? 0) === segmentBefore) break;
+  }
 }
 
 function wantsDevLog(req: VercelRequest): boolean {
@@ -75,8 +97,6 @@ function writeSse(res: VercelResponse, event: string, payload: unknown): void {
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-const JOB_STREAM_POLL_MS = 400;
 
 async function streamAgentJob(
   req: VercelRequest,
@@ -130,6 +150,10 @@ async function streamAgentJob(
       return;
     }
 
+    if (current.status === 'running' && current.checkpoint) {
+      await kickSegmentContinuation(jobId, current.checkpoint);
+    }
+
     await sleep(JOB_STREAM_POLL_MS);
   }
 
@@ -142,7 +166,10 @@ async function processBackgroundJob(
   body: AgentRequestBody,
 ): Promise<void> {
   const leased = await acquireSegmentLease(jobId);
-  if (!leased) return;
+  if (!leased) {
+    await appendAgentJobDevLog(jobId, 'segment', 'lease_busy', {});
+    return;
+  }
 
   const heartbeat = setInterval(() => {
     void touchAgentJob(jobId);
@@ -178,12 +205,14 @@ async function processBackgroundJob(
 
     const checkpoint = job.checkpoint ?? createBootstrapCheckpoint(body);
 
+    const stepWrites: Promise<void>[] = [];
     const outcome = await advanceAgentRun(checkpoint, {
       referer: referer(),
       onStep: (step) => {
-        void appendAgentJobStep(jobId, step);
+        stepWrites.push(appendAgentJobStep(jobId, step));
       },
     });
+    await Promise.all(stepWrites);
 
     if (outcome.status === 'done') {
       await appendAgentJobDevLog(jobId, 'segment', 'done', {
@@ -207,10 +236,9 @@ async function processBackgroundJob(
       return;
     }
 
-    const current = await getAgentJob(jobId);
     await saveAgentJobCheckpoint(jobId, {
       status: 'running',
-      steps: current?.steps ?? [],
+      steps: outcome.checkpoint.steps,
       checkpoint: outcome.checkpoint,
       segmentCount: segmentCount + 1,
     });
@@ -264,7 +292,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             phase: jobBeforeStale.checkpoint.phase,
             segmentCount: jobBeforeStale.segmentCount,
           });
-          kickSegmentContinuation(jobId, jobBeforeStale.checkpoint);
+          await kickSegmentContinuation(jobId, jobBeforeStale.checkpoint);
         }
         await streamAgentJob(req, res, jobId, fromStep);
         return;
@@ -276,7 +304,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           phase: jobBeforeStale.checkpoint.phase,
           segmentCount: jobBeforeStale.segmentCount,
         });
-        kickSegmentContinuation(jobId, jobBeforeStale.checkpoint);
+        await kickSegmentContinuation(jobId, jobBeforeStale.checkpoint);
       }
 
       const job = await expireStaleRunningJob(jobId);

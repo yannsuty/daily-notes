@@ -84,21 +84,27 @@ export async function finishAgentJob(
   result: AgentRunResult,
 ): Promise<void> {
   const current = await getAgentJob(jobId);
+  if (!current) return;
   await saveAgentJob(jobId, {
+    ...current,
     status: result.ok ? 'done' : 'error',
-    steps: result.steps.length > 0 ? result.steps : (current?.steps ?? []),
+    steps: result.steps.length > 0 ? result.steps : current.steps,
     result,
     error: result.ok ? undefined : result.error,
+    checkpoint: undefined,
     updatedAt: Date.now(),
   });
 }
 
 export async function failAgentJob(jobId: string, error: string): Promise<void> {
   const current = await getAgentJob(jobId);
+  if (!current) return;
   await saveAgentJob(jobId, {
+    ...current,
     status: 'error',
-    steps: current?.steps ?? [],
+    steps: current.steps,
     error,
+    checkpoint: undefined,
     updatedAt: Date.now(),
   });
 }
