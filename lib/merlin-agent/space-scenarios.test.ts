@@ -89,6 +89,14 @@ const scenarios: Scenario[] = [
     expectKind: 'comparison',
   },
   {
+    label: 'override images — pas de mise à jour tableau',
+    message: 'Rafraîchis les photos de chaque modèle',
+    activeKind: 'comparison',
+    expectUpdate: false,
+    expectExtend: false,
+    expectKind: null,
+  },
+  {
     label: 'plan DIY — nouveau projet sans rupture',
     message: 'Plan pour refaire la salle de bain',
     activeKind: 'comparison',

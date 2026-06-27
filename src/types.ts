@@ -157,6 +157,8 @@ export interface MerlinSpaceGitHub {
 export interface MerlinSpaceData {
   columns?: string[];
   rows?: string[][];
+  /** URLs d'images par objet (clé = 1ʳᵉ colonne, minuscules). */
+  rowImages?: Record<string, string>;
   /** Clés de lignes ignorées (première colonne, minuscules). */
   ignoredRows?: string[];
   intro?: string;

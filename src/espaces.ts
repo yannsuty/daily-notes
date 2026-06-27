@@ -11,8 +11,12 @@ import {
   getIgnoredComparisonRows,
   getVisibleComparisonRows,
   ignoreComparisonRow,
+  listComparisonRows,
   restoreComparisonRow,
 } from '../lib/merlin-agent/comparison-items';
+import { getRowImage, formatComparisonImageCount } from '../lib/merlin-agent/comparison-images';
+import { refreshComparisonRowImageClient } from './merlin-space-image-client';
+import { renderComparisonImageFigure } from './comparison-image-view';
 import { SPACE_KIND_LABELS } from './merlin-space-format';
 import { getActiveSpaceId, setActiveSpaceId } from './merlin-space-session';
 import { renderMarkdownToHtml } from './markdown';
@@ -43,6 +47,8 @@ export class EspacesPage {
   private filter: MerlinSpaceKind | 'all' = 'all';
   private viewingId: string | null = null;
   private comparisonItemIndex = 0;
+  private refreshingImageKey: string | null = null;
+  private imageRefreshError: string | null = null;
 
   constructor(container: HTMLElement, options: EspacesPageOptions = {}) {
     this.container = container;
@@ -186,6 +192,8 @@ export class EspacesPage {
         void this.handleDelete((btn as HTMLElement).dataset.spaceId!);
       });
     });
+
+    this.bindComparisonImageErrors(this.scrollEl);
   }
 
   private renderCard(space: MerlinSpace): string {
@@ -193,13 +201,21 @@ export class EspacesPage {
       day: 'numeric',
       month: 'short',
     });
+    const isComparison = space.kind === 'comparison';
+    const imageCount = isComparison ? formatComparisonImageCount(space.data) : null;
+    const preview = isComparison ? this.renderCardPreview(space) : '';
+    const cardClass = isComparison ? 'espaces-page__card espaces-page__card--comparison' : 'espaces-page__card';
+
     return `
-      <article class="espaces-page__card" data-space-id="${space.id}">
+      <article class="${cardClass}" data-space-id="${space.id}">
         <button type="button" class="espaces-page__card-main" data-action="open-space" data-space-id="${space.id}">
-          <span class="espaces-page__badge espaces-page__badge--${space.kind}">${escapeHtml(SPACE_KIND_LABELS[space.kind])}</span>
-          <h3 class="espaces-page__card-title">${escapeHtml(space.title)}</h3>
-          <p class="espaces-page__card-recap">${escapeHtml(space.recap.slice(0, 140))}${space.recap.length > 140 ? '…' : ''}</p>
-          <span class="espaces-page__card-meta">${date}</span>
+          ${preview}
+          <div class="espaces-page__card-body">
+            <span class="espaces-page__badge espaces-page__badge--${space.kind}">${escapeHtml(SPACE_KIND_LABELS[space.kind])}</span>
+            <h3 class="espaces-page__card-title">${escapeHtml(space.title)}</h3>
+            <p class="espaces-page__card-recap">${escapeHtml(space.recap.slice(0, 140))}${space.recap.length > 140 ? '…' : ''}</p>
+            <span class="espaces-page__card-meta">${date}${imageCount ? ` · ${escapeHtml(imageCount)}` : ''}</span>
+          </div>
         </button>
         <div class="espaces-page__card-actions">
           <button type="button" class="btn btn--ghost btn--sm" data-action="discuss-space" data-space-id="${space.id}">Discuter</button>
@@ -207,6 +223,20 @@ export class EspacesPage {
         </div>
       </article>
     `;
+  }
+
+  private renderCardPreview(space: MerlinSpace): string {
+    const visible = getVisibleComparisonRows(space.data);
+    if (visible.length === 0) {
+      return `<div class="espaces-page__card-preview espaces-page__card-preview--empty" aria-hidden="true"><span class="espaces-page__comparison-placeholder espaces-page__comparison-placeholder--card"></span></div>`;
+    }
+
+    const entry = visible[0];
+    const name = entry.row[0]?.trim() || 'Article';
+    const imageUrl = getRowImage(space.data, entry.key);
+    const figure = renderComparisonImageFigure(imageUrl, name, 'thumb');
+
+    return `<div class="espaces-page__card-preview">${figure}</div>`;
   }
 
   private async renderDetail(space: MerlinSpace): Promise<string> {
@@ -268,6 +298,10 @@ export class EspacesPage {
     const entry = visible[idx];
     const nameCol = columns[0] ?? 'Article';
     const name = entry.row[0]?.trim() || `Article ${idx + 1}`;
+    const imageUrl = getRowImage(space.data, entry.key);
+    const imageHtml = renderComparisonImageFigure(imageUrl, name, 'hero');
+    const imageCount = formatComparisonImageCount(space.data);
+    const isRefreshing = this.refreshingImageKey === entry.key;
     const details = columns
       .slice(1)
       .map((col, i) => {
@@ -290,17 +324,23 @@ export class EspacesPage {
       <section class="espaces-page__section espaces-page__comparison">
         <div class="espaces-page__comparison-header">
           <h4>Articles comparés</h4>
-          ${ignored.length > 0 ? `<span class="espaces-page__comparison-meta">${ignored.length} ignoré${ignored.length > 1 ? 's' : ''}</span>` : ''}
+          <div class="espaces-page__comparison-header-meta">
+            ${imageCount ? `<span class="espaces-page__comparison-photos">${escapeHtml(imageCount)}</span>` : ''}
+            ${ignored.length > 0 ? `<span class="espaces-page__comparison-meta">${ignored.length} ignoré${ignored.length > 1 ? 's' : ''}</span>` : ''}
+          </div>
         </div>
         <article class="espaces-page__comparison-card" data-row-key="${escapeHtml(entry.key)}">
+          ${imageHtml}
           <p class="espaces-page__comparison-label">${escapeHtml(nameCol)}</p>
           <h5 class="espaces-page__comparison-name">${escapeHtml(name)}</h5>
           ${details ? `<dl class="espaces-page__comparison-props">${details}</dl>` : ''}
         </article>
         ${nav}
         <div class="espaces-page__comparison-actions">
+          <button type="button" class="btn btn--ghost btn--sm" data-action="refresh-image" data-row-key="${escapeHtml(entry.key)}" ${isRefreshing ? 'disabled aria-busy="true"' : ''}>${isRefreshing ? 'Recherche…' : 'Rafraîchir l\'image'}</button>
           <button type="button" class="btn btn--ghost btn--sm espaces-page__ignore-btn" data-action="ignore-item" data-row-key="${escapeHtml(entry.key)}">Ignorer cet article</button>
         </div>
+        ${this.imageRefreshError ? `<p class="espaces-page__comparison-image-error" role="alert">${escapeHtml(this.imageRefreshError)}</p>` : ''}
         ${this.renderIgnoredRowsSection(ignored)}
         <details class="espaces-page__table-details">
           <summary>Tableau complet</summary>
@@ -335,32 +375,42 @@ export class EspacesPage {
     space: MerlinSpace,
     options?: { hideIgnored?: boolean },
   ): string {
-    const { columns = [], rows = [] } = normalizeComparisonData(space.data);
+    const { columns = [] } = normalizeComparisonData(space.data);
     if (columns.length === 0) {
       return '<p class="espaces-page__empty-section">Tableau en cours de génération…</p>';
     }
 
-    const ignoredKeys = options?.hideIgnored
-      ? new Set((space.data.ignoredRows ?? []).map((k) => k.trim().toLowerCase()))
-      : null;
-
-    const visibleRows = ignoredKeys
-      ? rows.filter((row) => {
-          const key = (row[0] ?? '').trim().toLowerCase();
-          return !key || !ignoredKeys.has(key);
-        })
-      : rows;
+    const entries = options?.hideIgnored
+      ? getVisibleComparisonRows(space.data)
+      : listComparisonRows(space.data);
 
     const head = `<tr>${columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('')}</tr>`;
-    const body = visibleRows
-      .map(
-        (row) =>
-          `<tr>${columns.map((_, i) => `<td>${escapeHtml(row[i] ?? '')}</td>`).join('')}</tr>`,
-      )
+    const body = entries
+      .map((entry, index) => {
+        const row = entry.row;
+        const name = row[0]?.trim() || `Article ${index + 1}`;
+        const imageUrl = getRowImage(space.data, entry.key);
+        const cells = columns
+          .map((_col, i) => {
+            if (i === 0) {
+              return `<td class="espaces-page__table-cell--product">
+                <div class="espaces-page__table-product">
+                  ${renderComparisonImageFigure(imageUrl, name, 'thumb')}
+                  <span class="espaces-page__table-product-name">${escapeHtml(name)}</span>
+                </div>
+              </td>`;
+            }
+            const value = row[i]?.trim();
+            return `<td>${escapeHtml(value ?? '')}</td>`;
+          })
+          .join('');
+        return `<tr class="espaces-page__table-row" data-action="open-item" data-item-index="${index}" tabindex="0" role="button" aria-label="Voir ${escapeHtml(name)}">${cells}</tr>`;
+      })
       .join('');
+
     return `
       <div class="espaces-page__table-wrap">
-        <table class="espaces-page__table">${head}${body}</table>
+        <table class="espaces-page__table espaces-page__table--with-images">${head}${body}</table>
       </div>
     `;
   }
@@ -506,12 +556,14 @@ export class EspacesPage {
     this.detailEl.querySelector('[data-action="prev-item"]')?.addEventListener('click', () => {
       if (this.comparisonItemIndex > 0) {
         this.comparisonItemIndex -= 1;
+        this.imageRefreshError = null;
         void this.render();
       }
     });
 
     this.detailEl.querySelector('[data-action="next-item"]')?.addEventListener('click', () => {
       this.comparisonItemIndex += 1;
+      this.imageRefreshError = null;
       void this.render();
     });
 
@@ -520,9 +572,56 @@ export class EspacesPage {
       if (key) void this.handleIgnoreRow(space.id, key);
     });
 
+    this.detailEl.querySelector('[data-action="refresh-image"]')?.addEventListener('click', (e) => {
+      const key = (e.currentTarget as HTMLElement).dataset.rowKey;
+      if (key) void this.handleRefreshRowImage(space.id, key);
+    });
+
     this.detailEl.querySelectorAll('[data-action="restore-item"]').forEach((btn) => {
       btn.addEventListener('click', () => {
         void this.handleRestoreRow(space.id, (btn as HTMLElement).dataset.rowKey!);
+      });
+    });
+
+    this.detailEl.querySelectorAll('[data-action="open-item"]').forEach((row) => {
+      const go = (): void => {
+        const index = Number.parseInt((row as HTMLElement).dataset.itemIndex ?? '', 10);
+        if (Number.isNaN(index)) return;
+        this.comparisonItemIndex = index;
+        this.imageRefreshError = null;
+        void this.render().then(() => {
+          this.detailEl
+            ?.querySelector('.espaces-page__comparison-card')
+            ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      };
+      row.addEventListener('click', go);
+      row.addEventListener('keydown', (e) => {
+        const keyEvent = e as KeyboardEvent;
+        if (keyEvent.key === 'Enter' || keyEvent.key === ' ') {
+          keyEvent.preventDefault();
+          go();
+        }
+      });
+    });
+
+    this.bindComparisonImageErrors();
+  }
+
+  private bindComparisonImageErrors(root: ParentNode | null = this.detailEl): void {
+    if (!root) return;
+    root.querySelectorAll('[data-comparison-image]').forEach((img) => {
+      img.addEventListener('error', () => {
+        const figure = img.closest('.espaces-page__comparison-figure');
+        if (!figure || figure.classList.contains('espaces-page__comparison-figure--broken')) return;
+        figure.classList.add('espaces-page__comparison-figure--broken');
+        (img as HTMLImageElement).hidden = true;
+        if (!figure.querySelector('.espaces-page__comparison-placeholder')) {
+          const placeholder = document.createElement('span');
+          placeholder.className = 'espaces-page__comparison-placeholder';
+          placeholder.textContent = 'Image indisponible';
+          figure.appendChild(placeholder);
+        }
       });
     });
   }
@@ -561,6 +660,42 @@ export class EspacesPage {
     if (visibleBefore > 0 && visibleAfter === 0) {
       this.comparisonItemIndex = 0;
     }
+  }
+
+  private async handleRefreshRowImage(spaceId: string, rowKey: string): Promise<void> {
+    const space = await getMerlinSpace(spaceId);
+    if (!space || space.kind !== 'comparison') return;
+
+    const entry = getVisibleComparisonRows(space.data).find((row) => row.key === rowKey);
+    if (!entry) return;
+
+    const label = entry.row[0]?.trim() || rowKey;
+    this.refreshingImageKey = rowKey;
+    this.imageRefreshError = null;
+    if (this.viewingId) await this.render();
+
+    const result = await refreshComparisonRowImageClient(label, space.title);
+    this.refreshingImageKey = null;
+
+    if (!result.ok || !result.imageUrl) {
+      this.imageRefreshError = result.content || 'Impossible de trouver une image.';
+      if (this.viewingId) await this.render();
+      return;
+    }
+
+    const nextData = {
+      ...space.data,
+      rowImages: {
+        ...(space.data.rowImages ?? {}),
+        [rowKey]: result.imageUrl,
+      },
+    };
+
+    await saveMerlinSpace({ ...space, data: nextData, updatedAt: Date.now() });
+    this.imageRefreshError = null;
+    if (this.viewingId) await this.render();
+    this.onUpdate?.();
+    void syncNow();
   }
 
   private async handleRestoreRow(spaceId: string, rowKey: string): Promise<void> {

@@ -31,6 +31,8 @@ export const TOOL_DOCS = `- read_journal(date) — lire la note d'un jour (AAAA-
 ${ROUTINE_CONDITION_DOCS}
 - web_search(query, max_results?) — rechercher sur Internet (actualités, infos factuelles, météo, prix…). N'utilise pas pour le journal personnel
 - fetch_page(url) — lire le contenu textuel d'une page web (après une recherche ou si l'utilisateur donne un lien)
+- search_images(query, max_results?) — rechercher des images sur Internet (Brave Images). Retourne des URLs https
+- enrich_comparison_images(space_id?, rows?, overwrite?) — remplacer les images d'une comparaison (overwrite=true). Réservé aux demandes explicites de l'utilisateur ; les images manquantes sont ajoutées automatiquement après create_space / update_space
 - create_space(kind, title, recap, data_json, create_todo_list?) — créer un espace structuré sauvegardé. kind : comparison | diy | plan | recipe. data_json selon le type (colonnes/lignes pour comparison, intro/sections pour diy, goal/milestones/github pour plan, ingredients/steps pour recipe). create_todo_list=true pour lier une liste de tâches (diy).
 - update_space(space_id|title, recap?, data_json?, status?, append?) — mettre à jour un espace. append=true pour AJOUTER des lignes/étapes sans écraser. Sans space_id ni title, cible l'espace du contexte actif. Pour renommer : space_id + title (nouveau titre).
 - show_space(space_id|title?) — afficher un espace ; sans argument, affiche l'espace du contexte actif
@@ -51,7 +53,13 @@ Workflow comparaison / espace riche :
 4. Si create_space ou update_space a été appelé, termine par le champ message du JSON structuré (résumé, recommandation)
 5. Ne jamais se limiter à un message sans outil pour ces demandes de sauvegarde
 6. Questions complexes dans un contexte actif (conseil, choix, explication) : message dans le JSON structuré, sans recréer un espace
-Après création ou mise à jour, mentionner Galerie → Espaces.`;
+
+Images dans une comparaison :
+- Les images sont ajoutées AUTOMATIQUEMENT côté serveur après create_space ou update_space sur une comparaison — ne pas appeler enrich_comparison_images dans ce cas
+- enrich_comparison_images (overwrite=true) UNIQUEMENT si l'utilisateur demande explicitement de remplacer ou rafraîchir les images (« nouvelles photos », « remplace les images », « rafraîchis les vignettes », etc.)
+- Ne jamais inventer d'URL d'image ; si la recherche échoue pour un objet, le signaler brièvement dans le message
+- Les vignettes sont visibles dans Galerie → Espaces ; le bouton « Rafraîchir l'image » permet aussi de remplacer une image article par article
+- Après création ou mise à jour d'un espace, mentionner Galerie → Espaces.`;
 
 export function buildCustomToolsPromptBlock(customTools: MerlinCustomTool[]): string {
   if (customTools.length === 0) return '';

@@ -3,6 +3,7 @@ import {
   detectSpaceKind,
   detectSpaceUpdateIntent,
   inferSpaceTitle,
+  isComparisonImageOverrideRequest,
   isComparisonRepairRequest,
   isExplicitNewSpaceIntent,
   isInformationalSpaceQuestion,
@@ -52,6 +53,20 @@ describe('inferSpaceTitle', () => {
   });
 });
 
+describe('isComparisonImageOverrideRequest', () => {
+  it('détecte une demande explicite de rafraîchir les images', () => {
+    expect(isComparisonImageOverrideRequest('Rafraîchis les photos de chaque modèle')).toBe(true);
+    expect(isComparisonImageOverrideRequest('Cherche de nouvelles images pour la comparaison')).toBe(
+      true,
+    );
+  });
+
+  it('ne déclenche pas sur une simple création de comparaison', () => {
+    expect(isComparisonImageOverrideRequest('Compare des ventilateurs de plafond')).toBe(false);
+    expect(isComparisonImageOverrideRequest('Ajoute le modèle X à la comparaison')).toBe(false);
+  });
+});
+
 describe('detectSpaceUpdateIntent', () => {
   it('détecte une mise à jour de comparaison existante', () => {
     expect(detectSpaceUpdateIntent('Ajoute le modèle X à la comparaison')).toBe(true);
@@ -74,6 +89,13 @@ describe('shouldUpdateActiveSpace', () => {
         'comparison',
       ),
     ).toBe(true);
+  });
+
+  it('ne déclenche pas la mise à jour tableau pour un override images seul', () => {
+    expect(detectSpaceUpdateIntent('Rafraîchis les photos de chaque modèle')).toBe(false);
+    expect(shouldUpdateActiveSpace('Rafraîchis les photos de chaque modèle', 'comparison')).toBe(
+      false,
+    );
   });
 
   it('ne confond pas comparaison initiale et mise à jour', () => {

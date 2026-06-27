@@ -158,6 +158,63 @@ function createMerlinWebDevProxy() {
   };
 }
 
+function createMerlinSpaceImageDevProxy() {
+  return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
+    const url = req.url ?? '';
+    if (!url.startsWith('/api/merlin-space-image')) {
+      next();
+      return;
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      next();
+      return;
+    }
+
+    try {
+      const { refreshComparisonRowImage } = await import('./server/merlin-agent/image-tools');
+      const rawBody = await readRequestBody(req);
+      const parsed = JSON.parse(rawBody) as {
+        rowName?: string;
+        contextHint?: string;
+        config?: { braveSearchApiKey?: string };
+      };
+
+      const rowName = parsed.rowName?.trim() ?? '';
+      if (!rowName) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: false, content: 'rowName requis.' }));
+        return;
+      }
+
+      const result = await refreshComparisonRowImage(rowName, parsed.contextHint?.trim() ?? '', {
+        braveSearchApiKey:
+          parsed.config?.braveSearchApiKey?.trim() || process.env.BRAVE_SEARCH_API_KEY,
+      });
+
+      res.statusCode = result.ok ? 200 : 503;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      const message = err instanceof Error ? err.message : 'Proxy error';
+      res.end(JSON.stringify({ ok: false, content: message }));
+    }
+  };
+}
+
 function createMerlinAgentDevProxy(fallbackApiKey: string) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     const url = req.url ?? '';
@@ -411,10 +468,13 @@ export default defineConfig(({ mode }) => {
           const aiProxy = createOpenRouterDevProxy(env.OPENROUTER_API_KEY ?? '');
           const agentProxy = createMerlinAgentDevProxy(env.OPENROUTER_API_KEY ?? '');
           const webProxy = createMerlinWebDevProxy();
+          const spaceImageProxy = createMerlinSpaceImageDevProxy();
           server.middlewares.use((req, res, next) => {
-            void webProxy(req, res, () => {
-              void agentProxy(req, res, () => {
-                void aiProxy(req, res, next);
+            void spaceImageProxy(req, res, () => {
+              void webProxy(req, res, () => {
+                void agentProxy(req, res, () => {
+                  void aiProxy(req, res, next);
+                });
               });
             });
           });

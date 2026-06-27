@@ -37,6 +37,21 @@ export function isExplicitNewSpaceIntent(text: string): boolean {
   );
 }
 
+/** Demande explicite de remplacer ou rafraîchir les images d'une comparaison. */
+export function isComparisonImageOverrideRequest(text: string): boolean {
+  if (!/\b(image|images|photo|photos|illustration|vignette|visuel)\b/i.test(text)) {
+    return false;
+  }
+  return /\b(remplace|rafra[îi]chis|r[ée]affiche|mets?\s+à\s+jour|nouvelles?|autres?|recherche|cherche|trouve|retente|illustre)\b/i.test(
+    text,
+  );
+}
+
+/** @deprecated Utiliser isComparisonImageOverrideRequest */
+export function isComparisonImageRequest(text: string): boolean {
+  return isComparisonImageOverrideRequest(text);
+}
+
 /** Demande de modifier l'espace actif plutôt que d'en créer un nouveau. */
 export function detectSpaceUpdateIntent(text: string): boolean {
   return /\b(ajoute|ajouter|rajoute|rajouter|int[èe]gre|intégrer|met(s|t)?\s+à\s+jour|mets\s+à\s+jour|modifie|modifier|corrige|corriger|complète|compléter|dans (la |cette |mon )?comparaison|au tableau|au comparatif|retire|supprime|enlève)\b/i.test(
@@ -95,6 +110,7 @@ export function isInformationalSpaceQuestion(text: string): boolean {
     return false;
   }
   if (detectSpaceUpdateIntent(trimmed)) return false;
+  if (isComparisonImageOverrideRequest(trimmed)) return false;
   return /^(quel|quelle|quels|quelles|comment|pourquoi|c'est quoi|dis[- ]moi|parle[- ]moi|explique|tu en penses quoi|avis sur|des infos sur|renseigne)/i.test(
     trimmed,
   );
