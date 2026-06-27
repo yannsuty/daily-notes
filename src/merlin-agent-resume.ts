@@ -240,7 +240,9 @@ export async function loadPendingJobProgress(
     const status = await getAgentJobStatus(jobId);
     const applied = await tryApplyFinishedJobStatus(job, status, callbacks);
     if (applied) {
-      return status.steps ?? [];
+      const steps = status.steps ?? [];
+      emitJobSteps(steps, callbacks);
+      return steps;
     }
 
     const steps = status.steps ?? [];

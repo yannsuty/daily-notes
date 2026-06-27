@@ -1450,24 +1450,24 @@ body {
   }
 }
 
-.merlin-chat__background {
-  flex-shrink: 0;
+.merlin-chat__thinking-background {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.35rem 1rem;
+  padding: 0.35rem 0.5rem;
   font-size: 0.8125rem;
   color: var(--muted);
   background: rgba(59, 130, 246, 0.08);
-  border-top: 1px solid var(--border);
+  border-radius: 8px;
 }
 
-.merlin-chat__background[hidden] {
+.merlin-chat__thinking-background[hidden] {
   display: none;
 }
 
-.merlin-chat__background-dismiss {
+.merlin-chat__thinking-dismiss {
+  flex-shrink: 0;
   font-size: 0.75rem;
   padding: 0.2rem 0.55rem;
   border-radius: 6px;
@@ -1477,7 +1477,7 @@ body {
   cursor: pointer;
 }
 
-.merlin-chat__background-dismiss:hover {
+.merlin-chat__thinking-dismiss:hover {
   background: var(--border);
 }
 
