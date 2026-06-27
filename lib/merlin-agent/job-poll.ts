@@ -18,5 +18,7 @@ export function isRetryableJobNotFound(options: {
   const age = now - options.startedAt;
   if (options.postPending) return true;
   if (!options.serverRegistered && age < JOB_POST_GRACE_MS) return true;
-  return age < 15_000;
+  // Propagation Redis / cold start Vercel après enregistrement serveur.
+  if (options.serverRegistered && age < JOB_POST_GRACE_MS) return true;
+  return false;
 }

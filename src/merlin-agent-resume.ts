@@ -9,6 +9,7 @@ import {
   getActivePollController,
   isPollingAgentJob,
   isStalePendingJob,
+  isWatchingAgentJob,
   listPendingAgentJobs,
   releaseActivePoll,
   removePendingAgentJob,
@@ -117,14 +118,18 @@ async function fetchJobStatusWithRetry(
       return await getAgentJobStatus(job.jobId, options);
     } catch (err) {
       lastErr = err;
-      if (isJobNotFoundError(err) && isRetryableJobNotFound(job)) {
+      if (isJobNotFoundError(err)) {
         logAgentDev('agent-resume', 'poll_404_retry', {
           jobId: job.jobId,
           attempt: i + 1,
           postPending: job.postPending ?? false,
         }, job.jobId);
-        await sleep(Math.min(600 * (i + 1), 3000));
-        continue;
+        if (i < attempts - 1) {
+          await sleep(Math.min(600 * (i + 1), 3000));
+          continue;
+        }
+        if (isJobExpiredError(err, job)) throw err;
+        throw err;
       }
       if (isJobExpiredError(err, job)) throw err;
       if (i < attempts - 1) {
@@ -222,14 +227,28 @@ export async function loadPendingJobProgress(
   jobId: string,
   callbacks?: AgentJobCallbacks,
 ): Promise<AgentStep[]> {
+  const job = listPendingAgentJobs().find((j) => j.jobId === jobId);
+  if (!job) return [];
+
+  if (isPollingAgentJob(jobId)) {
+    const cached = job.steps ?? [];
+    emitJobSteps(cached, callbacks);
+    return cached;
+  }
+
   try {
     const status = await getAgentJobStatus(jobId);
+    const applied = await tryApplyFinishedJobStatus(job, status, callbacks);
+    if (applied) {
+      return status.steps ?? [];
+    }
+
     const steps = status.steps ?? [];
     setPendingJobSteps(jobId, steps);
     emitJobSteps(steps, callbacks);
     return steps;
   } catch {
-    const cached = listPendingAgentJobs().find((j) => j.jobId === jobId)?.steps ?? [];
+    const cached = job.steps ?? [];
     emitJobSteps(cached, callbacks);
     return cached;
   }

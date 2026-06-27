@@ -305,11 +305,8 @@ export async function watchAgentJob(
     if (response.status === 404) {
       notFoundAttempts += 1;
       const grace = options?.pollGrace;
-      if (
-        grace &&
-        isRetryableJobNotFound({ ...grace, now: Date.now() }) &&
-        notFoundAttempts < 40
-      ) {
+      const shouldRetry = grace != null && notFoundAttempts < 40;
+      if (shouldRetry) {
         logAgentDev('agent-client', 'poll_404_retry', { jobId, notFoundAttempts }, jobId);
         await sleep(500 + Math.min(notFoundAttempts, 10) * 200);
         continue;

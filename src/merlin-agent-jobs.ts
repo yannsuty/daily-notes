@@ -176,6 +176,12 @@ export function isPollingAgentJob(jobId: string): boolean {
 
 const activePolls = new Map<string, AbortController>();
 
+/** Watch SSE/JSON actif pour ce job (non interrompu). */
+export function isWatchingAgentJob(jobId: string): boolean {
+  const controller = activePolls.get(jobId);
+  return !!controller && !controller.signal.aborted;
+}
+
 export function stopPollingAgentJob(jobId: string): void {
   activePolls.get(jobId)?.abort();
   activePolls.delete(jobId);
