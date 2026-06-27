@@ -56,6 +56,19 @@ export async function appendAgentJobStep(jobId: string, step: AgentStep): Promis
 }
 
 /** Rafraîchit l'activité du job (heartbeat pendant LLM / outils longs). */
+export async function renewSegmentLease(jobId: string): Promise<void> {
+  if (!isRedisConfigured()) {
+    const now = Date.now();
+    const until = memoryLeases.get(jobId) ?? 0;
+    if (until > now) {
+      memoryLeases.set(jobId, now + SEGMENT_LEASE_MS);
+    }
+    return;
+  }
+  const redis = getRedis();
+  await redis.pexpire(agentJobLeaseKey(jobId), SEGMENT_LEASE_MS);
+}
+
 export async function touchAgentJob(jobId: string): Promise<void> {
   const current = await getAgentJob(jobId);
   if (!current) return;
@@ -64,6 +77,7 @@ export async function touchAgentJob(jobId: string): Promise<void> {
     ...current,
     updatedAt: Date.now(),
   });
+  await renewSegmentLease(jobId);
 }
 
 export async function saveAgentJobCheckpoint(
@@ -85,6 +99,7 @@ export async function finishAgentJob(
 ): Promise<void> {
   const current = await getAgentJob(jobId);
   await saveAgentJob(jobId, {
+    ...(current ?? { status: 'running' as const, steps: [] }),
     status: result.ok ? 'done' : 'error',
     steps: result.steps.length > 0 ? result.steps : (current?.steps ?? []),
     result,
@@ -96,6 +111,7 @@ export async function finishAgentJob(
 export async function failAgentJob(jobId: string, error: string): Promise<void> {
   const current = await getAgentJob(jobId);
   await saveAgentJob(jobId, {
+    ...(current ?? { status: 'running' as const, steps: [] }),
     status: 'error',
     steps: current?.steps ?? [],
     error,
