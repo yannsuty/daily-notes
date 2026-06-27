@@ -128,6 +128,7 @@ export function logAgentReplyResult(
 export function clearAgentDevLogs(): void {
   try {
     localStorage.removeItem(STORAGE_LOGS);
+    localStorage.removeItem(STORAGE_LAST_JOBS);
   } catch {
     // ignore
   }
