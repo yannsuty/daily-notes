@@ -7,26 +7,31 @@ export interface BackendVersionInfo {
   deployment?: string;
 }
 
+function formatVersionCore(version: string, commit?: string): string {
+  return commit ? `v${version}@${commit}` : `v${version}`;
+}
+
 export function formatDevVersionHeader(
   frontVersion: string,
+  frontCommit: string | undefined,
   back: BackendVersionInfo | null,
 ): string {
-  const front = `front v${frontVersion}`;
+  const front = `front ${formatVersionCore(frontVersion, frontCommit)}`;
   if (!back) return `${front} · back …`;
-  const backCore = back.commit ? `v${back.version}@${back.commit}` : `v${back.version}`;
-  return `${front} · back ${backCore}`;
+  return `${front} · back ${formatVersionCore(back.version, back.commit)}`;
 }
 
 export function devVersionTitle(
   frontVersion: string,
+  frontCommit: string | undefined,
   frontEnv: string | undefined,
   back: BackendVersionInfo | null,
 ): string {
   const lines = [
-    `Front : v${frontVersion}${frontEnv ? ` (${frontEnv})` : ''}`,
+    `Front : ${formatVersionCore(frontVersion, frontCommit)}${frontEnv ? ` (${frontEnv})` : ''}`,
   ];
   if (back) {
-    lines.push(`Back : v${back.version}${back.commit ? ` @ ${back.commit}` : ''}`);
+    lines.push(`Back : ${formatVersionCore(back.version, back.commit)}`);
     if (back.env) lines.push(`API env : ${back.env}`);
     if (back.deployment) lines.push(`Déploiement : ${back.deployment}`);
   }
