@@ -2,7 +2,6 @@ import { apiUrl } from './api-base';
 import { isAgentDevLogEnabled, logAgentDev } from './agent-dev-log';
 import { getAiClientConfig } from './merlin-env';
 import {
-  isRetryableJobNotFound,
   JOB_NOT_FOUND_MESSAGE,
 } from '../lib/merlin-agent/job-poll';
 import type {

@@ -9,7 +9,6 @@ import {
   getActivePollController,
   isPollingAgentJob,
   isStalePendingJob,
-  isWatchingAgentJob,
   listPendingAgentJobs,
   releaseActivePoll,
   removePendingAgentJob,
