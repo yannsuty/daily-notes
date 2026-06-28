@@ -16,9 +16,8 @@ import {
 import { CONTEXT_CHIPS } from './merlin-intents';
 import { getWelcomeMessage, createMessageId, handleUserMessage } from './merlin-agent';
 import { stepLabelForUi } from './merlin-agent-client';
-import { listPendingAgentJobs, appendPendingJobStep } from './merlin-agent-jobs';
+import { listPendingAgentJobs, appendPendingJobStep, MERLIN_THINKING_PLACEHOLDER } from './merlin-agent-jobs';
 import { abandonPendingAgentJobs, loadPendingJobProgress } from './merlin-agent-resume';
-import { assessQueryDepth } from '../lib/merlin-agent';
 import type { AgentStep } from '../lib/merlin-agent';
 import { formatAgentReplyForUser } from '../lib/merlin-agent/parse';
 import { getPaletteShortcuts, toggleShortcutPin } from './merlin-shortcuts';
@@ -45,10 +44,13 @@ export class MerlinChat {
   private inputEl: HTMLTextAreaElement | null = null;
   private sendBtn: HTMLButtonElement | null = null;
   private voiceBtn: HTMLButtonElement | null = null;
-  private statusEl: HTMLElement | null = null;
-  private traceEl: HTMLElement | null = null;
   private contextEl: HTMLElement | null = null;
-  private backgroundEl: HTMLElement | null = null;
+  private thinkingBubbleEl: HTMLElement | null = null;
+  private thinkingStatusEl: HTMLElement | null = null;
+  private thinkingStepsEl: HTMLElement | null = null;
+  private thinkingBackgroundEl: HTMLElement | null = null;
+  private agentStepsTrace: AgentStep[] = [];
+  private backgroundPending = false;
   private thinking = false;
 
   constructor(options: MerlinChatOptions) {
@@ -70,12 +72,6 @@ export class MerlinChat {
       </details>
       <div class="merlin-chat__messages" role="log" aria-live="polite" aria-label="Conversation avec Merlin"></div>
       <div class="merlin-chat__palette" role="toolbar" aria-label="Actions rapides"></div>
-      <div class="merlin-chat__background" hidden role="status">
-        <span class="merlin-chat__background-text">Merlin réfléchit en arrière-plan…</span>
-        <button type="button" class="merlin-chat__background-dismiss">Ignorer</button>
-      </div>
-      <div class="merlin-chat__status" aria-live="polite"></div>
-      <div class="merlin-chat__trace" hidden aria-live="polite"></div>
       <form class="merlin-chat__composer">
         <button type="button" class="merlin-chat__voice" aria-label="Parler à Merlin" title="Parler à Merlin">🎙</button>
         <textarea
@@ -96,13 +92,6 @@ export class MerlinChat {
     this.inputEl = this.container.querySelector('.merlin-chat__input');
     this.sendBtn = this.container.querySelector('.merlin-chat__send');
     this.voiceBtn = this.container.querySelector('.merlin-chat__voice');
-    this.statusEl = this.container.querySelector('.merlin-chat__status');
-    this.backgroundEl = this.container.querySelector('.merlin-chat__background');
-    this.traceEl = this.container.querySelector('.merlin-chat__trace');
-
-    this.container.querySelector('.merlin-chat__background-dismiss')?.addEventListener('click', () => {
-      void this.dismissBackgroundJob();
-    });
 
     const form = this.container.querySelector('.merlin-chat__composer') as HTMLFormElement;
     form.addEventListener('submit', (e) => {
@@ -403,8 +392,15 @@ export class MerlinChat {
       this.appendBubble('assistant', welcome, 'welcome');
     } else {
       for (const msg of conv.messages) {
+        if (msg.role === 'assistant' && msg.content === MERLIN_THINKING_PLACEHOLDER) {
+          continue;
+        }
         this.appendBubble(msg.role, msg.content, msg.id);
       }
+    }
+
+    if (this.thinking || this.agentStepsTrace.length > 0 || this.backgroundPending) {
+      this.restoreThinkingBubble();
     }
 
     this.scrollToBottom();
@@ -440,68 +436,175 @@ export class MerlinChat {
     if (this.sendBtn) this.sendBtn.disabled = active;
     if (this.voiceBtn) this.voiceBtn.disabled = active;
     if (this.inputEl) this.inputEl.disabled = active;
-    if (this.statusEl) {
-      this.statusEl.textContent = message;
-      this.statusEl.hidden = !message;
-    }
-    if (!active && this.traceEl && !options?.keepTrace) {
+
+    if (active) {
+      if (!options?.keepTrace) {
+        this.agentStepsTrace = [];
+      }
+      this.ensureThinkingBubble();
+      if (message && this.thinkingStatusEl) {
+        this.thinkingStatusEl.hidden = false;
+        this.thinkingStatusEl.textContent = message;
+      } else if (this.thinkingStatusEl) {
+        this.thinkingStatusEl.hidden = true;
+      }
+    } else if (!options?.keepTrace) {
       this.clearAgentTrace();
     }
   }
 
+  private ensureThinkingBubble(): void {
+    if (this.thinkingBubbleEl) {
+      this.updateThinkingBackgroundUi();
+      this.scrollToBottom();
+      return;
+    }
+    if (!this.messagesEl) return;
+
+    const bubble = document.createElement('div');
+    bubble.className =
+      'merlin-chat__bubble merlin-chat__bubble--assistant merlin-chat__bubble--thinking';
+    bubble.setAttribute('aria-live', 'polite');
+
+    const label = document.createElement('span');
+    label.className = 'merlin-chat__label';
+    label.textContent = 'Merlin';
+    bubble.appendChild(label);
+
+    const thinking = document.createElement('div');
+    thinking.className = 'merlin-chat__thinking';
+
+    const status = document.createElement('p');
+    status.className = 'merlin-chat__thinking-status';
+    status.hidden = true;
+    thinking.appendChild(status);
+
+    const steps = document.createElement('ul');
+    steps.className = 'merlin-chat__thinking-steps';
+    steps.hidden = true;
+    thinking.appendChild(steps);
+
+    const background = document.createElement('div');
+    background.className = 'merlin-chat__thinking-background';
+    background.hidden = true;
+    background.innerHTML = `
+      <span class="merlin-chat__thinking-background-text">Merlin réfléchit en arrière-plan…</span>
+      <button type="button" class="merlin-chat__thinking-dismiss">Ignorer</button>
+    `;
+    background.querySelector('.merlin-chat__thinking-dismiss')?.addEventListener('click', () => {
+      void this.dismissBackgroundJob();
+    });
+    thinking.appendChild(background);
+
+    bubble.appendChild(thinking);
+    this.messagesEl.appendChild(bubble);
+
+    this.thinkingBubbleEl = bubble;
+    this.thinkingStatusEl = status;
+    this.thinkingStepsEl = steps;
+    this.thinkingBackgroundEl = background;
+    this.updateThinkingBackgroundUi();
+    this.scrollToBottom();
+  }
+
+  private updateThinkingBackgroundUi(): void {
+    if (!this.thinkingBackgroundEl) return;
+    this.thinkingBackgroundEl.hidden = !this.backgroundPending;
+  }
+
+  private restoreThinkingBubble(): void {
+    this.thinkingBubbleEl = null;
+    this.thinkingStatusEl = null;
+    this.thinkingStepsEl = null;
+    this.thinkingBackgroundEl = null;
+
+    this.ensureThinkingBubble();
+    if (this.agentStepsTrace.length > 0) {
+      this.renderAgentSteps(this.agentStepsTrace, { preserveTrace: true });
+    }
+  }
+
+  private clearThinkingBubble(): void {
+    this.thinkingBubbleEl?.remove();
+    this.thinkingBubbleEl = null;
+    this.thinkingStatusEl = null;
+    this.thinkingStepsEl = null;
+    this.thinkingBackgroundEl = null;
+  }
+
   setBackgroundComplete(): void {
+    this.backgroundPending = false;
     this.setThinking(false, '', { keepTrace: true });
     this.clearAgentTrace();
-    if (this.backgroundEl) this.backgroundEl.hidden = true;
   }
 
   setBackgroundPending(): void {
-    if (this.backgroundEl) this.backgroundEl.hidden = false;
+    this.backgroundPending = true;
+    this.ensureThinkingBubble();
     // Ne pas bloquer la saisie : l'utilisateur peut continuer à utiliser Merlin.
   }
 
   renderAgentStep(step: AgentStep): void {
-    if (!this.traceEl) return;
-    this.traceEl.hidden = false;
+    if (!this.messagesEl) return;
 
-    const item = document.createElement('div');
-    item.className = `merlin-chat__trace-item merlin-chat__trace-item--${step.phase}`;
-    item.textContent = stepLabelForUi(step);
-    this.traceEl.appendChild(item);
-    this.traceEl.scrollTop = this.traceEl.scrollHeight;
+    this.agentStepsTrace.push(step);
+    this.ensureThinkingBubble();
+    if (!this.thinkingStepsEl) return;
 
-    if (this.statusEl) {
-      this.statusEl.textContent = stepLabelForUi(step);
-      this.statusEl.hidden = false;
+    this.thinkingStepsEl.hidden = false;
+    if (this.thinkingStatusEl) {
+      this.thinkingStatusEl.hidden = true;
     }
+
+    const prevActive = this.thinkingStepsEl.querySelector('.merlin-chat__thinking-step--active');
+    prevActive?.classList.remove('merlin-chat__thinking-step--active');
+    prevActive?.classList.add('merlin-chat__thinking-step--done');
+
+    const item = document.createElement('li');
+    item.className = `merlin-chat__thinking-step merlin-chat__thinking-step--${step.phase} merlin-chat__thinking-step--active`;
+    item.textContent = stepLabelForUi(step);
+    this.thinkingStepsEl.appendChild(item);
+
+    this.scrollToBottom();
   }
 
-  renderAgentSteps(steps: AgentStep[]): void {
-    if (!this.traceEl) return;
-    this.traceEl.innerHTML = '';
+  renderAgentSteps(steps: AgentStep[], options?: { preserveTrace?: boolean }): void {
+    if (!options?.preserveTrace) {
+      this.agentStepsTrace = [...steps];
+    }
+
     if (steps.length === 0) {
-      this.traceEl.hidden = true;
+      this.clearAgentTrace();
       return;
     }
-    this.traceEl.hidden = false;
-    for (const step of steps) {
-      const item = document.createElement('div');
-      item.className = `merlin-chat__trace-item merlin-chat__trace-item--${step.phase}`;
+
+    this.ensureThinkingBubble();
+    if (!this.thinkingStepsEl) return;
+
+    this.thinkingStepsEl.hidden = false;
+    if (this.thinkingStatusEl) {
+      this.thinkingStatusEl.hidden = true;
+    }
+    this.thinkingStepsEl.innerHTML = '';
+
+    for (let i = 0; i < steps.length; i += 1) {
+      const step = steps[i]!;
+      const isLast = i === steps.length - 1;
+      const item = document.createElement('li');
+      item.className = `merlin-chat__thinking-step merlin-chat__thinking-step--${step.phase}${
+        isLast ? ' merlin-chat__thinking-step--active' : ' merlin-chat__thinking-step--done'
+      }`;
       item.textContent = stepLabelForUi(step);
-      this.traceEl.appendChild(item);
+      this.thinkingStepsEl.appendChild(item);
     }
-    this.traceEl.scrollTop = this.traceEl.scrollHeight;
-    const latest = steps[steps.length - 1];
-    if (this.statusEl && latest) {
-      this.statusEl.textContent = stepLabelForUi(latest);
-      this.statusEl.hidden = false;
-    }
+
+    this.scrollToBottom();
   }
 
   clearAgentTrace(): void {
-    if (!this.traceEl) return;
-    this.traceEl.hidden = true;
-    this.traceEl.innerHTML = '';
+    this.agentStepsTrace = [];
+    this.backgroundPending = false;
+    this.clearThinkingBubble();
   }
 
   private setAiBanner(show: boolean): void {
@@ -534,11 +637,8 @@ export class MerlinChat {
     const userMessageId = createMessageId();
     this.appendBubble('user', trimmed, userMessageId);
     this.scrollToBottom();
-    const depth = assessQueryDepth(trimmed);
-    this.setThinking(
-      true,
-      depth === 'deep' ? 'Merlin analyse en profondeur…' : 'Merlin réfléchit…',
-    );
+    this.agentStepsTrace = [];
+    this.setThinking(true);
 
     let result: Awaited<ReturnType<typeof handleUserMessage>>;
     try {
@@ -582,7 +682,8 @@ export class MerlinChat {
     if (result.backgroundPending) {
       this.setAiBanner(false);
       await this.renderAll();
-      this.syncBackgroundStatus();
+      this.setBackgroundPending();
+      await this.loadBackgroundJobTrace();
       return;
     }
 

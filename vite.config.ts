@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { defineConfig, loadEnv } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { JOB_STREAM_MAX_MS } from './lib/merlin-agent/agent-duration';
+import { resolveBuildCommit } from './lib/app-version';
 import {
   callOpenRouterWithFallback,
   OPENROUTER_FREE_ROUTER,
@@ -155,6 +156,99 @@ function createMerlinWebDevProxy() {
       const message = err instanceof Error ? err.message : 'Proxy error';
       res.end(JSON.stringify({ ok: false, content: message }));
     }
+  };
+}
+
+function createMerlinSpaceImageDevProxy() {
+  return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
+    const url = req.url ?? '';
+    if (!url.startsWith('/api/merlin-space-image')) {
+      next();
+      return;
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    if (req.method !== 'POST') {
+      next();
+      return;
+    }
+
+    try {
+      const { refreshComparisonRowImage } = await import('./server/merlin-agent/image-tools');
+      const rawBody = await readRequestBody(req);
+      const parsed = JSON.parse(rawBody) as {
+        rowName?: string;
+        contextHint?: string;
+        config?: { braveSearchApiKey?: string };
+      };
+
+      const rowName = parsed.rowName?.trim() ?? '';
+      if (!rowName) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: false, content: 'rowName requis.' }));
+        return;
+      }
+
+      const result = await refreshComparisonRowImage(rowName, parsed.contextHint?.trim() ?? '', {
+        braveSearchApiKey:
+          parsed.config?.braveSearchApiKey?.trim() || process.env.BRAVE_SEARCH_API_KEY,
+      });
+
+      res.statusCode = result.ok ? 200 : 503;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify(result));
+    } catch (err) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json');
+      const message = err instanceof Error ? err.message : 'Proxy error';
+      res.end(JSON.stringify({ ok: false, content: message }));
+    }
+  };
+}
+
+function createVersionDevProxy(appEnv: string) {
+  return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
+    const url = req.url ?? '';
+    if (!url.startsWith('/api/version')) {
+      next();
+      return;
+    }
+
+    if (req.method !== 'GET' && req.method !== 'OPTIONS') {
+      next();
+      return;
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.end();
+      return;
+    }
+
+    const { getBuildVersionInfo } = await import('./lib/app-version');
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(
+      JSON.stringify(
+        getBuildVersionInfo({
+          ...process.env,
+          APP_ENV: appEnv || process.env.APP_ENV || 'dev',
+        }),
+      ),
+    );
   };
 }
 
@@ -402,19 +496,26 @@ export default defineConfig(({ mode }) => {
     base: isCapacitor ? './' : '/',
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
+      __APP_COMMIT__: JSON.stringify(resolveBuildCommit() ?? ''),
       __APP_ENV__: JSON.stringify(env.APP_ENV ?? process.env.APP_ENV ?? ''),
     },
     plugins: [
       {
         name: 'openrouter-dev-proxy',
         configureServer(server) {
+          const versionProxy = createVersionDevProxy(env.APP_ENV ?? process.env.APP_ENV ?? 'dev');
           const aiProxy = createOpenRouterDevProxy(env.OPENROUTER_API_KEY ?? '');
           const agentProxy = createMerlinAgentDevProxy(env.OPENROUTER_API_KEY ?? '');
           const webProxy = createMerlinWebDevProxy();
+          const spaceImageProxy = createMerlinSpaceImageDevProxy();
           server.middlewares.use((req, res, next) => {
-            void webProxy(req, res, () => {
-              void agentProxy(req, res, () => {
-                void aiProxy(req, res, next);
+            void versionProxy(req, res, () => {
+              void spaceImageProxy(req, res, () => {
+                void webProxy(req, res, () => {
+                  void agentProxy(req, res, () => {
+                    void aiProxy(req, res, next);
+                  });
+                });
               });
             });
           });

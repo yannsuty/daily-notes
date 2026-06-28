@@ -125,6 +125,8 @@ export interface MerlinSpaceGitHub {
 export interface MerlinSpaceData {
   columns?: string[];
   rows?: string[][];
+  /** URLs d'images par objet (clé = 1ʳᵉ colonne, minuscules). */
+  rowImages?: Record<string, string>;
   /** Clés de lignes ignorées (première colonne, minuscules). */
   ignoredRows?: string[];
   intro?: string;
@@ -271,4 +273,6 @@ export interface ToolResult {
   content: string;
   mutation?: AgentSideEffect;
   webSources?: WebSource[];
+  /** Métadonnées debug (logs agent uniquement). */
+  devMeta?: Record<string, unknown>;
 }

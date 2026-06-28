@@ -56,6 +56,19 @@ export async function appendAgentJobStep(jobId: string, step: AgentStep): Promis
 }
 
 /** Rafraîchit l'activité du job (heartbeat pendant LLM / outils longs). */
+export async function renewSegmentLease(jobId: string): Promise<void> {
+  if (!isRedisConfigured()) {
+    const now = Date.now();
+    const until = memoryLeases.get(jobId) ?? 0;
+    if (until > now) {
+      memoryLeases.set(jobId, now + SEGMENT_LEASE_MS);
+    }
+    return;
+  }
+  const redis = getRedis();
+  await redis.pexpire(agentJobLeaseKey(jobId), SEGMENT_LEASE_MS);
+}
+
 export async function touchAgentJob(jobId: string): Promise<void> {
   const current = await getAgentJob(jobId);
   if (!current) return;
@@ -64,6 +77,7 @@ export async function touchAgentJob(jobId: string): Promise<void> {
     ...current,
     updatedAt: Date.now(),
   });
+  await renewSegmentLease(jobId);
 }
 
 export async function saveAgentJobCheckpoint(
@@ -84,21 +98,27 @@ export async function finishAgentJob(
   result: AgentRunResult,
 ): Promise<void> {
   const current = await getAgentJob(jobId);
+  if (!current) return;
   await saveAgentJob(jobId, {
+    ...current,
     status: result.ok ? 'done' : 'error',
-    steps: result.steps.length > 0 ? result.steps : (current?.steps ?? []),
+    steps: result.steps.length > 0 ? result.steps : current.steps,
     result,
     error: result.ok ? undefined : result.error,
+    checkpoint: undefined,
     updatedAt: Date.now(),
   });
 }
 
 export async function failAgentJob(jobId: string, error: string): Promise<void> {
   const current = await getAgentJob(jobId);
+  if (!current) return;
   await saveAgentJob(jobId, {
+    ...current,
     status: 'error',
-    steps: current?.steps ?? [],
+    steps: current.steps,
     error,
+    checkpoint: undefined,
     updatedAt: Date.now(),
   });
 }
@@ -131,6 +151,17 @@ export async function releaseSegmentLease(jobId: string): Promise<void> {
   }
   const redis = getRedis();
   await redis.del(agentJobLeaseKey(jobId));
+}
+
+/** Vrai si un segment est déjà en cours (autre requête poll/SSE). */
+export async function isSegmentLeaseHeld(jobId: string): Promise<boolean> {
+  if (!isRedisConfigured()) {
+    const until = memoryLeases.get(jobId) ?? 0;
+    return until > Date.now();
+  }
+  const redis = getRedis();
+  const held = await redis.get(agentJobLeaseKey(jobId));
+  return held != null;
 }
 
 /** Marque un job bloqué en « running » comme erreur (timeout Vercel, process tué, etc.). */

@@ -1,9 +1,11 @@
 import {
   formatAgentDevLogEntry,
+  previewAgentDevText,
   redactDevLogDetail,
   trimAgentDevLogs,
   type AgentDevLogEntry,
 } from '../lib/merlin-agent/agent-dev-log.js';
+import type { AgentRunResult } from '../lib/merlin-agent/types.js';
 import { getAgentJob, saveAgentJob } from './agent-jobs.js';
 
 export async function appendAgentJobDevLog(
@@ -29,6 +31,55 @@ export async function appendAgentJobDevLog(
     ...job,
     devLogs,
     updatedAt: Date.now(),
+  });
+}
+
+export async function logAgentReplyDevLog(
+  jobId: string,
+  result: Pick<AgentRunResult, 'ok' | 'reply' | 'error' | 'steps' | 'depth'>,
+): Promise<void> {
+  await appendAgentJobDevLog(jobId, 'reply', result.ok ? 'ok' : 'error', {
+    replyPreview: previewAgentDevText(result.reply ?? result.error),
+    steps: result.steps?.length ?? 0,
+    depth: result.depth,
+  });
+}
+
+export async function logAgentToolDevLog(
+  jobId: string,
+  toolName: string,
+  toolArgs: Record<string, string>,
+  toolResult: { ok: boolean; content: string; devMeta?: Record<string, unknown> },
+): Promise<void> {
+  if (toolName === 'fetch_page') {
+    const devMeta = toolResult.devMeta ?? {};
+    const errorCode = typeof devMeta.errorCode === 'string' ? devMeta.errorCode : undefined;
+    const event = toolResult.ok
+      ? (devMeta.fromCache === true ? 'cache_hit' : 'ok')
+      : (errorCode ?? 'error');
+    await appendAgentJobDevLog(jobId, 'fetch-page', event, {
+      url: toolArgs.url ?? devMeta.url,
+      httpStatus: devMeta.httpStatus,
+      httpStatusText: devMeta.httpStatusText,
+      finalUrl: devMeta.finalUrl,
+      contentType: devMeta.contentType,
+      pageTitle: devMeta.pageTitle,
+      textLength: devMeta.textLength,
+      rawLength: devMeta.rawLength,
+      fromCache: devMeta.fromCache,
+      durationMs: devMeta.durationMs,
+      blockedHint: devMeta.blockedHint,
+      errorCode: devMeta.errorCode,
+      errorMessage: devMeta.errorMessage,
+      contentPreview: previewAgentDevText(toolResult.content),
+    });
+    return;
+  }
+
+  await appendAgentJobDevLog(jobId, 'tool', toolResult.ok ? 'ok' : 'error', {
+    name: toolName,
+    ...(toolName === 'web_search' && toolArgs.query ? { query: toolArgs.query } : {}),
+    contentPreview: previewAgentDevText(toolResult.content),
   });
 }
 

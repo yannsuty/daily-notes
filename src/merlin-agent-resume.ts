@@ -1,5 +1,5 @@
 import { updateMerlinMessageContent } from './db';
-import { logAgentDev } from './agent-dev-log';
+import { logAgentDev, logAgentReplyResult } from './agent-dev-log';
 import { isJobNotFoundError, isRetryableJobNotFound } from '../lib/merlin-agent/job-poll';
 import { applyAgentMutations } from './merlin-agent-context';
 import { setActiveSpaceId } from './merlin-space-session';
@@ -7,6 +7,7 @@ import { getAgentJobStatus, watchAgentJob } from './merlin-agent-client';
 import type { AgentReply, AgentSideEffect } from './merlin-agent';
 import {
   getActivePollController,
+  isPollingAgentJob,
   isStalePendingJob,
   listPendingAgentJobs,
   releaseActivePoll,
@@ -108,21 +109,26 @@ function sleep(ms: number): Promise<void> {
 async function fetchJobStatusWithRetry(
   job: PendingAgentJob,
   attempts = 8,
+  options?: { kick?: boolean },
 ): Promise<Awaited<ReturnType<typeof getAgentJobStatus>>> {
   let lastErr: unknown;
   for (let i = 0; i < attempts; i += 1) {
     try {
-      return await getAgentJobStatus(job.jobId);
+      return await getAgentJobStatus(job.jobId, options);
     } catch (err) {
       lastErr = err;
-      if (isJobNotFoundError(err) && isRetryableJobNotFound(job)) {
+      if (isJobNotFoundError(err)) {
         logAgentDev('agent-resume', 'poll_404_retry', {
           jobId: job.jobId,
           attempt: i + 1,
           postPending: job.postPending ?? false,
         }, job.jobId);
-        await sleep(Math.min(600 * (i + 1), 3000));
-        continue;
+        if (i < attempts - 1) {
+          await sleep(Math.min(600 * (i + 1), 3000));
+          continue;
+        }
+        if (isJobExpiredError(err, job)) throw err;
+        throw err;
       }
       if (isJobExpiredError(err, job)) throw err;
       if (i < attempts - 1) {
@@ -153,6 +159,7 @@ export async function applyAgentJobResult(
   result: AgentRunResult,
   callbacks?: AgentJobCallbacks,
 ): Promise<AgentReply> {
+  logAgentReplyResult(result, job.jobId);
   removePendingAgentJob(job.jobId);
   await stopNativeAgentJobWatch();
 
@@ -220,14 +227,30 @@ export async function loadPendingJobProgress(
   jobId: string,
   callbacks?: AgentJobCallbacks,
 ): Promise<AgentStep[]> {
+  const job = listPendingAgentJobs().find((j) => j.jobId === jobId);
+  if (!job) return [];
+
+  if (isPollingAgentJob(jobId)) {
+    const cached = job.steps ?? [];
+    emitJobSteps(cached, callbacks);
+    return cached;
+  }
+
   try {
     const status = await getAgentJobStatus(jobId);
+    const applied = await tryApplyFinishedJobStatus(job, status, callbacks);
+    if (applied) {
+      const steps = status.steps ?? [];
+      emitJobSteps(steps, callbacks);
+      return steps;
+    }
+
     const steps = status.steps ?? [];
     setPendingJobSteps(jobId, steps);
     emitJobSteps(steps, callbacks);
     return steps;
   } catch {
-    const cached = listPendingAgentJobs().find((j) => j.jobId === jobId)?.steps ?? [];
+    const cached = job.steps ?? [];
     emitJobSteps(cached, callbacks);
     return cached;
   }
@@ -258,6 +281,10 @@ export async function resumePendingAgentJobs(
         continue;
       }
 
+      if (isPollingAgentJob(job.jobId)) {
+        continue;
+      }
+
       stopPollingAgentJob(job.jobId);
 
       try {
@@ -267,7 +294,7 @@ export async function resumePendingAgentJobs(
             continue;
           }
 
-          const status = await fetchJobStatusWithRetry(job);
+          const status = await fetchJobStatusWithRetry(job, 8, { kick: false });
           const applied = await tryApplyFinishedJobStatus(job, status, callbacks);
           if (applied) {
             completed += 1;

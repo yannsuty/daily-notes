@@ -29,6 +29,7 @@ import { todayKey } from './types';
 import { APP_VERSION } from './version';
 import {
   buildAgentDevLogExport,
+  clearAgentDevLogs,
   copyAgentDevLogsToClipboard,
   isAgentDevLogEnabled,
   setAgentDevLogEnabled,
@@ -257,6 +258,7 @@ export class SettingsPage {
           <div class="settings__actions">
             <button type="button" class="btn btn--primary" id="copy-agent-dev-logs">Copier les logs</button>
             <button type="button" class="btn btn--ghost" id="refresh-agent-dev-logs">Rafraîchir</button>
+            <button type="button" class="btn btn--ghost" id="reset-agent-dev-logs">Réinitialiser</button>
             <button type="button" class="btn btn--ghost" id="disable-agent-dev-logs">Désactiver</button>
           </div>
         </section>
@@ -297,6 +299,7 @@ export class SettingsPage {
     const devLogPreviewEl = this.container.querySelector<HTMLTextAreaElement>('#agent-dev-log-preview');
     const copyDevLogsBtn = this.container.querySelector<HTMLButtonElement>('#copy-agent-dev-logs');
     const refreshDevLogsBtn = this.container.querySelector<HTMLButtonElement>('#refresh-agent-dev-logs');
+    const resetDevLogsBtn = this.container.querySelector<HTMLButtonElement>('#reset-agent-dev-logs');
     const disableDevLogsBtn = this.container.querySelector<HTMLButtonElement>('#disable-agent-dev-logs');
     const versionFooter = this.container.querySelector<HTMLElement>('#settings-version-footer');
 
@@ -342,6 +345,13 @@ export class SettingsPage {
     });
 
     refreshDevLogsBtn?.addEventListener('click', () => {
+      void refreshDevLogPreview();
+    });
+
+    resetDevLogsBtn?.addEventListener('click', () => {
+      clearAgentDevLogs();
+      if (devLogPreviewEl) devLogPreviewEl.value = '';
+      if (devLogStatusEl) devLogStatusEl.textContent = 'Logs client effacés.';
       void refreshDevLogPreview();
     });
 

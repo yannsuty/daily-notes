@@ -2,7 +2,6 @@ import { apiUrl } from './api-base';
 import { isAgentDevLogEnabled, logAgentDev } from './agent-dev-log';
 import { getAiClientConfig } from './merlin-env';
 import {
-  isRetryableJobNotFound,
   JOB_NOT_FOUND_MESSAGE,
 } from '../lib/merlin-agent/job-poll';
 import type {
@@ -238,10 +237,14 @@ export async function startBackgroundAgentJob(
 }
 
 /** Lecture ponctuelle de l'état d'un job (sans SSE) — utile au retour en premier plan. */
-export async function getAgentJobStatus(jobId: string): Promise<AgentJobPollResponse> {
+export async function getAgentJobStatus(
+  jobId: string,
+  options?: { kick?: boolean },
+): Promise<AgentJobPollResponse> {
   const devQuery = isAgentDevLogEnabled() ? '&devLog=1' : '';
+  const kickQuery = options?.kick === false ? '&kick=0' : '';
   const response = await fetch(
-    apiUrl(`/api/merlin-agent?jobId=${encodeURIComponent(jobId)}${devQuery}`),
+    apiUrl(`/api/merlin-agent?jobId=${encodeURIComponent(jobId)}${devQuery}${kickQuery}`),
     { headers: { Accept: 'application/json' } },
   );
 
@@ -301,11 +304,8 @@ export async function watchAgentJob(
     if (response.status === 404) {
       notFoundAttempts += 1;
       const grace = options?.pollGrace;
-      if (
-        grace &&
-        isRetryableJobNotFound({ ...grace, now: Date.now() }) &&
-        notFoundAttempts < 40
-      ) {
+      const shouldRetry = grace != null && notFoundAttempts < 40;
+      if (shouldRetry) {
         logAgentDev('agent-client', 'poll_404_retry', { jobId, notFoundAttempts }, jobId);
         await sleep(500 + Math.min(notFoundAttempts, 10) * 200);
         continue;

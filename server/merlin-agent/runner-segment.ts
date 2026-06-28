@@ -1,5 +1,5 @@
 import { assessQueryDepth, extractMemoryQueries } from '../../lib/merlin-agent/complexity.js';
-import { isComparisonRepairRequest } from '../../lib/merlin-agent/space-intent.js';
+import { isComparisonImageOverrideRequest, isComparisonRepairRequest } from '../../lib/merlin-agent/space-intent.js';
 import type {
   AgentAdvanceResult,
   AgentJobCheckpoint,
@@ -26,9 +26,11 @@ import type {
   ChatMessage,
   WebSource,
 } from '../../lib/merlin-agent/types.js';
+import { logAgentToolDevLog } from '../agent-dev-log.js';
 import { callMerlinLlm } from './llm.js';
 import { extractReminderFields } from './reminder-extract.js';
 import { ensureSpacePersisted } from './space-ensure.js';
+import { autoEnrichComparisonSpaces } from './comparison-image-auto.js';
 import {
   AgentStore,
   isImmediateReplyTool,
@@ -52,6 +54,8 @@ const CONTINUE_TOOLS = new Set([
   'update_space',
   'web_search',
   'fetch_page',
+  'search_images',
+  'enrich_comparison_images',
 ]);
 
 function pushStep(
@@ -255,7 +259,7 @@ export function createBootstrapCheckpoint(body: AgentRequestBody): AgentJobCheck
 
 export async function advanceAgentRun(
   checkpoint: AgentJobCheckpoint,
-  options?: { onStep?: StepCallback; referer?: string },
+  options?: { onStep?: StepCallback; referer?: string; jobId?: string },
 ): Promise<AgentAdvanceResult> {
   const onStep = options?.onStep;
   const referer = options?.referer;
@@ -450,6 +454,9 @@ export async function advanceAgentRun(
     }
 
     const toolResult = await store.executeToolAsync(pending.name, toolArgs, checkpoint.config);
+    if (options?.jobId) {
+      void logAgentToolDevLog(options.jobId, pending.name, toolArgs, toolResult);
+    }
     checkpoint.pendingTool = undefined;
 
     if (toolResult.webSources?.length) {
@@ -473,6 +480,25 @@ export async function advanceAgentRun(
     }
 
     if (isImmediateReplyTool(pending.name) || toolResult.mutation) {
+      if (
+        toolResult.ok &&
+        (pending.name === 'create_space' || pending.name === 'update_space')
+      ) {
+        const enrich = await autoEnrichComparisonSpaces(store, checkpoint.config, {
+          overwrite: isComparisonImageOverrideRequest(trimmed),
+        });
+        if (enrich.spacesTouched > 0) {
+          pushStep(
+            checkpoint,
+            {
+              phase: 'tool',
+              label: 'Images des articles…',
+              detail: `${enrich.imagesFound} image(s) associée(s)`,
+            },
+            onStep,
+          );
+        }
+      }
       pushStep(checkpoint, { phase: 'respond', label: 'Action effectuée' }, onStep);
       persistStore(checkpoint, store);
       return {
@@ -550,6 +576,39 @@ export async function advanceAgentRun(
         label: 'Espace sauvegardé',
         detail: 'Extraction automatique depuis la réponse',
       }, onStep);
+      const enrich = await autoEnrichComparisonSpaces(store, checkpoint.config, {
+        overwrite: isComparisonImageOverrideRequest(trimmed),
+      });
+      if (enrich.spacesTouched > 0) {
+        pushStep(
+          checkpoint,
+          {
+            phase: 'tool',
+            label: 'Images des articles…',
+            detail: `${enrich.imagesFound} image(s) associée(s)`,
+          },
+          onStep,
+        );
+      }
+    } else if (isComparisonImageOverrideRequest(trimmed)) {
+      const active = store.getActiveSpace();
+      if (active?.kind === 'comparison') {
+        const enrich = await autoEnrichComparisonSpaces(store, checkpoint.config, {
+          overwrite: true,
+          spaceIds: [active.id],
+        });
+        if (enrich.spacesTouched > 0) {
+          pushStep(
+            checkpoint,
+            {
+              phase: 'tool',
+              label: 'Images remplacées…',
+              detail: `${enrich.imagesFound} image(s) mise(s) à jour`,
+            },
+            onStep,
+          );
+        }
+      }
     }
 
     pushStep(checkpoint, { phase: 'respond', label: 'Réponse prête' }, onStep);

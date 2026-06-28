@@ -19,7 +19,7 @@ test.describe('Agent — trace et retry (agent mocké)', () => {
     await input.fill('Compare des ventilateurs de plafond');
     await page.getByRole('button', { name: 'Envoyer' }).click();
 
-    await expect(page.locator('.merlin-chat__status')).toContainText(/réfléchit|analyse/i);
+    await expect(page.locator('.merlin-chat__bubble--thinking')).toBeVisible();
     await waitForThinkingDone(page);
     await expectLastAssistantMessage(page, /comparaison/i);
   });
@@ -42,15 +42,15 @@ test.describe('Agent — trace et retry (agent mocké)', () => {
   });
 });
 
-test.describe('Agent — arrière-plan (web)', () => {
-  test('ne bloque pas l’UI avec le bandeau arrière-plan sur le web', async ({ page }) => {
+test.describe('Agent — arrière-plan', () => {
+  test('ne bloque pas l’UI avec le bandeau arrière-plan', async ({ page }) => {
     await resetAppStorage(page);
     await installAgentMock(page);
 
     await sendMerlinMessage(page, 'Compare des ventilateurs de plafond');
     await waitForThinkingDone(page);
 
-    await expect(page.locator('.merlin-chat__background')).toBeHidden();
+    await expect(page.locator('.merlin-chat__background')).toHaveCount(0);
     await expect(page.getByRole('textbox', { name: 'Message à Merlin' })).toBeEnabled();
   });
 });

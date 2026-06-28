@@ -10,6 +10,6 @@
     "noUnusedParameters": true,
     "esModuleInterop": true
   },
-  "include": ["api/**/*.ts", "server/**/*.ts", "lib/merlin-agent/**/*.ts"],
+  "include": ["api/**/*.ts", "server/**/*.ts", "lib/app-version.ts", "lib/merlin-agent/**/*.ts"],
   "exclude": ["**/*.test.ts"]
 }

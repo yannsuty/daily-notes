@@ -32,4 +32,20 @@ describe('job-poll', () => {
       }),
     ).toBe(false);
   });
+
+  it('retente un 404 jeune job enregistré serveur', () => {
+    const now = Date.now();
+    expect(
+      isRetryableJobNotFound({
+        startedAt: now - 30_000,
+        serverRegistered: true,
+      }),
+    ).toBe(true);
+    expect(
+      isRetryableJobNotFound({
+        startedAt: now - JOB_POST_GRACE_MS - 1_000,
+        serverRegistered: true,
+      }),
+    ).toBe(false);
+  });
 });

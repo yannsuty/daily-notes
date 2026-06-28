@@ -18,6 +18,12 @@ import { syncNow } from './sync';
 import { getStoredPassphrase } from './crypto';
 import { TabBar } from './tabs';
 import { todayKey } from './types';
+import {
+  devVersionTitle,
+  fetchBackendVersion,
+  formatDevVersionHeader,
+} from './api-version';
+import { getBuildAppEnv, getFrontendCommit, getFrontendVersionLabel, isDevBuild } from './build-env';
 
 export async function initApp(root: HTMLElement): Promise<void> {
   root.className = 'app';
@@ -28,6 +34,23 @@ export async function initApp(root: HTMLElement): Promise<void> {
   const title = document.createElement('span');
   title.className = 'app__title';
   title.textContent = 'Merlin';
+
+  const brand = document.createElement('div');
+  brand.className = 'app__brand';
+  brand.appendChild(title);
+
+  if (isDevBuild()) {
+    const devVersion = document.createElement('span');
+    devVersion.className = 'app__dev-version';
+    const frontVersion = getFrontendVersionLabel();
+    const frontCommit = getFrontendCommit();
+    devVersion.textContent = formatDevVersionHeader(frontVersion, frontCommit, null);
+    brand.appendChild(devVersion);
+    void fetchBackendVersion().then((back) => {
+      devVersion.textContent = formatDevVersionHeader(frontVersion, frontCommit, back);
+      devVersion.title = devVersionTitle(frontVersion, frontCommit, getBuildAppEnv(), back);
+    });
+  }
 
   const syncIndicator = document.createElement('span');
   syncIndicator.className = 'app__sync-status';
@@ -55,7 +78,7 @@ export async function initApp(root: HTMLElement): Promise<void> {
   mainContainer.appendChild(journalPanel);
   mainContainer.appendChild(galleryPanel);
 
-  header.appendChild(title);
+  header.appendChild(brand);
   header.appendChild(syncIndicator);
 
   let journal: Journal | null = null;

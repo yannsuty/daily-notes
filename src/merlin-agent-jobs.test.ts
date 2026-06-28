@@ -1,12 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@capacitor/core', () => ({
-  Capacitor: {
-    isNativePlatform: vi.fn(() => false),
-  },
-}));
-
-import { Capacitor } from '@capacitor/core';
 import {
   appendPendingJobStep,
   isStalePendingJob,
@@ -121,21 +114,18 @@ describe('pending agent jobs — expiration', () => {
 describe('pending agent jobs — arrière-plan', () => {
   beforeEach(() => {
     vi.stubGlobal('document', { visibilityState: 'hidden' });
-    vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    vi.mocked(Capacitor.isNativePlatform).mockReturnValue(false);
   });
 
-  it('démarre un job serveur si l’app est déjà masquée (pause immédiate)', () => {
+  it('démarre un job serveur si l’onglet est masqué', () => {
     expect(shouldStartBackgroundAgentJob()).toBe(true);
   });
 
-  it('reste en premier plan si la plateforme n’est pas native', () => {
-    vi.mocked(Capacitor.isNativePlatform).mockReturnValue(false);
-    vi.stubGlobal('document', { visibilityState: 'hidden' });
+  it('reste en premier plan si l’onglet est visible', () => {
+    vi.stubGlobal('document', { visibilityState: 'visible' });
     expect(shouldStartBackgroundAgentJob()).toBe(false);
   });
 });
