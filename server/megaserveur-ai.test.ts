@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   callMegaserveurChat,
   isMegaserveurConfigured,
+  MEGASERVEUR_DEFAULT_MODEL,
   resolveMegaserveurModel,
 } from './megaserveur-ai.js';
 import { OPENROUTER_FREE_ROUTER } from './openrouter-fallback.js';
@@ -16,13 +17,13 @@ afterEach(() => {
 
 describe('resolveMegaserveurModel', () => {
   it('remplace openrouter/free par le modèle Ollama par défaut', () => {
-    expect(resolveMegaserveurModel(OPENROUTER_FREE_ROUTER)).toBe('qwen2.5-coder:7b');
-    expect(resolveMegaserveurModel('')).toBe('qwen2.5-coder:7b');
+    expect(resolveMegaserveurModel(OPENROUTER_FREE_ROUTER)).toBe(MEGASERVEUR_DEFAULT_MODEL);
+    expect(resolveMegaserveurModel('')).toBe(MEGASERVEUR_DEFAULT_MODEL);
   });
 
   it('respecte MEGASERVEUR_DEFAULT_MODEL', () => {
-    process.env.MEGASERVEUR_DEFAULT_MODEL = 'tinyllama';
-    expect(resolveMegaserveurModel(undefined)).toBe('tinyllama');
+    process.env.MEGASERVEUR_DEFAULT_MODEL = MEGASERVEUR_DEFAULT_MODEL;
+    expect(resolveMegaserveurModel(undefined)).toBe(MEGASERVEUR_DEFAULT_MODEL);
   });
 
   it('conserve un modèle explicite', () => {
@@ -65,7 +66,7 @@ describe('callMegaserveurChat', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(result.modelUsed).toBe('qwen2.5-coder:7b');
+    expect(result.modelUsed).toBe(MEGASERVEUR_DEFAULT_MODEL);
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://api.example.fr/api/ai/chat/completions');
@@ -73,7 +74,7 @@ describe('callMegaserveurChat', () => {
       Authorization: 'Bearer test-key',
     });
     const body = JSON.parse(init.body as string) as { model: string; stream: boolean };
-    expect(body.model).toBe('qwen2.5-coder:7b');
+    expect(body.model).toBe(MEGASERVEUR_DEFAULT_MODEL);
     expect(body.stream).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { OPENROUTER_FREE_ROUTER } from './openrouter-fallback.js';
 import type { FallbackResult, OpenRouterBody } from './openrouter-fallback.js';
 
-export const MEGASERVEUR_DEFAULT_MODEL = 'qwen2.5-coder:7b';
+export const MEGASERVEUR_DEFAULT_MODEL = 'tinyllama';
 export const MEGASERVEUR_TIMEOUT_MS = 55_000;
 export const MEGASERVEUR_RETRY_BACKOFF_MS = 500;
 

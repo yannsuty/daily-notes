@@ -102,10 +102,10 @@ Variables Vercel (ou `.env.local` en dev) :
 |----------|------|
 | `MEGASERVEUR_AI_BASE_URL` | Ex. `https://api.megaboost-studio.fr/api/ai` |
 | `MEGASERVEUR_AI_API_KEY` | Même valeur que `AI_SERVICES_API_KEY` sur le megaserveur |
-| `MEGASERVEUR_DEFAULT_MODEL` | Optionnel — défaut `qwen2.5-coder:7b` |
+| `MEGASERVEUR_DEFAULT_MODEL` | Optionnel — défaut `tinyllama` |
 | `OPENROUTER_API_KEY` | Fallback si Megaserveur non configuré |
 
-Dans l’app : **Réglages → Modèle principal** = `qwen2.5-coder:7b` (pas besoin de clé OpenRouter si Megaserveur est côté serveur).
+Dans l’app : **Réglages → Modèle principal** = `tinyllama` (pas besoin de clé OpenRouter si Megaserveur est côté serveur).
 
 Voir `.env.example`.
 
