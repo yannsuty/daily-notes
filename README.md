@@ -92,6 +92,23 @@ Les notes sont chiffrées côté client avant envoi. Le serveur ne voit que du c
 - Capacitor (app Android native)
 - Vercel Serverless + Upstash Redis
 
+## LLM (Megaserveur ou OpenRouter)
+
+Le chat Merlin et l’agent passent par `/api/ai` (Vercel). Si **Megaserveur** est configuré, les requêtes vont vers votre stack Ollama (`/api/ai/chat/completions` sur le megaserveur). Sinon, fallback **OpenRouter**.
+
+Variables Vercel (ou `.env.local` en dev) :
+
+| Variable | Rôle |
+|----------|------|
+| `MEGASERVEUR_AI_BASE_URL` | Ex. `https://api.megaboost-studio.fr/api/ai` |
+| `MEGASERVEUR_AI_API_KEY` | Même valeur que `AI_SERVICES_API_KEY` sur le megaserveur |
+| `MEGASERVEUR_DEFAULT_MODEL` | Optionnel — défaut `qwen2.5-coder:7b` |
+| `OPENROUTER_API_KEY` | Fallback si Megaserveur non configuré |
+
+Dans l’app : **Réglages → Modèle principal** = `qwen2.5-coder:7b` (pas besoin de clé OpenRouter si Megaserveur est côté serveur).
+
+Voir `.env.example`.
+
 ## App Android native (Obtainium)
 
 L'app peut être installée comme APK native via [Obtainium](https://github.com/ImranR98/Obtainium), avec mises à jour automatiques depuis les GitHub Releases.

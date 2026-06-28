@@ -1,8 +1,6 @@
-import {
-  callOpenRouterWithFallback,
-  OPENROUTER_FREE_ROUTER,
-  type OpenRouterBody,
-} from '../openrouter-fallback.js';
+import { callLlmCompletion } from '../llm-completion.js';
+import { OPENROUTER_FREE_ROUTER } from '../openrouter-fallback.js';
+import type { OpenRouterBody } from '../openrouter-fallback.js';
 import type { AgentClientConfig, ChatMessage } from '../../lib/merlin-agent/types.js';
 
 export interface LlmResult {
@@ -18,15 +16,6 @@ export async function callMerlinLlm(
   config: AgentClientConfig,
   options?: { temperature?: number; jsonMode?: boolean; referer?: string },
 ): Promise<LlmResult> {
-  const apiKey = config.apiKey?.trim() || process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return {
-      ok: false,
-      error: 'OPENROUTER_API_KEY not configured',
-      retryable: false,
-    };
-  }
-
   const body: OpenRouterBody = {
     model: config.model ?? OPENROUTER_FREE_ROUTER,
     messages,
@@ -40,7 +29,8 @@ export async function callMerlinLlm(
   const envChain = config.modelChain?.trim() || process.env.OPENROUTER_MODEL_CHAIN;
 
   try {
-    const result = await callOpenRouterWithFallback(apiKey, body, {
+    const result = await callLlmCompletion(body, {
+      apiKey: config.apiKey?.trim(),
       referer: options?.referer ?? 'https://merlin.app',
       envChain,
     });

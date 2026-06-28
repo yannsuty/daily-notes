@@ -3,6 +3,9 @@
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "functions": {
+    "api/ai.ts": {
+      "maxDuration": 60
+    },
     "api/merlin-agent.ts": {
       "maxDuration": 300
     }

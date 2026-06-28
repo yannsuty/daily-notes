@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { callLlmCompletion } from '../server/llm-completion.js';
 import {
-  callOpenRouterWithFallback,
   OPENROUTER_FREE_ROUTER,
   type OpenRouterBody,
 } from '../server/openrouter-fallback.js';
@@ -48,15 +48,6 @@ export default withSentry(async function handler(req: VercelRequest, res: Vercel
     return res.status(400).json({ error: 'Missing model or messages', retryable: false });
   }
 
-  const apiKey =
-    body.config?.apiKey?.trim() || process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return res.status(503).json({
-      error: 'OPENROUTER_API_KEY not configured (Réglages ou serveur)',
-      retryable: false,
-    });
-  }
-
   const envChain =
     body.config?.modelChain?.trim() || process.env.OPENROUTER_MODEL_CHAIN;
 
@@ -68,7 +59,8 @@ export default withSentry(async function handler(req: VercelRequest, res: Vercel
       response_format: body.response_format,
     };
 
-    const result = await callOpenRouterWithFallback(apiKey, openRouterBody, {
+    const result = await callLlmCompletion(openRouterBody, {
+      apiKey: body.config?.apiKey?.trim(),
       referer: referer(),
       envChain,
     });
@@ -86,7 +78,7 @@ export default withSentry(async function handler(req: VercelRequest, res: Vercel
         // keep raw
       }
       return res.status(result.status >= 400 ? result.status : 503).json({
-        error: { message: detail, source: 'openrouter' },
+        error: { message: detail, source: 'llm' },
         triedModels: result.triedModels,
         retryable: result.retryable ?? false,
       });

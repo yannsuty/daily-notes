@@ -5,7 +5,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { JOB_STREAM_MAX_MS } from './lib/merlin-agent/agent-duration';
 import { resolveBuildCommit } from './lib/app-version';
 import {
-  callOpenRouterWithFallback,
+  callLlmCompletion,
+  isMegaserveurConfigured,
+} from './lib/llm-completion';
+import {
   OPENROUTER_FREE_ROUTER,
   type OpenRouterBody,
 } from './lib/openrouter-fallback';
@@ -394,7 +397,7 @@ function createMerlinAgentDevProxy(fallbackApiKey: string) {
   };
 }
 
-function createOpenRouterDevProxy(fallbackApiKey: string) {
+function createAiDevProxy(fallbackApiKey: string) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     if (!req.url?.startsWith('/api/ai')) {
       next();
@@ -416,21 +419,19 @@ function createOpenRouterDevProxy(fallbackApiKey: string) {
       return;
     }
 
-    if (!fallbackApiKey) {
-      // Pas de clé .env — l'app peut en fournir une via Réglages (body.config.apiKey)
-    }
-
     try {
       const rawBody = await readRequestBody(req);
       const parsed = JSON.parse(rawBody) as AiProxyBody;
       const apiKey = parsed.config?.apiKey?.trim() || fallbackApiKey;
 
-      if (!apiKey) {
+      if (!isMegaserveurConfigured() && !apiKey) {
         res.statusCode = 503;
         res.setHeader('Content-Type', 'application/json');
         res.end(
           JSON.stringify({
-            error: 'OPENROUTER_API_KEY non configurée (.env ou Réglages Merlin)',
+            error:
+              'OPENROUTER_API_KEY non configurée (.env ou Réglages Merlin), ' +
+              'ou MEGASERVEUR_AI_BASE_URL + MEGASERVEUR_AI_API_KEY',
             retryable: false,
           }),
         );
@@ -440,8 +441,7 @@ function createOpenRouterDevProxy(fallbackApiKey: string) {
       const envChain =
         parsed.config?.modelChain?.trim() || process.env.OPENROUTER_MODEL_CHAIN;
 
-      const result = await callOpenRouterWithFallback(
-        apiKey,
+      const result = await callLlmCompletion(
         {
           model: parsed.model || OPENROUTER_FREE_ROUTER,
           messages: parsed.messages,
@@ -449,6 +449,7 @@ function createOpenRouterDevProxy(fallbackApiKey: string) {
           response_format: parsed.response_format,
         },
         {
+          apiKey,
           referer: 'http://localhost:5173',
           envChain,
         },
@@ -501,10 +502,10 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       {
-        name: 'openrouter-dev-proxy',
+        name: 'ai-dev-proxy',
         configureServer(server) {
           const versionProxy = createVersionDevProxy(env.APP_ENV ?? process.env.APP_ENV ?? 'dev');
-          const aiProxy = createOpenRouterDevProxy(env.OPENROUTER_API_KEY ?? '');
+          const aiProxy = createAiDevProxy(env.OPENROUTER_API_KEY ?? '');
           const agentProxy = createMerlinAgentDevProxy(env.OPENROUTER_API_KEY ?? '');
           const webProxy = createMerlinWebDevProxy();
           const spaceImageProxy = createMerlinSpaceImageDevProxy();
