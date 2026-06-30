@@ -1,5 +1,5 @@
 # Build APK release en local (Windows PowerShell)
-# Prérequis : Node 22+, JDK 21, Android SDK (Android Studio)
+# Prérequis : Node 24+, JDK 21, Android SDK (Android Studio)
 
 param(
   [string]$VercelUrl = $env:VITE_API_BASE_URL,
